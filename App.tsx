@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V15.19
-// VERSION: V15.19 - Sector State Isolation
+// CHECKPOINT: Defender V15.20
+// VERSION: V15.20 - Quadrant Propagation
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { GameState, Planet, Moon, MissionType, ShipConfig, Weapon, Shield, GameSettings, EquippedWeapon, WeaponType, QuadrantType, ShipFitting } from './types';
 import { INITIAL_CREDITS, SHIPS, WEAPONS, SHIELDS, PLANETS } from './constants';
@@ -178,7 +178,7 @@ const App: React.FC = () => {
   const handleJump = (q: QuadrantType) => { setTargetQuadrant(q); setIsWarpDialogOpen(false); setGameState(p => ({ ...p, dockedPlanetId: null })); setScreenState('warp'); setIsAutoDocking(false); };
   const handleReturnHome = () => { if (gameState.dockedPlanetId) { const p = PLANETS.find(p => p.id === gameState.dockedPlanetId); if (p) { setTargetQuadrant(p.quadrant); setIsAutoDocking(true); setScreenState('warp'); } } else { setScreenState('intro'); } };
   const currentShip = useMemo(() => SHIPS.find(s => s.id === gameState.selectedShipId), [gameState.selectedShipId]);
-  const exitHangar = () => { setScreenState('launch'); };
+  const exitHangar = () => { setScreenState('map'); };
   const updatePilot = (name: string, avatar: string) => { setGameState(p => ({ ...p, pilotName: name, pilotAvatar: avatar })); };
   const updateShipColor = (color: string) => { if (gameState.selectedShipId) { setGameState(p => ({ ...p, shipColors: { ...p.shipColors, [gameState.selectedShipId!]: color } })); } };
 
@@ -258,7 +258,7 @@ const App: React.FC = () => {
       )}
       {screen === 'map' && (<MapScreen key={gameState.currentQuadrant} planets={PLANETS.filter(p => p.quadrant === gameState.currentQuadrant)} onArrival={onArrival} currentQuadrant={gameState.currentQuadrant} onOpenWarp={() => setIsWarpDialogOpen(true)} initialFocusId={gameState.dockedPlanetId} pilotAvatar={gameState.pilotAvatar} pilotName={gameState.pilotName} selectedShipId={gameState.selectedShipId} shipColors={gameState.shipColors} onReturnHome={handleReturnHome} autoDock={isAutoDocking} />)}
       {screen === 'briefing' && (<div className="flex-grow flex items-center justify-center p-6 bg-black relative"><Starfield count={80} isFixed /><div className="max-w-2xl w-full bg-white/5 border border-white/10 p-6 md:p-10 space-y-6 md:space-y-8 rounded-lg shadow-2xl z-10 backdrop-blur-2xl"><h2 className="retro-font text-sm md:text-2xl text-emerald-400 border-b border-white/5 pb-4 uppercase tracking-widest">Tactical Briefing</h2><p className="font-mono text-xs md:text-xl text-white uppercase leading-relaxed max-h-[30vh] overflow-y-auto custom-scrollbar">{briefing || "Decrypting transmission..."}</p><div className="flex flex-col md:flex-row gap-4"><button onClick={() => setScreenState('map')} className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 retro-font text-[10px] rounded-lg uppercase transition-all backdrop-blur-md">Hold Position</button><button onClick={() => setScreenState('game')} className="w-full py-4 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/40 retro-font text-[10px] rounded-lg uppercase transition-all backdrop-blur-md shadow-lg">Engage</button></div></div></div>)}
-      {screen === 'game' && currentShip && (<div className="flex-grow flex items-center justify-center relative"><GameEngine ship={currentShip} weapons={[]} shield={null} missionType={gameState.currentMission!} difficulty={5} onGameOver={(success) => { setLastResult({ success, reward: success ? 10000 : 2500 }); setGameState(p => ({ ...p, credits: p.credits + (success ? 10000 : 2500) })); setScreenState('results'); }} isFullScreen={true} playerColor={gameState.shipColors[gameState.selectedShipId!] || currentShip.defaultColor || '#10b981'} /></div>)}
+      {screen === 'game' && currentShip && (<div className="flex-grow flex items-center justify-center relative"><GameEngine ship={currentShip} weapons={[]} shield={null} missionType={gameState.currentMission!} difficulty={5} quadrant={gameState.currentQuadrant} onGameOver={(success) => { setLastResult({ success, reward: success ? 10000 : 2500 }); setGameState(p => ({ ...p, credits: p.credits + (success ? 10000 : 2500) })); setScreenState('results'); }} isFullScreen={true} playerColor={gameState.shipColors[gameState.selectedShipId!] || currentShip.defaultColor || '#10b981'} /></div>)}
       {screen === 'results' && lastResult && (
         <div className="flex-grow flex flex-col items-center justify-center gap-6 md:gap-10 bg-black relative">
           <Starfield count={100} isFixed />
@@ -443,7 +443,7 @@ const MapScreen = ({ planets, onArrival, currentQuadrant, onOpenWarp, initialFoc
       let p = Math.min(elapsed / dur, 1);
       let e = 1 - Math.pow(1 - p, 4);
       setCamZoom(startZoom + e * (targetZoom - startZoom));
-      setCamOffset({ x: startX + e * (-x - startX), y: startY + e * (-y - startY) });
+      setCamOffset({ x: startX + e * (-x - startX), y: startY + e * (-startY - startY) });
       if (p < 1) requestAnimationFrame(anim);
       else { setIsAnimating(false); setIsTracking(true); }
     };
