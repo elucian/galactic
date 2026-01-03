@@ -1,18 +1,20 @@
 
-// CHECKPOINT: Defender V79.4
-// VERSION: V79.4 - The Stability & Layout Patch
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon } from './types';
-import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants';
+// CHECKPOINT: Defender V79.9
+// VERSION: V79.9 - Exotic Loot Persistence
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon, EquippedWeapon } from './types';
+import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants';
 import { audioService } from './services/audioService';
 import GameEngine from './components/GameEngine';
 
-const SAVE_KEY = 'galactic_defender_v79_4';
+const SAVE_KEY = 'galactic_defender_v79_9';
 const MAX_FLEET_SIZE = 3;
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const MAX_MISSILES = 50;
 const MAX_MINES = 20;
+const MAX_FUEL_UNITS = 3;
+const DEFAULT_WEAPON_ID = WEAPONS[0].id;
 
 const StarBackground = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -75,7 +77,7 @@ const App: React.FC = () => {
     const initialFittings: Record<string, ShipFitting> = {};
     const initialColors: Record<string, string> = {};
     initialOwned.forEach((os) => { 
-      initialFittings[os.instanceId] = { weapons: [], shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', rocketCount: 0, mineCount: 0, wingWeaponId: null, health: 100, ammoPercent: 100, lives: 1, fuel: 3 }; 
+      initialFittings[os.instanceId] = { weapons: [{ id: DEFAULT_WEAPON_ID, count: 1 }], shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', rocketCount: 0, mineCount: 0, wingWeaponId: null, health: 100, ammoPercent: 100, lives: 1, fuel: MAX_FUEL_UNITS }; 
       initialColors[os.instanceId] = SHIPS[0].defaultColor || '#94a3b8'; 
     });
     return {
@@ -112,22 +114,46 @@ const App: React.FC = () => {
   const selectedFitting = useMemo(() => gameState.selectedShipInstanceId ? gameState.shipFittings[gameState.selectedShipInstanceId] : null, [gameState]);
   const selectedShipConfig = useMemo(() => { if (!gameState.selectedShipInstanceId) return null; const instance = gameState.ownedShips.find(s => s.instanceId === gameState.selectedShipInstanceId); return instance ? SHIPS.find(s => s.id === instance.shipTypeId) || null : null; }, [gameState]);
 
-  const handleGameOver = (success: boolean, finalScore: number, wasAborted?: boolean, newAmmo?: { rockets: number, mines: number }) => {
+  const activeShipsForEngine = useMemo(() => {
+    if (!gameState.selectedShipInstanceId) return [];
+    return gameState.ownedShips
+      .filter(os => os.instanceId === gameState.selectedShipInstanceId)
+      .map(os => ({
+        config: SHIPS.find(s => s.id === os.shipTypeId)!,
+        fitting: gameState.shipFittings[os.instanceId],
+        color: gameState.shipColors[os.instanceId],
+        gunColor: gameState.shipGunColors[os.instanceId]
+      }));
+  }, [gameState.selectedShipInstanceId, gameState.ownedShips, gameState.shipFittings, gameState.shipColors, gameState.shipGunColors]);
+
+  const handleGameOver = useCallback((success: boolean, finalScore: number, wasAborted?: boolean, payload?: { rockets: number, mines: number, weapons: EquippedWeapon[] }) => {
     setGameState(prev => {
       const sId = prev.selectedShipInstanceId; if (!sId) return prev;
       const fit = prev.shipFittings[sId];
       const newFits = { ...prev.shipFittings };
       if (!wasAborted) {
-        newFits[sId] = { ...fit, health: success ? fit.health : Math.max(0, fit.health - 50), rocketCount: newAmmo?.rockets ?? fit.rocketCount, mineCount: newAmmo?.mines ?? fit.mineCount, fuel: Math.max(0, fit.fuel - 1) };
+        const nextHealth = success ? fit.health : Math.max(0, fit.health - 50);
+        // Persist exotic loot only if ship is NOT destroyed
+        // Fix typo: change DEFAULT_WE_ID to DEFAULT_WEAPON_ID
+        const finalWeapons = nextHealth <= 0 ? [{ id: DEFAULT_WEAPON_ID, count: 1 }] : (payload?.weapons || fit.weapons);
+        
+        newFits[sId] = { 
+            ...fit, 
+            health: nextHealth, 
+            rocketCount: payload?.rockets ?? fit.rocketCount, 
+            mineCount: payload?.mines ?? fit.mineCount, 
+            fuel: Math.max(0, fit.fuel - 1),
+            weapons: finalWeapons 
+        };
       }
       return { ...prev, credits: prev.credits + (success ? Math.floor(finalScore / 5) : 0), victories: prev.victories + (success ? 1 : 0), failures: prev.failures + (!success && !wasAborted ? 1 : 0), shipFittings: newFits };
     });
     setScreenState('hangar'); audioService.stop(); audioService.playTrack('command');
-  };
+  }, []);
 
   const refuelSelected = () => {
-    if (!selectedFitting || !gameState.selectedShipInstanceId || gameState.credits < REFUEL_COST_PER_UNIT) { audioService.playSfx('denied'); return; }
-    setGameState(p => ({ ...p, credits: p.credits - REFUEL_COST_PER_UNIT, shipFittings: { ...p.shipFittings, [p.selectedShipInstanceId!]: { ...selectedFitting, fuel: 3 } } }));
+    if (!selectedFitting || !gameState.selectedShipInstanceId || selectedFitting.fuel >= MAX_FUEL_UNITS || gameState.credits < REFUEL_COST_PER_UNIT) { audioService.playSfx('denied'); return; }
+    setGameState(p => ({ ...p, credits: p.credits - REFUEL_COST_PER_UNIT, shipFittings: { ...p.shipFittings, [p.selectedShipInstanceId!]: { ...selectedFitting, fuel: MAX_FUEL_UNITS } } }));
     audioService.playSfx('buy');
   };
 
@@ -142,7 +168,7 @@ const App: React.FC = () => {
   const mountWeaponToSlot = (w: Weapon, slotIdx: number) => {
     const sId = gameState.selectedShipInstanceId; if (!sId || !selectedFitting) return;
     const current = selectedFitting.weapons[slotIdx];
-    let refund = 0; if (current) { const oldW = WEAPONS.find(xw => xw.id === current.id); if (oldW) refund = oldW.price; }
+    let refund = 0; if (current) { const oldW = [...WEAPONS, ...EXOTIC_WEAPONS].find(xw => xw.id === current.id); if (oldW) refund = oldW.price; }
     const cost = w.price - refund;
     if (gameState.credits < cost) { audioService.playSfx('denied'); return; }
     setGameState(p => {
@@ -156,7 +182,7 @@ const App: React.FC = () => {
     const sId = gameState.selectedShipInstanceId; if (!sId || !selectedFitting) return;
     const current = selectedFitting.weapons[slotIdx];
     if (!current) return;
-    const oldW = WEAPONS.find(xw => xw.id === current.id);
+    const oldW = [...WEAPONS, ...EXOTIC_WEAPONS].find(xw => xw.id === current.id);
     const refund = oldW ? oldW.price : 0;
     setGameState(p => {
       const newWeps = [...selectedFitting.weapons]; newWeps[slotIdx] = undefined as any;
@@ -202,7 +228,7 @@ const App: React.FC = () => {
     setGameState(p => ({
       ...p, credits: p.credits - nS.price,
       ownedShips: p.ownedShips.map(s => s.instanceId === tId ? { ...s, shipTypeId } : s),
-      shipFittings: { ...p.shipFittings, [tId]: { weapons: [], shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', rocketCount: 0, mineCount: 0, wingWeaponId: null, health: 100, ammoPercent: 100, lives: 1, fuel: 3 } },
+      shipFittings: { ...p.shipFittings, [tId]: { weapons: [{ id: DEFAULT_WEAPON_ID, count: 1 }], shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', rocketCount: 0, mineCount: 0, wingWeaponId: null, health: 100, ammoPercent: 100, lives: 1, fuel: MAX_FUEL_UNITS } },
       shipColors: { ...p.shipColors, [tId]: nS.defaultColor || '#94a3b8' }
     }));
     audioService.playSfx('buy'); setIsStoreOpen(false);
@@ -229,7 +255,7 @@ const App: React.FC = () => {
             <button onClick={() => setScreenState('hangar')} className="py-5 px-16 border-2 border-emerald-500 text-xs font-black uppercase tracking-widest hover:bg-emerald-500/10 transition-all">ENGAGE SDI PROTOCOL</button>
             <div className="flex gap-4">
                <button onClick={() => setShowManual(true)} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">MANUAL</button>
-               <button onClick={() => alert("System: V79.4 Stable. Offline Ready. No API Required.")} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">OPTIONS</button>
+               <button onClick={() => alert("System: V79.9 Exotic Loot active. Persistence verified. Window scaling stable.")} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">OPTIONS</button>
             </div>
           </div>
           {showManual && (
@@ -242,7 +268,7 @@ const App: React.FC = () => {
                   <p>• [TAB] TO LAUNCH TRACKING MISSILES</p>
                   <p>• [CAPS LOCK] TO DEPLOY GRAVITY MINES</p>
                   <p>• [ESC] TO ABORT MISSION</p>
-                  <p className="text-red-500 mt-4 font-black">LOGISTICS: SHIPS START EMPTY. EQUIP WEAPONS IN HANGAR TO PROCEED.</p>
+                  <p className="text-red-500 mt-4 font-black">LOGISTICS: BOSSES DROP EXOTIC LOOT. THESE WEAPONS PERSIST UNTIL RE-EQUIPPED OR SHIP LOSS.</p>
                 </div>
                 <button onClick={() => setShowManual(false)} className="w-full py-4 bg-emerald-600/20 border border-emerald-500 text-emerald-500 font-black uppercase text-[10px]">ACKNOWLEDGED</button>
               </div>
@@ -267,7 +293,7 @@ const App: React.FC = () => {
                   <ShipIcon config={config as any} hullColor={gameState.shipColors[instance.instanceId]} className="w-44 h-44" />
                   <div className="w-full mt-auto space-y-4">
                     <div className="space-y-1"><div className="flex justify-between text-[8px] uppercase"><span>Hull Integrity</span><span>{Math.floor(f.health)}%</span></div><div className="h-2 bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${f.health}%` }} /></div></div>
-                    <div className="space-y-1"><div className="flex justify-between text-[8px] uppercase"><span>Fuel Reserve</span><span>{f.fuel} Units</span></div><div className="h-2 bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{ width: `${(f.fuel/3)*100}%` }} /></div></div>
+                    <div className="space-y-1"><div className="flex justify-between text-[8px] uppercase"><span>Fuel Reserve</span><span>{f.fuel} Units</span></div><div className="h-2 bg-zinc-900 rounded-full overflow-hidden"><div className="h-full bg-blue-500" style={{ width: `${(f.fuel/MAX_FUEL_UNITS)*100}%` }} /></div></div>
                     <div className="grid grid-cols-2 gap-2"><button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className="py-2 bg-zinc-900 text-[8px] uppercase font-black rounded hover:bg-zinc-800">LOADOUT</button><button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className="py-2 bg-zinc-900 text-[8px] uppercase font-black rounded hover:bg-zinc-800">SWAP HULL</button></div>
                   </div>
                 </div>
@@ -278,7 +304,7 @@ const App: React.FC = () => {
             <div className="flex flex-col gap-1"><span className="retro-font text-[9px] text-emerald-500">PILOT: {gameState.pilotName}</span><span className="text-yellow-500 font-black text-sm tabular-nums">${gameState.credits.toLocaleString()} RESOURCES</span></div>
             <div className="flex gap-4">
                <button onClick={repairSelected} disabled={!selectedFitting || selectedFitting.health >= 100} className="px-6 py-3 bg-zinc-900 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed">REPAIR SELECTED</button>
-               <button onClick={refuelSelected} className="px-6 py-3 bg-zinc-900 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800">REFUEL SELECTED</button>
+               <button onClick={refuelSelected} disabled={!selectedFitting || selectedFitting.fuel >= MAX_FUEL_UNITS} className="px-6 py-3 bg-zinc-900 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed">REFUEL SELECTED</button>
                <button onClick={() => setScreenState('map')} disabled={!selectedFitting || selectedFitting.fuel <= 0 || selectedFitting.weapons.length === 0} className="px-12 py-3 bg-emerald-600 border border-emerald-400 text-white text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 disabled:opacity-20 transition-all active:scale-95">START ENGAGEMENT</button>
             </div>
           </footer>
@@ -300,7 +326,7 @@ const App: React.FC = () => {
                     <div className="flex gap-4">
                       {Array.from({ length: selectedShipConfig.defaultGuns }).map((_, i) => (
                         <button key={i} onClick={() => setActiveSlot(i)} className={`flex-grow p-4 text-[9px] uppercase font-black border transition-all ${activeSlot === i ? 'bg-emerald-500/20 border-emerald-500' : 'bg-zinc-900 border-zinc-800 opacity-60'}`}>
-                          Hardpoint {i+1}: {selectedFitting.weapons[i] ? WEAPONS.find(w => w.id === selectedFitting.weapons[i].id)?.name : 'EMPTY'}
+                          Hardpoint {i+1}: {selectedFitting.weapons[i] ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === selectedFitting.weapons[i].id)?.name : 'EMPTY'}
                         </button>
                       ))}
                     </div>
@@ -365,16 +391,12 @@ const App: React.FC = () => {
                             <div className="flex justify-between items-center">
                               <div><div className="text-[11px] font-black uppercase">{s.name}</div><div className="text-[9px] text-yellow-500 mt-1">${s.price.toLocaleString()}</div></div>
                               <div className="flex gap-2">
-                                <div className="flex flex-col gap-1 items-center">
-                                  <button onClick={() => isPrimary ? removeShield(1) : equipShield(s, 1)} className={`px-4 py-2 text-[8px] font-black uppercase rounded border transition-all ${isPrimary ? 'bg-blue-600 text-white border-blue-400' : 'border-blue-500/30 text-blue-500 hover:bg-blue-600/10'}`}>
-                                    {isPrimary ? 'REMOVE PRI' : 'PRIMARY'}
-                                  </button>
-                                </div>
-                                <div className="flex flex-col gap-1 items-center">
-                                  <button onClick={() => isSecondary ? removeShield(2) : equipShield(s, 2)} className={`px-4 py-2 text-[8px] font-black uppercase rounded border transition-all ${isSecondary ? 'bg-red-600 text-white border-red-400' : 'border-red-500/30 text-red-500 hover:bg-red-600/10'}`}>
-                                    {isSecondary ? 'REMOVE SEC' : 'SECONDARY'}
-                                  </button>
-                                </div>
+                                <button onClick={() => isPrimary ? removeShield(1) : equipShield(s, 1)} className={`px-4 py-2 text-[8px] font-black uppercase rounded border transition-all ${isPrimary ? 'bg-blue-600 text-white border-blue-400' : 'border-blue-500/30 text-blue-500 hover:bg-blue-600/10'}`}>
+                                  {isPrimary ? 'REMOVE PRI' : 'PRIMARY'}
+                                </button>
+                                <button onClick={() => isSecondary ? removeShield(2) : equipShield(s, 2)} className={`px-4 py-2 text-[8px] font-black uppercase rounded border transition-all ${isSecondary ? 'bg-red-600 text-white border-red-400' : 'border-red-500/30 text-red-500 hover:bg-red-600/10'}`}>
+                                  {isSecondary ? 'REMOVE SEC' : 'SECONDARY'}
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -419,7 +441,7 @@ const App: React.FC = () => {
 
       {screen === 'game' && gameState.selectedShipInstanceId && (
         <div className="flex-grow relative overflow-hidden z-20">
-          <GameEngine ships={gameState.ownedShips.filter(os => os.instanceId === gameState.selectedShipInstanceId).map(os => ({ config: SHIPS.find(s => s.id === os.shipTypeId)!, fitting: gameState.shipFittings[os.instanceId], color: gameState.shipColors[os.instanceId], gunColor: gameState.shipGunColors[os.instanceId] }))} shield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.shieldId) || null} secondShield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.secondShieldId) || null} difficulty={gameState.currentPlanet?.difficulty || 1} onGameOver={handleGameOver} />
+          <GameEngine ships={activeShipsForEngine} shield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.shieldId) || null} secondShield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.secondShieldId) || null} difficulty={gameState.currentPlanet?.difficulty || 1} onGameOver={handleGameOver} />
         </div>
       )}
 

@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V79.3
-// VERSION: V79.3
+// CHECKPOINT: Defender V79.9
+// VERSION: V79.9
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -33,6 +33,19 @@ export const WEAPONS: Weapon[] = [
   { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 12, fireRate: 18, energyCost: 20, cargoWeight: 10, isAmmoBased: true, beamColor: '#fbbf24' },
   { id: 'gun_heavy', name: 'Heavy Autocannon', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 4, energyCost: 40, cargoWeight: 25, isAmmoBased: true, beamColor: '#f87171' },
   { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 90, fireRate: 8, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' }
+];
+
+export const EXOTIC_WEAPONS: Weapon[] = [
+  { id: 'exotic_wave', name: 'Wave Disruptor', type: WeaponType.LASER, price: 0, damage: 60, fireRate: 10, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#f472b6' },
+  { id: 'exotic_bolt', name: 'Stormbringer', type: WeaponType.LASER, price: 0, damage: 85, fireRate: 8, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#60a5fa' },
+  { id: 'exotic_beam', name: 'Singularity Ray', type: WeaponType.LASER, price: 0, damage: 12, fireRate: 60, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7' },
+  { id: 'exotic_spiral', name: 'Vortex Cannon', type: WeaponType.PROJECTILE, price: 0, damage: 120, fireRate: 5, energyCost: 40, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24' },
+  { id: 'exotic_split', name: 'Cinder Rounds', type: WeaponType.PROJECTILE, price: 0, damage: 40, fireRate: 12, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444' },
+  { id: 'exotic_saw', name: 'Rip-Saw Launcher', type: WeaponType.PROJECTILE, price: 0, damage: 150, fireRate: 3, energyCost: 50, cargoWeight: 0, isAmmoBased: false, beamColor: '#94a3b8' },
+  { id: 'exotic_grav', name: 'Gravity Spike', type: WeaponType.LASER, price: 0, damage: 200, fireRate: 2, energyCost: 80, cargoWeight: 0, isAmmoBased: false, beamColor: '#38bdf8' },
+  { id: 'exotic_plasma', name: 'Nova Blaster', type: WeaponType.LASER, price: 0, damage: 100, fireRate: 7, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#22c55e' },
+  { id: 'exotic_flame', name: 'Solar Lance', type: WeaponType.LASER, price: 0, damage: 55, fireRate: 15, energyCost: 10, cargoWeight: 0, isAmmoBased: false, beamColor: '#f97316' },
+  { id: 'exotic_acid', name: 'Venom Spore', type: WeaponType.PROJECTILE, price: 0, damage: 30, fireRate: 20, energyCost: 12, cargoWeight: 0, isAmmoBased: false, beamColor: '#84cc16' }
 ];
 
 export const SHIELDS: Shield[] = [
