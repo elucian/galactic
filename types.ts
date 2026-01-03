@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V4.7
-// VERSION: V4.7
+// CHECKPOINT: Defender V61.1
+// VERSION: V61.1
 export enum MissionType {
   DEFENSE = 'DEFENSE',
   ATTACK = 'ATTACK',
@@ -34,6 +34,7 @@ export interface Weapon {
   energyCost: number;
   cargoWeight: number;
   isAmmoBased: boolean;
+  beamColor?: string; 
 }
 
 export interface Shield {
@@ -44,6 +45,7 @@ export interface Shield {
   regenRate: number;
   energyCost: number;
   visualType: 'full' | 'forward';
+  color: string;
 }
 
 export interface ShipConfig {
@@ -54,20 +56,27 @@ export interface ShipConfig {
   maxEnergy: number;
   maxCargo: number;
   speed: number;
-  shape: 'arrow' | 'block' | 'wing' | 'stealth' | 'mine-layer';
+  shape: 'arrow' | 'block' | 'wing' | 'stealth' | 'mine-layer' | 'saucer' | 'frigate' | 'star-t' | 'dragonfly';
   canLayMines: boolean;
   defaultColor?: string;
+  engines: number; 
+  defaultGuns: number;
+  noseType: 'rounded' | 'flat';
+  wingConfig: 'front-heavy' | 'rear-heavy' | 'balanced';
 }
 
-export type DisplayMode = 'windowed' | 'fullscreen';
-
-export interface GameSettings {
-  musicVolume: number;
-  sfxVolume: number;
-  musicEnabled: boolean;
-  sfxEnabled: boolean;
-  displayMode: DisplayMode;
-  autosaveEnabled: boolean;
+export interface ShipFitting {
+  weapons: EquippedWeapon[];
+  shieldId: string | null;
+  secondShieldId: string | null;
+  reactorLevel: number;
+  engineType: 'standard' | 'fusion' | 'afterburner' | 'smoke-trail';
+  rocketCount: number;
+  mineCount: number;
+  wingWeaponId: string | null;
+  health: number;
+  ammoPercent: number;
+  lives: number; // Added tracking for 3-loss limit
 }
 
 export interface EquippedWeapon {
@@ -75,17 +84,25 @@ export interface EquippedWeapon {
   count: number;
 }
 
-export interface ShipFitting {
-  weapons: EquippedWeapon[];
-  shieldId: string | null;
+export interface OwnedShipInstance {
+  instanceId: string;
+  shipTypeId: string;
 }
 
 export interface GameState {
   credits: number;
-  selectedShipId: string | null;
-  ownedShips: string[];
+  selectedShipInstanceId: string | null;
+  ownedShips: OwnedShipInstance[];
   shipFittings: Record<string, ShipFitting>; 
   shipColors: Record<string, string>; 
+  shipWingColors: Record<string, string>; 
+  shipCockpitColors: Record<string, string>; 
+  shipBeamColors: Record<string, string>;
+  shipGunColors: Record<string, string>; 
+  shipGunBodyColors: Record<string, string>;
+  shipEngineColors: Record<string, string>;
+  shipBarColors: Record<string, string>;
+  shipNozzleColors: Record<string, string>;
   currentPlanet: Planet | null;
   currentMoon: Moon | null;
   currentMission: MissionType | null;
@@ -102,6 +119,20 @@ export interface GameState {
   activeTaskForceIndex: number;
   pilotName: string;
   pilotAvatar: string;
+  gameInProgress: boolean;
+  victories: number;
+  failures: number;
+}
+
+export type DisplayMode = 'windowed' | 'fullscreen';
+
+export interface GameSettings {
+  musicVolume: number;
+  sfxVolume: number;
+  musicEnabled: boolean;
+  sfxEnabled: boolean;
+  displayMode: DisplayMode;
+  autosaveEnabled: boolean;
 }
 
 export interface Moon {

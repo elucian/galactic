@@ -16,12 +16,11 @@
             padding: 0;
             width: 100%;
             height: 100%;
-            height: -webkit-fill-available;
             background-color: #09090b;
             color: #ecfdf5;
             overflow: hidden;
             font-family: 'Share Tech Mono', monospace;
-            position: fixed; /* Prevents elastic scrolling on iOS */
+            position: fixed;
         }
         #root {
             width: 100%;
@@ -29,24 +28,30 @@
             display: flex;
             flex-direction: column;
         }
-        /* Ensure all standard UI elements use the default arrow cursor */
-        button, input, select, textarea, a, label, .ui-panel {
-            cursor: auto !important;
-        }
         .retro-font {
             font-family: 'Press Start 2P', cursive;
         }
         canvas {
             image-rendering: pixelated;
         }
-        @keyframes rotate-dashed {
-            from { transform: translate(-50%, -50%) rotate(0deg); }
-            to { transform: translate(-50%, -50%) rotate(360deg); }
+        /* Orientation Warning */
+        #orientation-warning {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #000;
+            z-index: 9999;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
         }
-        .animate-rotate-dashed {
-            animation: rotate-dashed 10s linear infinite;
+        @media (orientation: portrait) {
+            #orientation-warning {
+                display: flex;
+            }
         }
-        /* Custom scrollbar for small areas that might need it internally */
         .custom-scrollbar::-webkit-scrollbar {
             width: 4px;
         }
@@ -70,6 +75,11 @@
 </script>
 </head>
 <body>
+    <div id="orientation-warning">
+        <div class="text-4xl mb-4">🔄</div>
+        <div class="retro-font text-emerald-500 text-xs uppercase mb-2">PLEASE ROTATE DEVICE</div>
+        <p class="text-zinc-500 text-[10px] uppercase">This operation requires landscape orientation.</p>
+    </div>
     <div id="root"></div>
 </body>
 </html>
