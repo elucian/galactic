@@ -1,13 +1,13 @@
 
-// CHECKPOINT: Defender V79.3
-// VERSION: V79.3 - The Ultimate Restoration
+// CHECKPOINT: Defender V79.4
+// VERSION: V79.4 - The Stability & Layout Patch
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon } from './types';
 import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants';
 import { audioService } from './services/audioService';
 import GameEngine from './components/GameEngine';
 
-const SAVE_KEY = 'galactic_defender_v79_3';
+const SAVE_KEY = 'galactic_defender_v79_4';
 const MAX_FLEET_SIZE = 3;
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
@@ -21,7 +21,7 @@ const StarBackground = () => {
     const ctx = canvas.getContext('2d'); if (!ctx) return;
     const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; };
     window.addEventListener('resize', resize); resize();
-    const stars = Array.from({ length: 300 }).map(() => ({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, s: Math.random() * 2, v: 0.1 + Math.random() * 0.4 }));
+    const stars = Array.from({ length: 250 }).map(() => ({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, s: Math.random() * 2, v: 0.1 + Math.random() * 0.4 }));
     let anim: number;
     const loop = () => { ctx.fillStyle = '#010103'; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.fillStyle = '#fff'; stars.forEach(s => { s.y += s.v; if (s.y > canvas.height) s.y = 0; ctx.fillRect(s.x, s.y, s.s, s.s); }); anim = requestAnimationFrame(loop); };
     loop();
@@ -75,7 +75,6 @@ const App: React.FC = () => {
     const initialFittings: Record<string, ShipFitting> = {};
     const initialColors: Record<string, string> = {};
     initialOwned.forEach((os) => { 
-      // NEW: Ships start with 3 fuel, but 0 weapons and 0 ammo.
       initialFittings[os.instanceId] = { weapons: [], shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', rocketCount: 0, mineCount: 0, wingWeaponId: null, health: 100, ammoPercent: 100, lives: 1, fuel: 3 }; 
       initialColors[os.instanceId] = SHIPS[0].defaultColor || '#94a3b8'; 
     });
@@ -103,7 +102,6 @@ const App: React.FC = () => {
 
   useEffect(() => localStorage.setItem(SAVE_KEY, JSON.stringify(gameState)), [gameState]);
 
-  // NEW: Check for Game Over condition
   useEffect(() => {
     if (gameState.credits < 5000 && screen === 'hangar') {
         const canFly = (Object.values(gameState.shipFittings) as ShipFitting[]).some(f => f.fuel > 0 && f.weapons.length > 0);
@@ -141,27 +139,27 @@ const App: React.FC = () => {
     audioService.playSfx('buy');
   };
 
-  const mountWeapon = (w: Weapon) => {
+  const mountWeaponToSlot = (w: Weapon, slotIdx: number) => {
     const sId = gameState.selectedShipInstanceId; if (!sId || !selectedFitting) return;
-    const current = selectedFitting.weapons[activeSlot];
+    const current = selectedFitting.weapons[slotIdx];
     let refund = 0; if (current) { const oldW = WEAPONS.find(xw => xw.id === current.id); if (oldW) refund = oldW.price; }
     const cost = w.price - refund;
     if (gameState.credits < cost) { audioService.playSfx('denied'); return; }
     setGameState(p => {
-      const newWeps = [...selectedFitting.weapons]; newWeps[activeSlot] = { id: w.id, count: 1 };
+      const newWeps = [...selectedFitting.weapons]; newWeps[slotIdx] = { id: w.id, count: 1 };
       return { ...p, credits: p.credits - cost, shipFittings: { ...p.shipFittings, [sId]: { ...selectedFitting, weapons: newWeps } } };
     });
     audioService.playSfx('buy');
   };
 
-  const removeWeapon = () => {
+  const removeWeaponFromSlot = (slotIdx: number) => {
     const sId = gameState.selectedShipInstanceId; if (!sId || !selectedFitting) return;
-    const current = selectedFitting.weapons[activeSlot];
+    const current = selectedFitting.weapons[slotIdx];
     if (!current) return;
     const oldW = WEAPONS.find(xw => xw.id === current.id);
     const refund = oldW ? oldW.price : 0;
     setGameState(p => {
-      const newWeps = [...selectedFitting.weapons]; newWeps[activeSlot] = undefined as any;
+      const newWeps = [...selectedFitting.weapons]; newWeps[slotIdx] = undefined as any;
       return { ...p, credits: p.credits + refund, shipFittings: { ...p.shipFittings, [sId]: { ...selectedFitting, weapons: newWeps.filter(Boolean) } } };
     });
     audioService.playSfx('click');
@@ -230,8 +228,8 @@ const App: React.FC = () => {
           <div className="flex flex-col gap-4 z-20">
             <button onClick={() => setScreenState('hangar')} className="py-5 px-16 border-2 border-emerald-500 text-xs font-black uppercase tracking-widest hover:bg-emerald-500/10 transition-all">ENGAGE SDI PROTOCOL</button>
             <div className="flex gap-4">
-               <button onClick={() => setShowManual(true)} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800">MANUAL</button>
-               <button onClick={() => alert("Settings: V79.3 stable. Terminology: Missiles. Logistics: High Risk.")} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800">OPTIONS</button>
+               <button onClick={() => setShowManual(true)} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">MANUAL</button>
+               <button onClick={() => alert("System: V79.4 Stable. Offline Ready. No API Required.")} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">OPTIONS</button>
             </div>
           </div>
           {showManual && (
@@ -308,13 +306,22 @@ const App: React.FC = () => {
                     </div>
                     <div className="grid grid-cols-1 gap-4">
                       {WEAPONS.map(w => {
-                        const isEquipped = selectedFitting.weapons[activeSlot]?.id === w.id;
+                        const isEquippedSlot0 = selectedFitting.weapons[0]?.id === w.id;
+                        const isEquippedSlot1 = selectedFitting.weapons[1]?.id === w.id;
                         return (
                           <div key={w.id} className="p-5 bg-zinc-900/40 border border-zinc-800 rounded flex justify-between items-center group">
                             <div><div className="text-[11px] font-black uppercase group-hover:text-emerald-400">{w.name}</div><div className="text-[9px] text-yellow-500 mt-1">${w.price.toLocaleString()}</div></div>
                             <div className="flex gap-2">
-                               <button onClick={() => mountWeapon(w)} disabled={isEquipped} className={`px-8 py-3 text-[9px] font-black uppercase rounded ${isEquipped ? 'bg-zinc-800 text-zinc-600 cursor-default' : 'bg-emerald-600/10 border border-emerald-500/30 text-emerald-500 hover:bg-emerald-600 hover:text-white'}`}>MOUNT EQUIP</button>
-                               <button onClick={removeWeapon} disabled={!isEquipped} className={`px-8 py-3 text-[9px] font-black uppercase rounded border ${isEquipped ? 'border-red-500/30 text-red-500 hover:bg-red-600 hover:text-white' : 'border-zinc-800 text-zinc-700 cursor-default'}`}>REMOVE</button>
+                               {selectedShipConfig.defaultGuns >= 1 && (
+                                 <button onClick={() => isEquippedSlot0 ? removeWeaponFromSlot(0) : mountWeaponToSlot(w, 0)} className={`px-4 py-3 text-[9px] font-black uppercase rounded border transition-all ${isEquippedSlot0 ? 'border-red-500 text-red-500 hover:bg-red-500 hover:text-white' : 'border-emerald-500/30 text-emerald-500 hover:bg-emerald-600 hover:text-white'}`}>
+                                   {isEquippedSlot0 ? 'REMOVE L' : 'MOUNT L'}
+                                 </button>
+                               )}
+                               {selectedShipConfig.defaultGuns >= 2 && (
+                                 <button onClick={() => isEquippedSlot1 ? removeWeaponFromSlot(1) : mountWeaponToSlot(w, 1)} className={`px-4 py-3 text-[9px] font-black uppercase rounded border transition-all ${isEquippedSlot1 ? 'border-red-500 text-red-500 hover:bg-red-500 hover:text-white' : 'border-emerald-500/30 text-emerald-500 hover:bg-emerald-600 hover:text-white'}`}>
+                                   {isEquippedSlot1 ? 'REMOVE R' : 'MOUNT R'}
+                                 </button>
+                               )}
                             </div>
                           </div>
                         );
@@ -357,14 +364,16 @@ const App: React.FC = () => {
                           <div key={s.id} className="p-5 bg-zinc-900/40 border border-zinc-800 rounded flex flex-col gap-4">
                             <div className="flex justify-between items-center">
                               <div><div className="text-[11px] font-black uppercase">{s.name}</div><div className="text-[9px] text-yellow-500 mt-1">${s.price.toLocaleString()}</div></div>
-                              <div className="flex flex-col gap-2">
-                                <div className="flex gap-2">
-                                  <button onClick={() => equipShield(s, 1)} disabled={isPrimary} className={`px-4 py-2 text-[8px] font-black uppercase rounded border ${isPrimary ? 'bg-blue-600 text-white border-blue-400' : 'border-blue-500/30 text-blue-500 hover:bg-blue-600/10'}`}>PRIMARY EQUIP</button>
-                                  <button onClick={() => removeShield(1)} disabled={!isPrimary} className="px-4 py-2 text-[8px] font-black uppercase rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 disabled:opacity-10 transition-all">REMOVE</button>
+                              <div className="flex gap-2">
+                                <div className="flex flex-col gap-1 items-center">
+                                  <button onClick={() => isPrimary ? removeShield(1) : equipShield(s, 1)} className={`px-4 py-2 text-[8px] font-black uppercase rounded border transition-all ${isPrimary ? 'bg-blue-600 text-white border-blue-400' : 'border-blue-500/30 text-blue-500 hover:bg-blue-600/10'}`}>
+                                    {isPrimary ? 'REMOVE PRI' : 'PRIMARY'}
+                                  </button>
                                 </div>
-                                <div className="flex gap-2">
-                                  <button onClick={() => equipShield(s, 2)} disabled={isSecondary} className={`px-4 py-2 text-[8px] font-black uppercase rounded border ${isSecondary ? 'bg-red-600 text-white border-red-400' : 'border-red-500/30 text-red-500 hover:bg-red-600/10'}`}>SECONDARY EQUIP</button>
-                                  <button onClick={() => removeShield(2)} disabled={!isSecondary} className="px-4 py-2 text-[8px] font-black uppercase rounded border border-red-500/30 text-red-500 hover:bg-red-500/10 disabled:opacity-10 transition-all">REMOVE</button>
+                                <div className="flex flex-col gap-1 items-center">
+                                  <button onClick={() => isSecondary ? removeShield(2) : equipShield(s, 2)} className={`px-4 py-2 text-[8px] font-black uppercase rounded border transition-all ${isSecondary ? 'bg-red-600 text-white border-red-400' : 'border-red-500/30 text-red-500 hover:bg-red-600/10'}`}>
+                                    {isSecondary ? 'REMOVE SEC' : 'SECONDARY'}
+                                  </button>
                                 </div>
                               </div>
                             </div>
@@ -391,7 +400,7 @@ const App: React.FC = () => {
                   <button key={q} onClick={() => setGameState(p => ({ ...p, currentQuadrant: q, currentPlanet: null }))} className={`px-5 py-2 text-[10px] font-black uppercase rounded border transition-all ${gameState.currentQuadrant === q ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-zinc-900 border-zinc-800 text-zinc-500'}`}>{q} SECTOR</button>
                 ))}
              </div>
-             <button onClick={() => setScreenState('hangar')} className="px-8 py-2 bg-zinc-900 border border-zinc-700 text-[10px] uppercase font-black rounded-lg hover:bg-zinc-800">RETURN TO BASE</button>
+             <button onClick={() => setScreenState('hangar')} className="px-8 py-2 bg-zinc-900 border border-zinc-700 text-[10px] uppercase font-black rounded-lg hover:bg-zinc-800 transition-colors">RETURN TO BASE</button>
           </header>
           <div className="flex-grow flex flex-wrap items-center justify-center gap-16">
              {PLANETS.filter(p => p.quadrant === gameState.currentQuadrant).map(p => (
