@@ -34,24 +34,6 @@
         canvas {
             image-rendering: pixelated;
         }
-        /* Orientation Warning */
-        #orientation-warning {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: #000;
-            z-index: 9999;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            padding: 2rem;
-        }
-        @media (orientation: portrait) {
-            #orientation-warning {
-                display: flex;
-            }
-        }
         .custom-scrollbar::-webkit-scrollbar {
             width: 4px;
         }
@@ -74,11 +56,6 @@
 </script>
 </head>
 <body>
-    <div id="orientation-warning">
-        <div class="text-4xl mb-4">🔄</div>
-        <div class="retro-font text-emerald-500 text-xs uppercase mb-2">PLEASE ROTATE DEVICE</div>
-        <p class="text-zinc-500 text-[10px] uppercase">This operation requires landscape orientation.</p>
-    </div>
     <div id="root"></div>
 </body>
 </html>

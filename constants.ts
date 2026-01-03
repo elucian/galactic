@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V79.9
-// VERSION: V79.9
+// CHECKPOINT: Defender V80.13
+// VERSION: V80.13
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -49,9 +49,10 @@ export const EXOTIC_WEAPONS: Weapon[] = [
 ];
 
 export const SHIELDS: Shield[] = [
-  { id: 'sh_alpha', name: 'Cobalt Blue Front (Dashed)', price: 10000, capacity: 250, regenRate: 5, energyCost: 20, visualType: 'forward', color: '#3b82f6' },
-  { id: 'sh_beta', name: 'Solar Red Glow (Concentric)', price: 25000, capacity: 500, regenRate: 10, energyCost: 40, visualType: 'forward', color: '#ef4444' },
-  { id: 'sh_gamma', name: 'Omni-Sphere Crystal', price: 75000, capacity: 1200, regenRate: 25, energyCost: 80, visualType: 'inner-full', color: '#38bdf8' }
+  { id: 'sh_alpha', name: 'Cobalt Blue Front', price: 10000, capacity: 250, regenRate: 5, energyCost: 20, visualType: 'forward', color: '#3b82f6' },
+  { id: 'sh_beta', name: 'Solar Red Glow', price: 25000, capacity: 500, regenRate: 10, energyCost: 40, visualType: 'forward', color: '#ef4444' },
+  { id: 'sh_gamma', name: 'Omni-Sphere Crystal', price: 75000, capacity: 1200, regenRate: 25, energyCost: 80, visualType: 'inner-full', color: '#38bdf8' },
+  { id: 'sh_omega', name: 'Nova Kinetic Shell', price: 150000, capacity: 2000, regenRate: 35, energyCost: 120, visualType: 'inner-full', color: '#d946ef' }
 ];
 
 export const DEFENSE_SYSTEMS = [
