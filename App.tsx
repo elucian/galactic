@@ -1,18 +1,18 @@
 
-// CHECKPOINT: Defender V79.9
-// VERSION: V79.9 - Exotic Loot Persistence
+// CHECKPOINT: Defender V80.0
+// VERSION: V80.0 - Heavy Ordnance Update
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon, EquippedWeapon } from './types';
 import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants';
 import { audioService } from './services/audioService';
 import GameEngine from './components/GameEngine';
 
-const SAVE_KEY = 'galactic_defender_v79_9';
+const SAVE_KEY = 'galactic_defender_v80_0';
 const MAX_FLEET_SIZE = 3;
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const MAX_MISSILES = 50;
-const MAX_MINES = 20;
+const MAX_MINES = 50; // UPDATED: Increased to 50
 const MAX_FUEL_UNITS = 3;
 const DEFAULT_WEAPON_ID = WEAPONS[0].id;
 
@@ -133,8 +133,6 @@ const App: React.FC = () => {
       const newFits = { ...prev.shipFittings };
       if (!wasAborted) {
         const nextHealth = success ? fit.health : Math.max(0, fit.health - 50);
-        // Persist exotic loot only if ship is NOT destroyed
-        // Fix typo: change DEFAULT_WE_ID to DEFAULT_WEAPON_ID
         const finalWeapons = nextHealth <= 0 ? [{ id: DEFAULT_WEAPON_ID, count: 1 }] : (payload?.weapons || fit.weapons);
         
         newFits[sId] = { 
@@ -255,7 +253,7 @@ const App: React.FC = () => {
             <button onClick={() => setScreenState('hangar')} className="py-5 px-16 border-2 border-emerald-500 text-xs font-black uppercase tracking-widest hover:bg-emerald-500/10 transition-all">ENGAGE SDI PROTOCOL</button>
             <div className="flex gap-4">
                <button onClick={() => setShowManual(true)} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">MANUAL</button>
-               <button onClick={() => alert("System: V79.9 Exotic Loot active. Persistence verified. Window scaling stable.")} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">OPTIONS</button>
+               <button onClick={() => alert("System: V80.0 Ordnance Update. Mine capacity increased to 50 units. Kinetic shockwave protocols engaged.")} className="flex-grow py-3 px-6 bg-zinc-950/80 border border-zinc-700 text-[10px] uppercase font-black hover:bg-zinc-800 transition-colors">OPTIONS</button>
             </div>
           </div>
           {showManual && (
@@ -266,9 +264,9 @@ const App: React.FC = () => {
                   <p>• [WASD / ARROWS] TO MANEUVER SHIP</p>
                   <p>• [SPACE] TO FIRE PRIMARY CANNONS</p>
                   <p>• [TAB] TO LAUNCH TRACKING MISSILES</p>
-                  <p>• [CAPS LOCK] TO DEPLOY GRAVITY MINES</p>
+                  <p>• [CAPS LOCK] TO DEPLOY KINETIC SHOCK MINES</p>
                   <p>• [ESC] TO ABORT MISSION</p>
-                  <p className="text-red-500 mt-4 font-black">LOGISTICS: BOSSES DROP EXOTIC LOOT. THESE WEAPONS PERSIST UNTIL RE-EQUIPPED OR SHIP LOSS.</p>
+                  <p className="text-red-500 mt-4 font-black">LOGISTICS: MINES HAVE AOE RADIUS. RE-LOAD CAPACITY EXTENDED TO 50.</p>
                 </div>
                 <button onClick={() => setShowManual(false)} className="w-full py-4 bg-emerald-600/20 border border-emerald-500 text-emerald-500 font-black uppercase text-[10px]">ACKNOWLEDGED</button>
               </div>
