@@ -1,13 +1,13 @@
 
-// CHECKPOINT: Defender V80.32
-// VERSION: V80.32 - UI Polish
+// CHECKPOINT: Defender V80.33
+// VERSION: V80.33 - Distribution Stability
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon, EquippedWeapon } from './types';
-import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants';
-import { audioService } from './services/audioService';
-import GameEngine from './components/GameEngine';
+import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon, EquippedWeapon } from './types.ts';
+import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants.ts';
+import { audioService } from './services/audioService.ts';
+import GameEngine from './components/GameEngine.tsx';
 
-const SAVE_KEY = 'galactic_defender_v80_31';
+const SAVE_KEY = 'galactic_defender_v80_33';
 const MAX_FLEET_SIZE = 3;
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
@@ -158,8 +158,6 @@ const App: React.FC = () => {
       const newFits = { ...prev.shipFittings };
       const totalReward = finalScore * (payload?.bossDefeated ? 2 : 1);
 
-      // TRUST THE ENGINE: The engine now handles gradual decay of health/fuel during explosion.
-      // If the animation finishes, payload reports final state. If aborted, it reports partial state.
       const nextHealth = payload?.health !== undefined ? payload.health : fit.health;
       const nextFuel = payload?.fuel !== undefined ? payload.fuel : fit.fuel;
 

@@ -1,8 +1,9 @@
-// CHECKPOINT: Defender V3.4
-// VERSION: V3.4
+
+// CHECKPOINT: Defender V80.33
+// VERSION: V80.33
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+import App from './App.tsx';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
