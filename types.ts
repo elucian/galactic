@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V61.1
-// VERSION: V61.1
+// CHECKPOINT: Defender V71.0
+// VERSION: V71.0
 export enum MissionType {
   DEFENSE = 'DEFENSE',
   ATTACK = 'ATTACK',
@@ -44,7 +44,7 @@ export interface Shield {
   capacity: number;
   regenRate: number;
   energyCost: number;
-  visualType: 'full' | 'forward';
+  visualType: 'full' | 'forward' | 'inner-full';
   color: string;
 }
 
@@ -69,6 +69,7 @@ export interface ShipFitting {
   weapons: EquippedWeapon[];
   shieldId: string | null;
   secondShieldId: string | null;
+  flareId: string | null;
   reactorLevel: number;
   engineType: 'standard' | 'fusion' | 'afterburner' | 'smoke-trail';
   rocketCount: number;
@@ -76,7 +77,8 @@ export interface ShipFitting {
   wingWeaponId: string | null;
   health: number;
   ammoPercent: number;
-  lives: number; // Added tracking for 3-loss limit
+  lives: number;
+  fuel: number;
 }
 
 export interface EquippedWeapon {
@@ -88,6 +90,8 @@ export interface OwnedShipInstance {
   instanceId: string;
   shipTypeId: string;
 }
+
+export type ShipPart = 'hull' | 'wings' | 'cockpit' | 'guns' | 'gun_body' | 'engines' | 'bars' | 'nozzles';
 
 export interface GameState {
   credits: number;
@@ -122,6 +126,7 @@ export interface GameState {
   gameInProgress: boolean;
   victories: number;
   failures: number;
+  typeColors: Record<string, Record<ShipPart, string>>;
 }
 
 export type DisplayMode = 'windowed' | 'fullscreen';

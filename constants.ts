@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V34.0
-// VERSION: V34.0 - Galactic Map Restoration
+// CHECKPOINT: Defender V79.3
+// VERSION: V79.3
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -14,7 +14,7 @@ export interface ExtendedShipConfig extends ShipConfig {
 }
 
 export const SHIPS: ExtendedShipConfig[] = [
-  { id: 'vanguard', name: 'Gray Interceptor', description: 'Single-engine starter. Reliable and narrow.', price: 0, maxEnergy: 100, maxCargo: 50, speed: 6, shape: 'arrow', canLayMines: false, defaultColor: '#94a3b8', engines: 1, defaultGuns: 1, noseType: 'rounded', wingConfig: 'rear-heavy', gunMount: 'hull', wingStyle: 'delta', wingCurve: 'backward', hullShapeType: 'triangle', extraDetail: 'none' },
+  { id: 'vanguard', name: 'Gray Interceptor', description: 'Standard Initiative hull. Reliable and narrow.', price: 5000, maxEnergy: 100, maxCargo: 50, speed: 6, shape: 'arrow', canLayMines: false, defaultColor: '#94a3b8', engines: 1, defaultGuns: 1, noseType: 'rounded', wingConfig: 'rear-heavy', gunMount: 'hull', wingStyle: 'delta', wingCurve: 'backward', hullShapeType: 'triangle', extraDetail: 'none' },
   { id: 'ufo', name: 'Disk Mk. II', description: 'Advanced saucer hull. Purely rounded geometry.', price: 30000, maxEnergy: 150, maxCargo: 40, speed: 7, shape: 'saucer', canLayMines: false, defaultColor: '#64748b', engines: 1, defaultGuns: 1, noseType: 'rounded', wingConfig: 'balanced', gunMount: 'hull', wingStyle: 'parenthesis', wingCurve: 'neutral', hullShapeType: 'oval', extraDetail: 'antenna' },
   { id: 'dragonfly', name: 'V-Dragon', description: 'Front-maneuvering canards. Engines on struts.', price: 45000, maxEnergy: 200, maxCargo: 60, speed: 8, shape: 'dragonfly', canLayMines: false, defaultColor: '#475569', engines: 2, defaultGuns: 2, noseType: 'rounded', wingConfig: 'front-heavy', gunMount: 'wing', wingStyle: 'curved', wingCurve: 'forward', hullShapeType: 'finger', extraDetail: 'reservoir' },
   { id: 'star_t', name: 'Vector T-9', description: 'Heavy chassis with strut-mounted long cannons.', price: 65000, maxEnergy: 250, maxCargo: 50, speed: 7.5, shape: 'star-t', canLayMines: false, defaultColor: '#cbd5e1', engines: 2, defaultGuns: 2, noseType: 'flat', wingConfig: 'rear-heavy', gunMount: 'strut', wingStyle: 'delta', wingCurve: 'backward', hullShapeType: 'trapezoid', extraDetail: 'both' },
@@ -29,12 +29,27 @@ export const SHIPS: ExtendedShipConfig[] = [
 ];
 
 export const WEAPONS: Weapon[] = [
-  { id: 'gun_bolt', name: 'Ion Pulse', type: WeaponType.PROJECTILE, price: 6000, damage: 15, fireRate: 6, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#60a5fa' },
-  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 12000, damage: 10, fireRate: 18, energyCost: 20, cargoWeight: 10, isAmmoBased: true, beamColor: '#fbbf24' }
+  { id: 'gun_bolt', name: 'Ion Pulse', type: WeaponType.PROJECTILE, price: 5000, damage: 15, fireRate: 6, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#60a5fa' },
+  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 12, fireRate: 18, energyCost: 20, cargoWeight: 10, isAmmoBased: true, beamColor: '#fbbf24' },
+  { id: 'gun_heavy', name: 'Heavy Autocannon', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 4, energyCost: 40, cargoWeight: 25, isAmmoBased: true, beamColor: '#f87171' },
+  { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 90, fireRate: 8, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' }
 ];
 
 export const SHIELDS: Shield[] = [
-  { id: 'sh_alpha', name: 'Standard Semicircle', price: 5000, capacity: 200, regenRate: 4, energyCost: 15, visualType: 'forward', color: '#60a5fa' }
+  { id: 'sh_alpha', name: 'Cobalt Blue Front (Dashed)', price: 10000, capacity: 250, regenRate: 5, energyCost: 20, visualType: 'forward', color: '#3b82f6' },
+  { id: 'sh_beta', name: 'Solar Red Glow (Concentric)', price: 25000, capacity: 500, regenRate: 10, energyCost: 40, visualType: 'forward', color: '#ef4444' },
+  { id: 'sh_gamma', name: 'Omni-Sphere Crystal', price: 75000, capacity: 1200, regenRate: 25, energyCost: 80, visualType: 'inner-full', color: '#38bdf8' }
+];
+
+export const DEFENSE_SYSTEMS = [
+  { id: 'df_flares', name: 'Flare Dispenser Mk I', price: 15000, description: 'Anti-missile countermeasure system.' }
+];
+
+export const EXPLODING_ORDNANCE = [
+  { id: 'ord_missile_light', name: 'Sparrow Missiles', price: 8000, count: 10 },
+  { id: 'ord_missile_heavy', name: 'Titan Missiles', price: 25000, count: 10 },
+  { id: 'ord_mine_std', name: 'Gravity Mines', price: 12000, count: 10 },
+  { id: 'ord_mine_plasma', name: 'Plasma Core Mines', price: 45000, count: 10 }
 ];
 
 export const ENGINES = [
@@ -49,19 +64,12 @@ export const REACTORS = [
 ];
 
 export const PLANETS: Planet[] = [
-  // ALFA SECTOR
   { id: 'p1', name: 'New Horizon', description: 'Central hub of the Terran Alliance.', difficulty: 1, status: 'friendly', orbitRadius: 60, orbitSpeed: 0.005, orbitDirection: 1, size: 2.5, color: '#064e3b', quadrant: QuadrantType.ALFA, moons: [] },
   { id: 'p2', name: 'Aegis IV', description: 'Shield production world under threat.', difficulty: 2, status: 'siege', orbitRadius: 100, orbitSpeed: 0.003, size: 2.0, color: '#334155', quadrant: QuadrantType.ALFA, moons: [] },
-  
-  // BETA SECTOR
   { id: 'p3', name: 'Vulcan Forge', description: 'High-gravity volcanic weapon testing site.', difficulty: 3, status: 'occupied', orbitRadius: 80, orbitSpeed: 0.004, size: 3.2, color: '#991b1b', quadrant: QuadrantType.BETA, moons: [] },
   { id: 'p4', name: 'Tundra Prime', description: 'Frozen wasteland rich in coolant crystals.', difficulty: 4, status: 'siege', orbitRadius: 140, orbitSpeed: 0.002, size: 2.8, color: '#60a5fa', quadrant: QuadrantType.BETA, moons: [] },
-
-  // GAMA SECTOR
   { id: 'p5', name: 'Crystalline Void', description: 'Anomalous sector with refractive gas clouds.', difficulty: 5, status: 'occupied', orbitRadius: 90, orbitSpeed: 0.006, size: 2.1, color: '#a855f7', quadrant: QuadrantType.GAMA, moons: [] },
   { id: 'p6', name: 'Bio-Sphere X', description: 'Lush planet reclaimed by alien fauna.', difficulty: 6, status: 'siege', orbitRadius: 120, orbitSpeed: 0.002, size: 3.5, color: '#10b981', quadrant: QuadrantType.GAMA, moons: [] },
-
-  // DELTA SECTOR
   { id: 'p7', name: 'Dread Shore', description: 'Dark matter refinery on the galactic rim.', difficulty: 8, status: 'occupied', orbitRadius: 70, orbitSpeed: 0.008, size: 4.0, color: '#171717', quadrant: QuadrantType.DELTA, moons: [] },
   { id: 'p8', name: 'Final Frontier', description: 'The absolute edge of colonized space.', difficulty: 10, status: 'siege', orbitRadius: 150, orbitSpeed: 0.001, size: 2.5, color: '#ffffff', quadrant: QuadrantType.DELTA, moons: [] }
 ];
