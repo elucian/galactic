@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V80.13
-// VERSION: V80.13 - Kinetic Interception Protocol
+// CHECKPOINT: Defender V80.31
+// VERSION: V80.31 - Time-based Destruction
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, Weapon, EquippedWeapon } from '../types';
 import { audioService } from '../services/audioService';
@@ -21,11 +21,11 @@ interface GameEngineProps {
   shield: Shield | null;
   secondShield?: Shield | null;
   difficulty: number;
-  onGameOver: (success: boolean, finalScore: number, wasAborted?: boolean, payload?: { rockets: number, mines: number, weapons: EquippedWeapon[], bossDefeated?: boolean }) => void;
+  onGameOver: (success: boolean, finalScore: number, wasAborted?: boolean, payload?: { rockets: number, mines: number, weapons: EquippedWeapon[], fuel: number, bossDefeated?: boolean, health: number }) => void;
 }
 
 interface Particle {
-  x: number; y: number; vx: number; vy: number; life: number; color: string; size: number; type: 'fire' | 'smoke' | 'spark' | 'debris' | 'shock';
+  x: number; y: number; vx: number; vy: number; life: number; color: string; size: number; type: 'fire' | 'smoke' | 'spark' | 'debris' | 'shock' | 'fuel';
 }
 
 class Enemy {
@@ -69,14 +69,19 @@ class Gift {
 
 const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, onGameOver, difficulty }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  
+  if (!ships || ships.length === 0) return <div className="p-20 text-center">SYSTEM ERROR: NO SHIP DATA</div>;
+  
   const activeShip = ships[0];
   const maxEnergy = activeShip?.config?.maxEnergy || 100;
-  const currentFuel = activeShip?.fitting?.fuel || 0;
-  const hasFuel = currentFuel > 0;
+  const initialFuel = activeShip?.fitting?.fuel || 0;
+  const initialIntegrity = activeShip?.fitting?.health || 100;
+  const maxFuelCapacity = activeShip?.config?.maxFuel || 1.0;
 
   const [stats, setStats] = useState({ 
-    hp: 100, sh1: shield?.capacity || 0, sh2: secondShield?.capacity || 0, energy: maxEnergy,
+    hp: initialIntegrity, sh1: shield?.capacity || 0, sh2: secondShield?.capacity || 0, energy: maxEnergy,
     score: 0, missiles: activeShip?.fitting?.rocketCount || 0, mines: activeShip?.fitting?.mineCount || 0,
+    fuel: initialFuel,
     boss: null as { hp: number, maxHp: number, sh: number, maxSh: number } | null,
     alert: ""
   });
@@ -86,13 +91,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
   const stateRef = useRef({
     px: 0, py: 0, hp: 100, sh1: shield?.capacity || 0, sh2: secondShield?.capacity || 0, energy: maxEnergy, score: 0,
+    integrity: initialIntegrity, // This is the persistent health value
+    fuel: initialFuel,
     bullets: [] as any[], enemyBullets: [] as any[], missiles: [] as Missile[], mines: [] as Mine[], 
     enemies: [] as Enemy[], particles: [] as Particle[], stars: [] as any[], gifts: [] as Gift[],
     keys: new Set<string>(), lastFire: 0, lastMissile: 0, lastMine: 0, lastSpawn: 0, gameActive: true, frame: 0,
     missileStock: activeShip?.fitting?.rocketCount || 0, mineStock: activeShip?.fitting?.mineCount || 0,
     equippedWeapons: [...(activeShip?.fitting?.weapons || [])],
     bossSpawned: false, bossDead: false, lootPending: false, shake: 0,
-    playerDead: false, deathTimer: 0,
+    playerDead: false, deathTimer: 0, deathIntegrityStart: initialIntegrity, deathFuelStart: initialFuel,
     lastW: window.innerWidth || 1024, lastH: window.innerHeight || 768
   });
 
@@ -239,7 +246,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     
     const handleKey = (e: KeyboardEvent, isDown: boolean) => {
       if (isDown) stateRef.current.keys.add(e.code); else stateRef.current.keys.delete(e.code);
-      if (isDown && e.code === 'Escape') { stateRef.current.gameActive = false; onGameOverRef.current(false, stateRef.current.score, true, { rockets: stateRef.current.missileStock, mines: stateRef.current.mineStock, weapons: stateRef.current.equippedWeapons, bossDefeated: stateRef.current.bossDead }); }
+      if (isDown && e.code === 'Escape') { 
+        stateRef.current.gameActive = false; 
+        onGameOverRef.current(false, stateRef.current.score, true, { rockets: stateRef.current.missileStock, mines: stateRef.current.mineStock, weapons: stateRef.current.equippedWeapons, fuel: stateRef.current.fuel, bossDefeated: stateRef.current.bossDead, health: stateRef.current.integrity }); 
+      }
       if (isDown && e.code === 'Tab' && !stateRef.current.playerDead) { e.preventDefault(); if (stateRef.current.missileStock > 0) { stateRef.current.missileStock--; setStats(p => ({ ...p, missiles: stateRef.current.missileStock })); stateRef.current.missiles.push(new Missile(stateRef.current.px, stateRef.current.py - 40, (Math.random() - 0.5) * 5, -8)); audioService.playWeaponFire('missile'); } }
       if (isDown && e.code === 'CapsLock' && !stateRef.current.playerDead) { e.preventDefault(); if (stateRef.current.mineStock > 0) { stateRef.current.mineStock--; setStats(p => ({ ...p, mines: stateRef.current.mineStock })); stateRef.current.mines.push(new Mine(stateRef.current.px, stateRef.current.py)); audioService.playWeaponFire('mine'); } }
     };
@@ -250,15 +260,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     let anim: number;
     const loop = () => {
       const s = stateRef.current; if (!s.gameActive) return; s.frame++; const pSpeed = 9.5;
+      const hasFuelInTank = s.fuel > 0;
       const isMoving = !s.playerDead && (s.keys.has('KeyW') || s.keys.has('ArrowUp') || s.keys.has('KeyS') || s.keys.has('ArrowDown') || s.keys.has('KeyA') || s.keys.has('ArrowLeft') || s.keys.has('KeyD') || s.keys.has('ArrowRight'));
-      
+      const isVertical = !s.playerDead && (s.keys.has('KeyW') || s.keys.has('ArrowUp') || s.keys.has('KeyS') || s.keys.has('ArrowDown'));
+
       if (!s.playerDead) {
-        if (hasFuel) {
+        if (isVertical && hasFuelInTank) {
           if (s.keys.has('KeyW') || s.keys.has('ArrowUp')) s.py -= pSpeed;
           if (s.keys.has('KeyS') || s.keys.has('ArrowDown')) s.py += pSpeed;
+          s.fuel = Math.max(0, s.fuel - 0.0008); 
         }
         if (s.keys.has('KeyA') || s.keys.has('ArrowLeft')) s.px -= pSpeed;
         if (s.keys.has('KeyD') || s.keys.has('ArrowRight')) s.px += pSpeed;
+        
         s.px = Math.max(35, Math.min(canvas.width - 35, s.px)); 
         s.py = Math.max(35, Math.min(canvas.height - 35, s.py));
         s.energy = Math.min(maxEnergy, s.energy + 0.4);
@@ -283,6 +297,23 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           s.energy -= 2.9 * s.equippedWeapons.length;
           audioService.playWeaponFire('cannon'); s.lastFire = Date.now();
         }
+      }
+
+      // FUEL LEAK & DECAY LOGIC (Always bind to integrity)
+      if (s.integrity < 100) {
+           const damageFactor = (100 - s.integrity) / 100;
+           if (Math.random() < damageFactor * 0.5) {
+               s.particles.push({
+                 x: s.px + (Math.random()-0.5)*20, y: s.py + 15, vx: (Math.random()-0.5)*2, vy: 5 + Math.random()*5,
+                 life: 1.0, size: 5 + Math.random()*10, color: 'rgba(30, 30, 30, 0.7)', type: 'smoke'
+               });
+           }
+           if (s.integrity < 50 && Math.random() < damageFactor * 0.3) {
+               s.particles.push({
+                 x: s.px + (Math.random()-0.5)*15, y: s.py + 10, vx: (Math.random()-0.5)*3, vy: 8 + Math.random()*8,
+                 life: 0.8, size: 4 + Math.random()*8, color: Math.random() > 0.5 ? '#f59e0b' : '#ef4444', type: 'fire'
+               });
+           }
       }
 
       if (s.score >= difficulty * 10000 && !s.bossSpawned) { s.bossSpawned = true; s.enemies.push(new Enemy(canvas.width/2, -300, 'boss', SHIPS[SHIPS.length-1], difficulty)); }
@@ -335,7 +366,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (en.type === 'boss') { en.y = Math.min(en.y + 1, 150); en.x = canvas.width/2 + Math.sin(s.frame * 0.02) * (canvas.width * 0.35); if (en.y > 0 && en.y < canvas.height - 100 && s.frame % 18 === 0) s.enemyBullets.push({ x: en.x + (Math.random()-0.5)*150, y: en.y + 110, vy: 12 + difficulty }); if (en.sh < en.maxSh) en.sh += 0.3; } 
         else { en.y += 4.0 + (difficulty * 0.5); en.x += en.evadeX; en.evadeX *= 0.96; }
         
-        // COLLISION DETECTION
         if (!s.playerDead && Math.sqrt((s.px - en.x)**2 + (s.py - en.y)**2) < 55) {
             const hasKinetic = (shield?.id === 'sh_omega' || secondShield?.id === 'sh_omega');
             if (s.sh1 > 0 || s.sh2 > 0) {
@@ -381,12 +411,42 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       }
 
       if (s.shake > 0) s.shake *= 0.92;
-      if (s.hp <= 0 && !s.playerDead) { s.playerDead = true; s.deathTimer = 180; createExplosion(s.px, s.py, true); audioService.playExplosion(0, 2.8); s.shake = 65; }
-      if (s.playerDead) { s.deathTimer--; if (s.deathTimer % 12 === 0 && s.deathTimer > 40) { createExplosion(s.px + (Math.random()-0.5)*120, s.py + (Math.random()-0.5)*120); audioService.playExplosion(0, 1.4); } if (s.deathTimer <= 0) { s.gameActive = false; onGameOverRef.current(false, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, bossDefeated: s.bossDead }); return; } }
-      if (s.bossDead && s.enemies.length === 0 && s.gifts.length === 0 && !s.lootPending) { s.gameActive = false; onGameOverRef.current(true, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, bossDefeated: s.bossDead }); return; }
+      
+      // DESTRUCTION SEQUENCE START
+      if (s.hp <= 0 && !s.playerDead) { 
+          s.playerDead = true; 
+          s.deathTimer = 180; 
+          s.deathIntegrityStart = s.integrity;
+          s.deathFuelStart = s.fuel;
+          createExplosion(s.px, s.py, true); 
+          audioService.playExplosion(0, 2.8); 
+          s.shake = 65; 
+      }
+
+      if (s.playerDead) { 
+          s.deathTimer--; 
+          const destructionProgress = 1 - (s.deathTimer / 180); // 0 to 1
+          
+          // RULE: After explosion, spaceship becomes damaged 25% and loses the entire fuel reserve.
+          // This penalty takes time. If aborted, we return the current values.
+          s.integrity = Math.max(0, s.deathIntegrityStart - (25 * destructionProgress));
+          s.fuel = Math.max(0, s.deathFuelStart * (1 - destructionProgress));
+          
+          if (s.deathTimer % 12 === 0 && s.deathTimer > 40) { 
+              createExplosion(s.px + (Math.random()-0.5)*120, s.py + (Math.random()-0.5)*120); 
+              audioService.playExplosion(0, 1.4); 
+          } 
+          if (s.deathTimer <= 0) { 
+              s.gameActive = false; 
+              onGameOverRef.current(false, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: 0, bossDefeated: s.bossDead, health: s.integrity }); 
+              return; 
+          } 
+      }
+
+      if (s.bossDead && s.enemies.length === 0 && s.gifts.length === 0 && !s.lootPending) { s.gameActive = false; onGameOverRef.current(true, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: s.fuel, bossDefeated: s.bossDead, health: s.integrity }); return; }
       
       const currentBoss = s.enemies.find(e => e.type === 'boss');
-      setStats(p => ({ ...p, hp: Math.max(0, s.hp), sh1: Math.max(0, s.sh1), sh2: Math.max(0, s.sh2), energy: s.energy, score: s.score, missiles: s.missileStock, mines: s.mineStock, boss: currentBoss ? { hp: currentBoss.hp, maxHp: currentBoss.maxHp, sh: currentBoss.sh, maxSh: currentBoss.maxSh } : null }));
+      setStats(p => ({ ...p, hp: Math.max(0, s.integrity), sh1: Math.max(0, s.sh1), sh2: Math.max(0, s.sh2), energy: s.energy, score: s.score, missiles: s.missileStock, mines: s.mineStock, fuel: s.fuel, boss: currentBoss ? { hp: currentBoss.hp, maxHp: currentBoss.maxHp, sh: currentBoss.sh, maxSh: currentBoss.maxSh } : null }));
 
       ctx.save(); if (s.shake > 0) ctx.translate((Math.random() - 0.5) * s.shake, (Math.random() - 0.5) * s.shake);
       ctx.fillStyle = '#010103'; ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -399,7 +459,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       s.mines.forEach(m => { ctx.save(); ctx.translate(m.x, m.y); ctx.beginPath(); ctx.arc(0, 0, 12, 0, Math.PI*2); ctx.fillStyle = '#00f2ff'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore(); });
       s.gifts.forEach(g => { ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(s.frame * 0.05); ctx.fillStyle = g.type === 'ammo' ? '#fbbf24' : '#a855f7'; ctx.fillRect(-15, -15, 30, 30); ctx.strokeStyle = '#fff'; ctx.strokeRect(-15, -15, 30, 30); ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText(g.type === 'ammo' ? 'A' : 'W', -4, 4); ctx.restore(); });
 
-      if (activeShip) drawShip(ctx, activeShip, s.px, s.py, hasFuel && isMoving, 0, s.playerDead);
+      if (activeShip) drawShip(ctx, activeShip, s.px, s.py, hasFuelInTank && isMoving, 0, s.playerDead);
       
       const renderShield = (shVal: number, shDef: Shield, radius: number) => {
         if (shVal <= 0 || s.playerDead) return;
@@ -407,11 +467,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (shDef.id === 'sh_omega') {
             ctx.strokeStyle = shDef.color;
             ctx.lineWidth = 4;
-            ctx.setLineDash([]); // Continuous solid line
+            ctx.setLineDash([]); 
             ctx.shadowBlur = 15;
             ctx.shadowColor = shDef.color;
             ctx.beginPath(); ctx.arc(s.px, s.py, radius, 0, Math.PI * 2); ctx.stroke();
-            // Inside Vibrant Glow
             const grad = ctx.createRadialGradient(s.px, s.py, radius - 15, s.px, s.py, radius);
             grad.addColorStop(0, 'transparent');
             grad.addColorStop(0.8, shDef.color + '11');
@@ -436,9 +495,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     };
     anim = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(anim); window.removeEventListener('resize', resize); window.removeEventListener('keydown', handleKey as any); window.removeEventListener('keyup', handleKey as any); };
-  }, [difficulty, activeShip, shield, secondShield, maxEnergy, hasFuel]);
+  }, [difficulty, activeShip, shield, secondShield, maxEnergy, initialFuel, maxFuelCapacity, initialIntegrity]);
 
-  const ep = (stats.energy / maxEnergy) * 100, fp = (currentFuel / 3) * 100, nl = 15, ael = Math.ceil((ep/100)*nl), afl = Math.ceil((fp/100)*nl);
+  const ep = (stats.energy / maxEnergy) * 100, fp = (stats.fuel / maxFuelCapacity) * 100, nl = 15, ael = Math.ceil((ep/100)*nl), afl = Math.ceil((fp/100)*nl);
   
   return (
     <div className="w-full h-full bg-black relative overflow-hidden">
@@ -446,11 +505,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       {stats.alert && (<div className="absolute top-1/3 left-1/2 -translate-x-1/2 retro-font text-emerald-400 text-xs animate-bounce bg-black/60 px-6 py-3 border border-emerald-500/30 rounded-lg backdrop-blur-md z-[100]">{stats.alert}</div>)}
       <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-end gap-2.5 z-50 pointer-events-none opacity-95 scale-90">
         <div className="flex flex-col items-center gap-1.5">
-          <div className={`retro-font text-[5px] uppercase font-black ${currentFuel<1 ? 'text-red-400 animate-pulse' : 'text-blue-400'}`}>FUE</div>
+          <div className={`retro-font text-[5px] uppercase font-black ${stats.fuel < (maxFuelCapacity * 0.2) ? 'text-red-400 animate-pulse' : 'text-blue-400'}`}>FUE</div>
           <div className="flex flex-col-reverse gap-0.5 p-1 bg-zinc-950/70 border border-zinc-800/40 rounded backdrop-blur-sm">
-            {Array.from({ length: nl }).map((_, i) => (<div key={i} className={`w-3.5 h-1 rounded-xs transition-colors duration-300 ${i < afl ? 'shadow-[0_0_8px_currentColor]' : 'opacity-10'}`} style={{ backgroundColor: i < afl ? (currentFuel<1?'#ff004c':'#00b7ff') : '#18181b', color: currentFuel<1?'#ff004c':'#00b7ff' }} />))}
+            {Array.from({ length: nl }).map((_, i) => (<div key={i} className={`w-3.5 h-1 rounded-xs transition-colors duration-300 ${i < afl ? 'shadow-[0_0_8px_currentColor]' : 'opacity-10'}`} style={{ backgroundColor: i < afl ? (stats.fuel < (maxFuelCapacity * 0.2) ? '#ff004c' : '#00b7ff') : '#18181b', color: stats.fuel < (maxFuelCapacity * 0.2) ? '#ff004c' : '#00b7ff' }} />))}
           </div>
-          <div className={`retro-font text-[6px] font-black ${currentFuel<1 ? 'text-red-500' : 'text-blue-500'}`}>{currentFuel}U</div>
+          <div className={`retro-font text-[6px] font-black ${stats.fuel < (maxFuelCapacity * 0.2) ? 'text-red-500' : 'text-blue-500'}`}>{stats.fuel.toFixed(1)}U</div>
         </div>
         <div className="flex flex-col items-center gap-1.5">
           <div className={`retro-font text-[5px] uppercase font-black ${ep<25 ? 'text-red-500 animate-pulse' : 'text-cyan-400'}`}>PWR</div>
@@ -476,7 +535,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
          <div className="flex flex-col gap-1.5"><span className="retro-font text-[6px] text-red-400 uppercase tracking-widest font-black drop-shadow-[0_0_5px_#f87171]">MISSIL</span><div className="grid grid-cols-10 gap-1.5 w-fit">{Array.from({ length: stats.missiles }).map((_, i) => (<div key={i} className="w-1.5 h-1.5 rounded-xs bg-red-500 shadow-[0_0_8px_#ef4444]" />))}</div></div>
          <div className="flex flex-col gap-1.5"><span className="retro-font text-[6px] text-lime-400 uppercase tracking-widest font-black drop-shadow-[0_0_5px_#a3e635]">MINES</span><div className="grid grid-cols-10 gap-1.5 w-fit">{Array.from({ length: stats.mines }).map((_, i) => (<div key={i} className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_#00ffa2]" />))}</div></div>
       </div>
-      <button onClick={() => onGameOverRef.current(false, stateRef.current.score, true, { rockets: stateRef.current.missileStock, mines: stateRef.current.mineStock, weapons: stateRef.current.equippedWeapons, bossDefeated: stateRef.current.bossDead })} className="absolute bottom-5 right-5 py-3 px-8 bg-red-600/20 border-2 border-red-500/40 rounded-xl text-red-500 retro-font text-[10px] uppercase hover:bg-red-600 hover:text-white transition-all pointer-events-auto z-[100] shadow-lg backdrop-blur-md">ABORT MISSION</button>
+      <button onClick={() => onGameOverRef.current(false, stateRef.current.score, true, { rockets: stateRef.current.missileStock, mines: stateRef.current.mineStock, weapons: stateRef.current.equippedWeapons, fuel: stateRef.current.fuel, bossDefeated: stateRef.current.bossDead, health: stateRef.current.integrity })} className="absolute bottom-5 right-5 py-3 px-8 bg-red-600/20 border-2 border-red-500/40 rounded-xl text-red-500 retro-font text-[10px] uppercase hover:bg-red-600 hover:text-white transition-all pointer-events-auto z-[100] shadow-lg backdrop-blur-md">ABORT MISSION</button>
     </div>
   );
 };
