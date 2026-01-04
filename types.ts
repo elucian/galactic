@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V71.0
-// VERSION: V71.0
+// CHECKPOINT: Defender V84.50
+// VERSION: V84.50
 export enum MissionType {
   DEFENSE = 'DEFENSE',
   ATTACK = 'ATTACK',
@@ -21,7 +21,17 @@ export enum WeaponType {
   LASER = 'LASER',
   ROCKET = 'ROCKET',
   MISSILE = 'MISSILE',
-  MINE = 'MINE'
+  MINE = 'MINE',
+  EMP = 'EMP'
+}
+
+export interface CargoItem {
+  instanceId: string;
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium';
+  id?: string;
+  name: string;
+  weight: number;
+  quantity: number;
 }
 
 export interface Weapon {
@@ -74,11 +84,13 @@ export interface ShipFitting {
   engineType: 'standard' | 'fusion' | 'afterburner' | 'smoke-trail';
   rocketCount: number;
   mineCount: number;
+  hullPacks: number;
   wingWeaponId: string | null;
   health: number;
   ammoPercent: number;
   lives: number;
   fuel: number;
+  cargo: CargoItem[];
 }
 
 export interface EquippedWeapon {
@@ -127,6 +139,7 @@ export interface GameState {
   victories: number;
   failures: number;
   typeColors: Record<string, Record<ShipPart, string>>;
+  reserve: CargoItem[];
 }
 
 export type DisplayMode = 'windowed' | 'fullscreen';

@@ -1,10 +1,10 @@
 
 // CHECKPOINT: Defender V49.0
 // VERSION: V49.0 - Master Cinematic Launch
-import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Planet, Moon } from '../types';
 import { ExtendedShipConfig } from '../constants';
 import { ShipIcon } from '../App';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Planet, Moon } from '../types';
 
 interface LaunchSequenceProps {
   planet: Planet | Moon;
@@ -303,7 +303,8 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, ownedShips, onC
       </div>
       
       <div className="absolute bottom-12 right-12 text-right pointer-events-none">
-         <div className="retro-font text-[10px] text-zinc-600 uppercase tracking-widest mb-2 border-r-2 border-emerald-500/20 pr-4">Targeting Sector: {planet.quadrant}</div>
+         {/* FIX: Use type guard to safely access quadrant on Planet | Moon union type */}
+         <div className="retro-font text-[10px] text-zinc-600 uppercase tracking-widest mb-2 border-r-2 border-emerald-500/20 pr-4">Targeting Sector: {'quadrant' in planet ? planet.quadrant : 'LOCAL'}</div>
          <div className="retro-font text-[24px] text-white uppercase tracking-[1.2em] drop-shadow-[0_0_30px_rgba(255,255,255,0.6)]">TRANSIT {planet.name}</div>
       </div>
 
