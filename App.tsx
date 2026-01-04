@@ -1,6 +1,6 @@
 
 // CHECKPOINT: Defender V84.70
-// VERSION: V84.85 - DUAL PANEL LOADOUT
+// VERSION: V84.86 - INTELLIGENT WEAPON SWAP & REFUNDS
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon, EquippedWeapon, CargoItem } from './types.ts';
 import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants.ts';
@@ -241,13 +241,14 @@ const App: React.FC = () => {
     let list = from === 'cargo' ? [...fit.cargo] : [...gameState.reserve];
     const item = list[idx];
     
-    // Decrement or remove
+    // Decrement or remove from source list
     if (item.quantity > 1) item.quantity--;
     else list.splice(idx, 1);
 
-    const update = (changes: Partial<ShipFitting>) => {
+    const update = (changes: Partial<ShipFitting>, creditsAdded: number = 0) => {
         setGameState(p => ({
             ...p,
+            credits: p.credits + creditsAdded,
             reserve: from === 'reserve' ? list : p.reserve,
             shipFittings: { ...p.shipFittings, [sId]: { ...p.shipFittings[sId], ...changes, cargo: from === 'cargo' ? list : p.shipFittings[sId].cargo } }
         }));
@@ -259,10 +260,39 @@ const App: React.FC = () => {
     else if (item.type === 'missile') update({ rocketCount: Math.min(MAX_MISSILES, fit.rocketCount + 10) });
     else if (item.type === 'mine') update({ mineCount: Math.min(MAX_MINES, fit.mineCount + 10) });
     else if (item.type === 'weapon' && item.id) {
-        const newWeps = [...fit.weapons]; newWeps[0] = { id: item.id, count: 1 };
-        update({ weapons: newWeps });
+        // Intelligent weapon swapping and refunds
+        const targetWepDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === item.id);
+        if (!targetWepDef) return;
+
+        let idxToReplace = 0;
+        const currentWeps = [...fit.weapons];
+        const numGuns = selectedShipConfig.defaultGuns;
+
+        if (numGuns > 1) {
+            // Priority 1: Empty slot
+            if (!currentWeps[0]) idxToReplace = 0;
+            else if (!currentWeps[1]) idxToReplace = 1;
+            else {
+                // Priority 2: Standard weapon slot (to make room for exotics/better gear)
+                const isExotic0 = EXOTIC_WEAPONS.some(ex => ex.id === currentWeps[0].id);
+                const isExotic1 = EXOTIC_WEAPONS.some(ex => ex.id === currentWeps[1].id);
+
+                if (!isExotic1 && isExotic0) idxToReplace = 1; // Replace simple weapon on side 1
+                else if (!isExotic0 && isExotic1) idxToReplace = 0; // Replace simple weapon on side 0
+                else idxToReplace = 1; // Default to "other side" (1) if both are same tier
+            }
+        }
+
+        const oldWepId = currentWeps[idxToReplace]?.id;
+        const oldWepDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === oldWepId);
+        const refund = oldWepDef ? oldWepDef.price : 0; // standard weapons give credits back, exotic have price 0
+
+        const newWeps = [...currentWeps];
+        newWeps[idxToReplace] = { id: item.id, count: 1 };
+        
+        update({ weapons: newWeps.filter(Boolean) }, refund);
     } else {
-        // Just consume if not a functional item (e.g. materials)
+        // Standard consumption for non-functional items
         setGameState(p => ({
             ...p,
             reserve: from === 'reserve' ? list : p.reserve,
@@ -663,8 +693,8 @@ const App: React.FC = () => {
                        <span className="text-[14px] font-black text-emerald-400 tabular-nums shadow-emerald-500/20 shadow-sm">${Math.floor(gameState.credits).toLocaleString()}</span>
                     </div>
                     <div className="flex gap-1">
-                       <button onClick={acceptLoadout} className="px-3 sm:px-5 py-1.5 sm:py-2.5 bg-emerald-600/10 border border-emerald-500 text-emerald-500 uppercase font-black text-[8px] sm:text-[9px] hover:bg-emerald-600 hover:text-white transition-all rounded">SAVE</button>
                        <button onClick={cancelLoadout} className="px-3 sm:px-5 py-1.5 sm:py-2.5 bg-red-600/10 border border-red-500/40 text-red-500 uppercase font-black text-[8px] sm:text-[9px] hover:bg-red-600 hover:text-white transition-all rounded">BACK</button>
+                       <button onClick={acceptLoadout} className="px-3 sm:px-5 py-1.5 sm:py-2.5 bg-emerald-600/10 border border-emerald-500 text-emerald-500 uppercase font-black text-[8px] sm:text-[9px] hover:bg-emerald-600 hover:text-white transition-all rounded">SAVE</button>
                     </div>
                  </div>
               </header>
