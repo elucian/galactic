@@ -27,7 +27,7 @@ export enum WeaponType {
 
 export interface CargoItem {
   instanceId: string;
-  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium';
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'shield';
   id?: string;
   name: string;
   weight: number;
@@ -73,6 +73,7 @@ export interface ShipConfig {
   defaultGuns: number;
   noseType: 'rounded' | 'flat';
   wingConfig: 'front-heavy' | 'rear-heavy' | 'balanced';
+  weaponId?: string;
 }
 
 export interface ShipFitting {

@@ -4,7 +4,7 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, Weapon, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
-import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, PLANETS, BOSS_SHIPS, SHIELDS } from '../constants.ts';
+import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, PLANETS, BOSS_SHIPS, SHIELDS } from '../constants.ts';
 
 interface GameEngineProps {
   ships: Array<{
@@ -143,7 +143,7 @@ class Mine {
   }
 }
 
-type GiftType = 'missile' | 'mine' | 'energy' | 'fuel' | 'weapon' | 'gold' | 'platinum' | 'lithium' | 'repair';
+type GiftType = 'missile' | 'mine' | 'energy' | 'fuel' | 'weapon' | 'gold' | 'platinum' | 'lithium' | 'repair' | 'shield';
 
 class Gift {
   x: number; y: number; vy: number = 1.8; type: GiftType;
@@ -330,7 +330,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     const s = stateRef.current; s.shake = 100; s.lootPending = true; s.scavengeMode = true; s.scavengeTimeRemaining = 4500;
     const iters = 12; 
     for (let i = 0; i < iters; i++) { setTimeout(() => { const ex = bx + (Math.random() - 0.5) * 500, ey = by + (Math.random() - 0.5) * 500; createExplosion(ex, ey, true); audioService.playExplosion(0, 1.8); s.shake = 55; }, i * 60); }
-    setTimeout(() => { const randomEx1 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)], randomEx2 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)]; s.gifts.push(new Gift(bx - 60, by, 'weapon', randomEx1.id, randomEx1.name)); s.gifts.push(new Gift(bx + 60, by, 'weapon', randomEx2.id, randomEx2.name)); s.lootPending = false; }, 1000);
+    setTimeout(() => { 
+        const randomEx1 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)], 
+              randomEx2 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)],
+              randomExSh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)];
+        s.gifts.push(new Gift(bx - 60, by, 'weapon', randomEx1.id, randomEx1.name)); 
+        s.gifts.push(new Gift(bx + 60, by, 'weapon', randomEx2.id, randomEx2.name)); 
+        s.gifts.push(new Gift(bx, by + 40, 'shield', randomExSh.id, randomExSh.name));
+        s.lootPending = false; 
+    }, 1000);
   };
 
   const drawShip = (ctx: CanvasRenderingContext2D, sInst: any, x: number, y: number, thrust: number, side: number, isBreaking: boolean, rotation: number = 0, isGhost: boolean = false) => {
@@ -576,8 +584,25 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             s.enemies.splice(j, 1); continue; 
           } 
           if (now - en.lastShot > 1650 / Math.sqrt(Math.max(1, difficulty)) && en.y > 0) { 
-            if (en.type === 'boss') { s.enemyBullets.push({ x: en.x - 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true }); s.enemyBullets.push({ x: en.x + 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true }); if (difficulty >= 6) s.enemyBullets.push({ x: en.x, y: en.y + 130, vy: 14 + difficulty, isExotic: true }); } 
-            else { if (difficulty >= 9) { s.enemyBullets.push({ x: en.x, y: en.y + 50, vy: 9.0 + difficulty, vx: -2 }); s.enemyBullets.push({ x: en.x, y: en.y + 50, vy: 10.0 + difficulty, vx: 0 }); s.enemyBullets.push({ x: en.x, y: en.y + 50, vy: 9.0 + difficulty, vx: 2 }); } else s.enemyBullets.push({ x: en.x, y: en.y + 50, vy: 9.0 + difficulty }); } en.lastShot = now; 
+            if (en.type === 'boss') { 
+                const wepId = en.config.weaponId;
+                const wepDef = EXOTIC_WEAPONS.find(w => w.id === wepId);
+                const bColor = wepDef?.beamColor || '#a855f7';
+                
+                if (wepId === 'exotic_fan') {
+                    for(let a = -2; a <= 2; a++) s.enemyBullets.push({ x: en.x, y: en.y + 110, vy: 8 + difficulty, vx: a * 2.5, isExotic: true, bColor });
+                } else if (wepId === 'exotic_bubbles') {
+                    s.enemyBullets.push({ x: en.x, y: en.y + 110, vy: 6 + difficulty, vx: (Math.random()-0.5)*6, isExotic: true, bColor, isBubble: true });
+                } else if (wepId === 'exotic_arc') {
+                    const d = Math.sqrt((s.px-en.x)**2 + (s.py-en.y)**2);
+                    if (d < 900) s.enemyBullets.push({ x: en.x, y: en.y + 110, isArc: true, bColor });
+                } else {
+                    s.enemyBullets.push({ x: en.x - 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true, bColor });
+                    s.enemyBullets.push({ x: en.x + 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true, bColor });
+                    if (difficulty >= 6) s.enemyBullets.push({ x: en.x, y: en.y + 130, vy: 14 + difficulty, isExotic: true, bColor });
+                }
+            } 
+            else { s.enemyBullets.push({ x: en.x, y: en.y + 50, vy: 9.0 + difficulty }); } en.lastShot = now; 
           } 
         }
         for (let i = s.bullets.length - 1; i >= 0; i--) { 
@@ -597,7 +622,17 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (hitB || b.y < -250 || b.y > canvas.height + 250 || (b.life !== undefined && b.life <= 0)) s.bullets.splice(i, 1); 
         }
         for (let i = s.enemyBullets.length - 1; i >= 0; i--) { 
-            const eb = s.enemyBullets[i]; eb.y += eb.vy; eb.x += (eb.vx || 0);
+            const eb = s.enemyBullets[i]; 
+            if (eb.isArc) {
+                const dist = Math.sqrt((eb.x-s.px)**2 + (eb.y-s.py)**2);
+                if (dist < 900) {
+                    let dmg = 0.5; // continuous arc damage
+                    if (s.sh2 > 0) s.sh2 -= dmg; else if (s.sh1 > 0) s.sh1 -= dmg; else s.integrity -= dmg;
+                }
+                s.enemyBullets.splice(i, 1);
+                continue;
+            }
+            eb.y += eb.vy; eb.x += (eb.vx || 0);
             if (!s.playerDead && !s.playerExploded && Math.sqrt((eb.x - s.px)**2 + (eb.y - s.py)**2) < 60) { 
               s.enemyBullets.splice(i, 1); 
               let dmg = eb.isExotic ? 45 : 34; // 3 shots (~34 each) to kill L1 player hull (100)
@@ -630,10 +665,20 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       s.enemies.forEach(en => { drawShip(ctx, en, en.x, en.y, 0.5, 0, false, Math.PI); if (en.sh > 0) { ctx.strokeStyle = en.type === 'boss' ? '#a855f7' : '#c084fc'; ctx.lineWidth = 3; ctx.setLineDash([8,8]); ctx.beginPath(); ctx.arc(en.x, en.y, en.type === 'boss' ? 120 : 75, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); } });
       for (let i = s.particles.length - 1; i >= 0; i--) { const p = s.particles[i]; ctx.globalAlpha = p.life; ctx.fillStyle = p.color; if (p.type === 'smoke') { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.001, p.size * (1.5 - p.life)), 0, Math.PI*2); ctx.fill(); } else if (p.type === 'debris') { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(s.frame * 0.1); ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size); ctx.restore(); } else { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.001, p.size), 0, Math.PI*2); ctx.fill(); } ctx.globalAlpha = 1; }
       s.bullets.forEach(b => { if (b.type === 'exotic_arc_hit' && b.target) { ctx.strokeStyle = b.beamColor; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.px, s.py - 35); ctx.lineTo(b.target.x, b.target.y); ctx.stroke(); } else if (b.isBubble) { ctx.strokeStyle = b.beamColor; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.stroke(); ctx.fillStyle = b.beamColor + '33'; ctx.fill(); } else if (b.type === 'exotic_plasma_ball') { ctx.fillStyle = b.beamColor; ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 20; ctx.shadowColor = b.beamColor; ctx.fill(); ctx.shadowBlur = 0; } else if (!b.isInvisible) { ctx.fillStyle = b.beamColor || '#fbbf24'; ctx.fillRect(b.x - b.size/2, b.y - b.size * 2, b.size, b.size * 4); } });
-      s.enemyBullets.forEach(eb => { ctx.fillStyle = eb.isExotic ? '#a855f7' : '#f87171'; ctx.fillRect(eb.x-2, eb.y, 4, 18); });
+      s.enemyBullets.forEach(eb => { 
+          if (eb.isArc) {
+              ctx.strokeStyle = eb.bColor || '#a855f7'; ctx.lineWidth = 5;
+              ctx.beginPath(); ctx.moveTo(eb.x, eb.y); ctx.lineTo(s.px, s.py); ctx.stroke();
+          } else if (eb.isBubble) {
+              ctx.strokeStyle = eb.bColor || '#a855f7'; ctx.lineWidth = 2;
+              ctx.beginPath(); ctx.arc(eb.x, eb.y, 10, 0, Math.PI*2); ctx.stroke();
+          } else {
+              ctx.fillStyle = eb.bColor || (eb.isExotic ? '#a855f7' : '#f87171'); ctx.fillRect(eb.x-2, eb.y, 4, 18); 
+          }
+      });
       s.missiles.forEach(m => { ctx.save(); ctx.translate(m.x, m.y); ctx.rotate(Math.atan2(m.vy, m.vx) + Math.PI/2); ctx.beginPath(); ctx.roundRect(-4, -12, 8, 24, 4); ctx.fillStyle = m.isEmp ? '#00f2ff' : (m.isHeavy ? '#f97316' : '#ef4444'); ctx.fill(); ctx.restore(); });
       s.mines.forEach(m => { ctx.save(); ctx.translate(m.x, m.y); ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fillStyle = m.isMagnetic ? '#fbbf24' : '#00f2ff'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI*2); ctx.stroke(); ctx.restore(); });
-      s.gifts.forEach(g => { ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(s.frame*0.08); const boxSize = 18; ctx.fillStyle = g.type === 'weapon' ? '#a855f7' : (g.type === 'energy' ? '#00f2ff' : (g.type === 'gold' ? '#fbbf24' : (g.type === 'platinum' ? '#e2e8f0' : (g.type === 'lithium' ? '#c084fc' : (g.type === 'repair' ? '#10b981' : '#60a5fa'))))); ctx.fillRect(-boxSize/2, -boxSize/2, boxSize, boxSize); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(-boxSize/2, -boxSize/2, boxSize, boxSize); ctx.fillStyle = '#000'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; let l = ''; if (g.type === 'gold') l = 'G'; else if (g.type === 'platinum') l = 'P'; else if (g.type === 'lithium') l = 'L'; else if (g.type === 'missile') l = 'S'; else if (g.type === 'mine') l = 'M'; else if (g.type === 'fuel') l = 'F'; else if (g.type === 'energy') l = 'E'; else if (g.type === 'weapon') l = 'W'; else if (g.type === 'repair') l = 'H'; ctx.fillText(l, 0, 0); ctx.restore(); });
+      s.gifts.forEach(g => { ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(s.frame*0.08); const boxSize = 18; ctx.fillStyle = g.type === 'weapon' ? '#a855f7' : (g.type === 'energy' ? '#00f2ff' : (g.type === 'gold' ? '#fbbf24' : (g.type === 'platinum' ? '#e2e8f0' : (g.type === 'lithium' ? '#c084fc' : (g.type === 'repair' ? '#10b981' : (g.type === 'shield' ? '#f472b6' : '#60a5fa')))))); ctx.fillRect(-boxSize/2, -boxSize/2, boxSize, boxSize); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.strokeRect(-boxSize/2, -boxSize/2, boxSize, boxSize); ctx.fillStyle = '#000'; ctx.font = 'bold 11px Arial'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; let l = ''; if (g.type === 'gold') l = 'G'; else if (g.type === 'platinum') l = 'P'; else if (g.type === 'lithium') l = 'L'; else if (g.type === 'missile') l = 'S'; else if (g.type === 'mine') l = 'M'; else if (g.type === 'fuel') l = 'F'; else if (g.type === 'energy') l = 'E'; else if (g.type === 'weapon') l = 'W'; else if (g.type === 'repair') l = 'H'; else if (g.type === 'shield') l = 'S'; ctx.fillText(l, 0, 0); ctx.restore(); });
       if (activeShip && !s.playerExploded) { let cT = 0.5, bK = false; if (s.keys.has('KeyW') || s.keys.has('ArrowUp')) cT = 1.3; else if (s.keys.has('KeyS') || s.keys.has('ArrowDown')) { cT = 0; bK = true; } let side = 0; if (s.keys.has('KeyA') || s.keys.has('ArrowLeft')) side = -1; else if (s.keys.has('KeyD') || s.keys.has('ArrowRight')) side = 1; drawShip(ctx, activeShip, s.px, s.py, cT, side, bK, 0, s.playerDead); }
       const rS = (shV: number, shD: Shield, rad: number) => { if (shV <= 0 || s.playerDead || s.playerExploded) return; ctx.save(); ctx.strokeStyle = shD.color; ctx.lineWidth = 5.0; ctx.beginPath(); ctx.arc(s.px, s.py, rad, Math.PI*1.1, Math.PI*1.9); ctx.stroke(); ctx.restore(); };
       if (shield) rS(s.sh1, shield, 85); if (secondShield) rS(s.sh2, secondShield, 105);

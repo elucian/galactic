@@ -3,7 +3,7 @@
 // VERSION: V84.86 - INTELLIGENT WEAPON SWAP & REFUNDS
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon, EquippedWeapon, CargoItem } from './types.ts';
-import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants.ts';
+import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, EXOTIC_SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants.ts';
 import { audioService } from './services/audioService.ts';
 import GameEngine from './components/GameEngine.tsx';
 
@@ -259,6 +259,26 @@ const App: React.FC = () => {
     else if (item.type === 'repair') update({ health: Math.min(100, fit.health + 20) });
     else if (item.type === 'missile') update({ rocketCount: Math.min(MAX_MISSILES, fit.rocketCount + 10) });
     else if (item.type === 'mine') update({ mineCount: Math.min(MAX_MINES, fit.mineCount + 10) });
+    else if (item.type === 'shield' && item.id) {
+        const targetShDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === item.id);
+        if (targetShDef) {
+            let refund = 0;
+            const newFitting = { ...fit };
+            // Auto-equip logic for looted shields: Prefer slot 2 if slot 1 is standard
+            if (!fit.shieldId) {
+                newFitting.shieldId = item.id;
+            } else if (!fit.secondShieldId) {
+                newFitting.secondShieldId = item.id;
+            } else {
+                // Swap slot 2 (standard refund if it was a basic shield)
+                const oldId = fit.secondShieldId;
+                const oldDef = SHIELDS.find(s => s.id === oldId);
+                refund = oldDef ? oldDef.price : 0;
+                newFitting.secondShieldId = item.id;
+            }
+            update(newFitting, refund);
+        }
+    }
     else if (item.type === 'weapon' && item.id) {
         // Intelligent weapon swapping and refunds
         const targetWepDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === item.id);
@@ -597,8 +617,8 @@ const App: React.FC = () => {
               const f = gameState.shipFittings[instance.instanceId];
               const isSelected = gameState.selectedShipInstanceId === instance.instanceId;
               const config = SHIPS.find(s => s.id === instance.shipTypeId)!;
-              const priS = f.shieldId ? SHIELDS.find(x => x.id === f.shieldId) : null;
-              const secS = f.secondShieldId ? SHIELDS.find(x => x.id === f.secondShieldId) : null;
+              const priS = f.shieldId ? [...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === f.shieldId) : null;
+              const secS = f.secondShieldId ? [...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === f.secondShieldId) : null;
               return (
                 <div key={idx} onClick={() => setGameState(p => ({ ...p, selectedShipInstanceId: instance.instanceId }))} className={`flex-1 border-2 p-4 flex flex-col items-center rounded-xl transition-all cursor-pointer relative ${isSelected ? 'border-emerald-500 bg-emerald-950/20 shadow-xl' : 'border-zinc-800 bg-zinc-950/40 opacity-70 hover:opacity-100'}`}>
                   <div className="w-full flex justify-between items-center mb-2 shrink-0"><span className="retro-font text-[8px] text-emerald-500 uppercase truncate pr-2">{config.name}</span><span className="text-[7px] uppercase text-zinc-500">Slot {idx + 1}</span></div>
@@ -730,7 +750,7 @@ const App: React.FC = () => {
                 {loadoutTab === 'defense' && (
                   <div className="grid grid-cols-2 gap-3 mb-6">
                     {[{id: selectedFitting.shieldId, label: 'PRI'}, {id: selectedFitting.secondShieldId, label: 'SEC'}].map((slot, i) => {
-                      const sh = SHIELDS.find(s => s.id === slot.id);
+                      const sh = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === slot.id);
                       return (
                         <div key={i} className={`flex items-center h-16 px-4 border rounded-lg ${i === 0 ? 'bg-cyan-950/40 border-cyan-500/30' : 'bg-fuchsia-950/40 border-fuchsia-500/30'}`}>
                           <span className={`retro-font text-[8px] uppercase ${i === 0 ? 'text-cyan-400' : 'text-fuchsia-400'} truncate`}>
@@ -832,7 +852,7 @@ const App: React.FC = () => {
           </div>
         </div>
       )}
-      {screen === 'game' && gameState.selectedShipInstanceId && gameState.currentPlanet && (<div className="flex-grow relative overflow-hidden z-20"><GameEngine ships={activeShipsForEngine as any} shield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.shieldId) || null} secondShield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.secondShieldId) || null} difficulty={gameState.currentPlanet.difficulty} currentPlanet={gameState.currentPlanet} quadrant={gameState.currentQuadrant} onGameOver={handleGameOver} /></div>)}
+      {screen === 'game' && gameState.selectedShipInstanceId && gameState.currentPlanet && (<div className="flex-grow relative overflow-hidden z-20"><GameEngine ships={activeShipsForEngine as any} shield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.shieldId) || EXOTIC_SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.shieldId) || null} secondShield={SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.secondShieldId) || EXOTIC_SHIELDS.find(s => s.id === gameState.shipFittings[gameState.selectedShipInstanceId!]?.secondShieldId) || null} difficulty={gameState.currentPlanet.difficulty} currentPlanet={gameState.currentPlanet} quadrant={gameState.currentQuadrant} onGameOver={handleGameOver} /></div>)}
       {isGameOver && (<div className="fixed inset-0 z-[9999] bg-black/98 flex flex-col items-center justify-center p-10 text-center animate-in fade-in zoom-in duration-500"><div className="max-w-2xl bg-zinc-950 border border-red-500 p-12 rounded-2xl space-y-10 shadow-[0_0_80px_rgba(239,68,68,0.4)]"><h1 className="retro-font text-5xl text-red-500 uppercase tracking-tighter">FINANCIAL COLLAPSE</h1><p className="text-zinc-400 uppercase text-[10px] leading-relaxed tracking-widest">Strategic Defense Initiative is officially bankrupt. No viable assets remain. Sector defenses have failed. Humanity's expansion ends here.</p><div className="space-y-4"><button onClick={restartGame} className="w-full py-6 bg-emerald-600 border border-emerald-400 text-white font-black uppercase rounded text-xs hover:scale-105 active:scale-95 transition-all tracking-[0.3em]">RESTART PROTOCOL</button><button onClick={() => window.location.reload()} className="w-full py-6 bg-zinc-900 border border-zinc-700 text-zinc-400 font-black uppercase rounded text-xs hover:bg-zinc-800 transition-all tracking-[0.3em]">EXIT TO TERMINAL</button></div><div className="pt-12 border-t border-zinc-800 flex flex-col gap-4"><p className="retro-font text-[9px] text-zinc-600 uppercase">Thank you for playing</p><p className="text-[8px] text-zinc-700 uppercase tracking-[0.4em]">Check other games: Copyright Sage-Code (c) 2026</p></div></div></div>)}
       <style>{`@keyframes marquee-vertical { 0% { transform: translateY(100%); } 100% { transform: translateY(-100%); } } .animate-marquee-vertical { animation: marquee-vertical 45s linear infinite; }`}</style>
     </div>
