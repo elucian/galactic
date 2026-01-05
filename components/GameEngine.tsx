@@ -371,14 +371,47 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; generateStars(canvas.width, canvas.height); const s = stateRef.current; s.px = Math.max(35, Math.min(canvas.width - 35, s.px)); s.py = Math.max(35, Math.min(canvas.height - 110, s.py)); s.bullets = []; s.enemyBullets = []; if (s.isInitialized && s.gameActive && !s.playerDead && !s.isPaused) { s.isPaused = true; s.pauseStartTime = Date.now(); s.keys.clear(); setStats(p => ({ ...p, isPaused: true })); } };
     const handleBlur = () => { const s = stateRef.current; if (s.gameActive && !s.playerDead && !s.isPaused) { s.isPaused = true; s.pauseStartTime = Date.now(); s.keys.clear(); setStats(p => ({ ...p, isPaused: true })); } };
     resize(); window.addEventListener('resize', resize); window.addEventListener('blur', handleBlur); stateRef.current.isInitialized = true;
+    
+    // -------------------------------------------------------------------------
+    // KEY HANDLER WITH PREVENT DEFAULT & ALTERNATE KEYS
+    // -------------------------------------------------------------------------
     const handleKey = (e: KeyboardEvent, isDown: boolean) => { 
-        const s = stateRef.current; if (isDown) s.keys.add(e.code); else s.keys.delete(e.code); 
-        if (isDown && s.isPaused && (e.code === 'Space' || e.code === 'KeyP')) { togglePause(); return; }
+        const s = stateRef.current; 
+        
+        // Prevent default browser actions for game keys to avoid UI interference
+        if (['Tab', 'CapsLock', 'ShiftLeft'].includes(e.code)) {
+            e.preventDefault();
+        }
+
+        if (isDown) s.keys.add(e.code); else s.keys.delete(e.code); 
+        
+        // Pause via P only now to free Space/Enter
+        if (isDown && s.isPaused && e.code === 'KeyP') { togglePause(); return; }
         if (isDown && e.code === 'KeyP') { togglePause(); return; }
         if (isDown && e.code === 'Escape') { s.gameActive = false; const finalHP = s.isMeltdown ? 25 : Math.max(0, s.integrity); onGameOverRef.current(false, s.score, true, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: s.fuel, bossDefeated: s.bossDead, health: finalHP, hullPacks: s.hullPacks, cargo: s.missionCargo }); } 
-        if (isDown && e.code === 'Tab' && !s.playerDead && !s.isPaused) { e.preventDefault(); if (s.missileStock > 0) { s.missileStock--; const isEmp = ships[0].fitting.weapons.some(w => w.id === 'ord_missile_emp'); s.missiles.push(new Missile(s.px, s.py - 40, (Math.random() - 0.5) * 4, -7.0, false, isEmp)); audioService.playWeaponFire('missile'); } } 
-        if (isDown && e.code === 'CapsLock' && !s.playerDead && !s.isPaused) { e.preventDefault(); if (s.mineStock > 0) { s.mineStock--; s.mines.push(new Mine(s.px, s.py)); audioService.playWeaponFire('mine'); } } 
+        
+        // Missiles: Backslash OR Tab
+        if (isDown && (e.code === 'Backslash' || e.code === 'Tab') && !s.playerDead && !s.isPaused) { 
+            e.preventDefault(); 
+            if (s.missileStock > 0) { 
+                s.missileStock--; 
+                const isEmp = ships[0].fitting.weapons.some(w => w.id === 'ord_missile_emp'); 
+                s.missiles.push(new Missile(s.px, s.py - 40, (Math.random() - 0.5) * 4, -7.0, false, isEmp)); 
+                audioService.playWeaponFire('missile'); 
+            } 
+        } 
+        
+        // Mines: Enter OR CapsLock
+        if (isDown && (e.code === 'Enter' || e.code === 'CapsLock') && !s.playerDead && !s.isPaused) { 
+            e.preventDefault(); 
+            if (s.mineStock > 0) { 
+                s.mineStock--; 
+                s.mines.push(new Mine(s.px, s.py)); 
+                audioService.playWeaponFire('mine'); 
+            } 
+        } 
     };
+    
     window.addEventListener('keydown', (e) => handleKey(e, true)); window.addEventListener('keyup', (e) => handleKey(e, false));
     let anim: number;
     const loop = () => {
@@ -492,28 +525,48 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               }
             }
 
-            if ((s.keys.has('Space') || s.keys.has('KeyF')) && s.energy > 5 && s.equippedWeapons.length > 0 && !s.isMeltdown) {
+            // FIRING: Shift (Left or Right)
+            if ((s.keys.has('ShiftLeft') || s.keys.has('ShiftRight')) && s.energy > 5 && s.equippedWeapons.length > 0 && !s.isMeltdown) {
             s.equippedWeapons.forEach((w) => {
                 const weaponDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(wd => wd.id === w.id); if (!weaponDef) return;
                 if (now - s.lastFire < (weaponDef.fireRate > 30 ? 0 : (1000 / weaponDef.fireRate))) return;
                 const gunPositions = activeShip.config.defaultGuns === 1 ? [0] : [-18, 18];
-                gunPositions.forEach(xOff => {
+                gunPositions.forEach((xOff, i) => {
                     const baseB: any = { x: s.px + xOff, y: s.py - 35, vx: 0, vy: -24, damage: weaponDef.damage * (1 + (difficulty*0.18)), type: weaponDef.id, beamColor: weaponDef.beamColor || '#fff', timer: 0, target: null, size: 3.5, isBeam: false, xOffset: xOff, wType: weaponDef.type };
-                    if (weaponDef.id === 'exotic_mining_laser') {
-                        let bestAst = null, minDist = 1200; s.asteroids.forEach(ast => { if (ast.y > 0) { const d = Math.sqrt((baseB.x-ast.x)**2 + (baseB.y-ast.y)**2); if (d < minDist) { minDist = d; bestAst = ast; } } });
-                        if (bestAst) { const dx = bestAst.x - baseB.x, dy = bestAst.y - baseB.y, d = Math.sqrt(dx*dx+dy*dy); baseB.vx = (dx/d) * 22; baseB.vy = (dy/d) * 22; }
-                        s.bullets.push(baseB);
+                    
+                    // Exotic Visual Style Mapping
+                    if (weaponDef.id === 'exotic_wave') baseB.visualType = 'ring';
+                    else if (weaponDef.id === 'exotic_bolt' || weaponDef.id === 'exotic_mining_laser') baseB.visualType = 'thunder';
+                    else if (weaponDef.id === 'exotic_bubbles' || weaponDef.id === 'exotic_nova' || weaponDef.id === 'exotic_gravity') baseB.visualType = 'solid_glow';
+                    else if (weaponDef.id === 'exotic_fan' || weaponDef.id === 'exotic_arc' || weaponDef.id === 'exotic_venom') baseB.visualType = 'spindle';
+                    else if (weaponDef.id === 'exotic_seeker' || weaponDef.id === 'exotic_plasma_ball' || weaponDef.id === 'exotic_flame') baseB.visualType = 'comet';
+
+                    // Spread Logic - Left gun shoots left angle, Right gun shoots right angle
+                    // If single gun, alternate or random narrow cone
+                    if (activeShip.config.defaultGuns > 1) {
+                        const spreadAngle = 0.15; // Approx 8-9 degrees
+                        if (xOff < 0) baseB.vx = -baseB.vy * Math.tan(spreadAngle * -1); // Left gun tilts left
+                        else baseB.vx = -baseB.vy * Math.tan(spreadAngle); // Right gun tilts right
+                    } else {
+                        // Single gun spread logic
+                        const maxAngle = 0.2; // +/- 11 degrees
+                        baseB.vx = -baseB.vy * Math.tan((Math.random() - 0.5) * maxAngle);
                     }
-                    else if (weaponDef.id === 'exotic_fan') { for(let a = -2; a <= 2; a++) s.bullets.push({ ...baseB, vx: a * 3.5, vy: -20, size: 2.5 }); } 
-                    else if (weaponDef.id === 'exotic_bubbles') s.bullets.push({ ...baseB, vx: (Math.random()-0.5)*8, vy: -12, size: 6, isBubble: true });
-                    else if (weaponDef.id === 'exotic_seeker') s.bullets.push({ ...baseB, isSeeker: true, size: 2.5 });
-                    else if (weaponDef.id === 'exotic_flame') { for(let f=0; f<3; f++) s.particles.push({ x: s.px + xOff, y: s.py - 40, vx: (Math.random()-0.5)*5, vy: -8 - Math.random()*8, life: 0.6, color: '#f97316', size: 6 + Math.random()*12, type: 'fire' }); s.bullets.push({ ...baseB, vy: -15, life: 15, size: 20, isInvisible: true }); } 
-                    else if (weaponDef.id === 'exotic_arc') { 
-                        let target = null; let md = 750; s.enemies.forEach(en => { const d = Math.sqrt((baseB.x-en.x)**2+(baseB.y-en.y)**2); if(d<md){md=d; target=en;} }); 
-                        if (target) { applyDamageToEnemy(target, baseB.damage, WeaponType.LASER); baseB.type = 'exotic_arc_hit'; baseB.target = target; s.bullets.push(baseB); } 
+
+                    // Specific per-weapon behavior overrides
+                    if (weaponDef.id === 'exotic_fan') { 
+                        // Enhanced spread for Fan/Scatter weapon
+                        baseB.vx *= 2.5; 
+                    } 
+                    
+                    if (weaponDef.id === 'exotic_flame') {
+                       baseB.life = 25; 
+                       baseB.vy = -18;
+                       // Add some flame particles on launch
+                       for(let f=0; f<2; f++) s.particles.push({ x: s.px + xOff, y: s.py - 40, vx: (Math.random()-0.5)*3, vy: -5 - Math.random()*5, life: 0.5, color: '#f97316', size: 4 + Math.random()*6, type: 'fire' });
                     }
-                    else if (weaponDef.id === 'exotic_plasma_ball') { baseB.vy = -8; baseB.size = 28; s.bullets.push(baseB); }
-                    else s.bullets.push(baseB);
+
+                    s.bullets.push(baseB);
                 });
                 s.energy -= (weaponDef.energyCost / 20) * (activeShip.config.defaultGuns);
                 audioService.playWeaponFire(weaponDef.type === WeaponType.LASER ? 'laser' : 'cannon'); s.lastFire = now;
@@ -606,8 +659,18 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           } 
         }
         for (let i = s.bullets.length - 1; i >= 0; i--) { 
-            const b = s.bullets[i]; if (b.type === 'exotic_arc_hit' && b.target) { b.x = b.target.x; b.y = b.target.y; } else if (b.isSeeker) { let t = null, md = 600; s.enemies.forEach(en => { const d = Math.sqrt((b.x-en.x)**2+(b.y-en.y)**2); if(d<md){md=d; t=en;} }); if (t) { const dx = t.x - b.x, dy = t.y - b.y, d = Math.sqrt(dx*dx+dy*dy); b.vx += (dx/d)*2.5; b.vy += (dy/d)*2.5; } b.y += b.vy; b.x += b.vx; } else { b.y += b.vy; b.x += b.vx; } 
-            if (b.life !== undefined) b.life--; let hitB = false; if (b.type === 'exotic_plasma_ball' && s.frame % 2 === 0) s.particles.push({ x: b.x, y: b.y, vx: (Math.random()-0.5)*6, vy: (Math.random()-0.5)*6, life: 0.8, color: b.beamColor, size: 6, type: 'plasma' }); else if (b.type === 'exotic_arc_hit') { b.timer++; if (b.timer > 16) { s.bullets.splice(i, 1); continue; } } 
+            const b = s.bullets[i]; 
+            // Removed Seeker and Arc-Hit Logic - All are dumb-fire projectiles now
+            b.y += b.vy; b.x += b.vx; 
+            
+            if (b.life !== undefined) b.life--; 
+            let hitB = false; 
+            
+            // Visual trails
+            if (b.visualType === 'comet' && s.frame % 2 === 0) {
+                s.particles.push({ x: b.x, y: b.y, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2 + 2, life: 0.5, color: b.beamColor, size: 4, type: 'plasma' });
+            }
+
             for (let j = s.enemies.length - 1; j >= 0; j--) { 
                 const en = s.enemies[j]; 
                 const distSq = (b.x-en.x)**2 + (b.y-en.y)**2;
@@ -618,7 +681,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     hitB = true; break; 
                 } 
             } 
-            if (!hitB) { for (let j = s.asteroids.length - 1; j >= 0; j--) { const ast = s.asteroids[j]; if (ast.y > 0 && Math.sqrt((b.x - ast.x)**2 + (b.y - ast.y)**2) < ast.size + 30) { createImpactEffect(b.x, b.y, 'asteroid'); let aDmg = b.damage; if (b.type === 'exotic_mining_laser') aDmg *= 5.0; ast.hp -= aDmg; if (ast.hp <= 0) { spawnAsteroidLoot(ast.x, ast.y, ast.variant); s.asteroids.splice(j, 1); } hitB = true; break; } } } 
+            if (!hitB) { for (let j = s.asteroids.length - 1; j >= 0; j--) { const ast = s.asteroids[j]; if (ast.y > 0 && Math.sqrt((b.x - ast.x)**2 + (b.y - ast.y)**2) < ast.size + 30) { createImpactEffect(b.x, b.y, 'asteroid'); let aDmg = b.damage; ast.hp -= aDmg; if (ast.hp <= 0) { spawnAsteroidLoot(ast.x, ast.y, ast.variant); s.asteroids.splice(j, 1); } hitB = true; break; } } } 
             if (hitB || b.y < -250 || b.y > canvas.height + 250 || (b.life !== undefined && b.life <= 0)) s.bullets.splice(i, 1); 
         }
         for (let i = s.enemyBullets.length - 1; i >= 0; i--) { 
@@ -664,7 +727,87 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       s.energyBolts.forEach(eb => { ctx.save(); ctx.translate(eb.x, eb.y); const bg = ctx.createRadialGradient(0,0,0,0,0,30); bg.addColorStop(0,'#fff'); bg.addColorStop(0.2,'#00f2ff'); bg.addColorStop(1,'transparent'); ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); ctx.restore(); });
       s.enemies.forEach(en => { drawShip(ctx, en, en.x, en.y, 0.5, 0, false, Math.PI); if (en.sh > 0) { ctx.strokeStyle = en.type === 'boss' ? '#a855f7' : '#c084fc'; ctx.lineWidth = 3; ctx.setLineDash([8,8]); ctx.beginPath(); ctx.arc(en.x, en.y, en.type === 'boss' ? 120 : 75, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); } });
       for (let i = s.particles.length - 1; i >= 0; i--) { const p = s.particles[i]; ctx.globalAlpha = p.life; ctx.fillStyle = p.color; if (p.type === 'smoke') { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.001, p.size * (1.5 - p.life)), 0, Math.PI*2); ctx.fill(); } else if (p.type === 'debris') { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(s.frame * 0.1); ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size); ctx.restore(); } else { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.001, p.size), 0, Math.PI*2); ctx.fill(); } ctx.globalAlpha = 1; }
-      s.bullets.forEach(b => { if (b.type === 'exotic_arc_hit' && b.target) { ctx.strokeStyle = b.beamColor; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.px, s.py - 35); ctx.lineTo(b.target.x, b.target.y); ctx.stroke(); } else if (b.isBubble) { ctx.strokeStyle = b.beamColor; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.stroke(); ctx.fillStyle = b.beamColor + '33'; ctx.fill(); } else if (b.type === 'exotic_plasma_ball') { ctx.fillStyle = b.beamColor; ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 20; ctx.shadowColor = b.beamColor; ctx.fill(); ctx.shadowBlur = 0; } else if (!b.isInvisible) { ctx.fillStyle = b.beamColor || '#fbbf24'; ctx.fillRect(b.x - b.size/2, b.y - b.size * 2, b.size, b.size * 4); } });
+      
+      // CUSTOM EXOTIC WEAPON RENDERING
+      s.bullets.forEach(b => { 
+          if (b.visualType) {
+              const sz = b.size || 3;
+              const clr = b.beamColor || '#fff';
+              ctx.save();
+              ctx.shadowBlur = 10;
+              ctx.shadowColor = clr;
+              
+              if (b.visualType === 'ring') {
+                  ctx.strokeStyle = clr;
+                  ctx.lineWidth = 2;
+                  ctx.beginPath();
+                  ctx.arc(b.x, b.y, sz + 2, 0, Math.PI * 2);
+                  ctx.stroke();
+                  ctx.fillStyle = clr + '44'; // Semi-transparent center
+                  ctx.fill();
+              }
+              else if (b.visualType === 'thunder') {
+                  ctx.strokeStyle = clr;
+                  ctx.lineWidth = 2;
+                  ctx.beginPath();
+                  ctx.moveTo(b.x, b.y);
+                  let currY = b.y;
+                  let currX = b.x;
+                  for(let k=0; k<4; k++) {
+                      currY -= 12; // Length ~48
+                      currX += (Math.random() - 0.5) * 8;
+                      ctx.lineTo(currX, currY);
+                  }
+                  ctx.stroke();
+              }
+              else if (b.visualType === 'spindle') {
+                  const len = 35;
+                  ctx.fillStyle = clr;
+                  ctx.beginPath();
+                  ctx.moveTo(b.x, b.y - len); // Tip
+                  ctx.quadraticCurveTo(b.x + sz, b.y - len/2, b.x, b.y); // Bottom
+                  ctx.quadraticCurveTo(b.x - sz, b.y - len/2, b.x, b.y - len); // Back to top
+                  ctx.fill();
+              }
+              else if (b.visualType === 'comet') {
+                  const tailLen = 30;
+                  // Tail
+                  const grad = ctx.createLinearGradient(b.x, b.y, b.x, b.y - tailLen);
+                  grad.addColorStop(0, clr);
+                  grad.addColorStop(1, 'transparent');
+                  ctx.fillStyle = grad;
+                  ctx.beginPath();
+                  ctx.moveTo(b.x, b.y);
+                  ctx.lineTo(b.x + sz/2, b.y - tailLen);
+                  ctx.lineTo(b.x - sz/2, b.y - tailLen);
+                  ctx.fill();
+                  // Head
+                  ctx.fillStyle = '#fff';
+                  ctx.beginPath();
+                  ctx.arc(b.x, b.y, sz, 0, Math.PI * 2);
+                  ctx.fill();
+              }
+              else {
+                  // Solid Glow fallback
+                  ctx.fillStyle = clr;
+                  ctx.beginPath();
+                  ctx.arc(b.x, b.y, sz, 0, Math.PI * 2);
+                  ctx.fill();
+                  ctx.fillStyle = '#fff';
+                  ctx.beginPath();
+                  ctx.arc(b.x, b.y, sz/2, 0, Math.PI * 2);
+                  ctx.fill();
+              }
+              ctx.restore();
+          } else {
+              // Standard rendering for normal guns
+              if (b.type === 'exotic_arc_hit' && b.target) { ctx.strokeStyle = b.beamColor; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(s.px, s.py - 35); ctx.lineTo(b.target.x, b.target.y); ctx.stroke(); } 
+              else if (b.isBubble) { ctx.strokeStyle = b.beamColor; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.stroke(); ctx.fillStyle = b.beamColor + '33'; ctx.fill(); } 
+              else if (b.type === 'exotic_plasma_ball') { ctx.fillStyle = b.beamColor; ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 20; ctx.shadowColor = b.beamColor; ctx.fill(); ctx.shadowBlur = 0; } 
+              else if (!b.isInvisible) { ctx.fillStyle = b.beamColor || '#fbbf24'; ctx.fillRect(b.x - b.size/2, b.y - b.size * 2, b.size, b.size * 4); } 
+          }
+      });
+
       s.enemyBullets.forEach(eb => { 
           if (eb.isArc) {
               ctx.strokeStyle = eb.bColor || '#a855f7'; ctx.lineWidth = 5;

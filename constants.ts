@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V81.90
-// VERSION: V81.90
+// CHECKPOINT: Defender V81.95
+// VERSION: V81.95
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -49,19 +49,20 @@ export const WEAPONS: Weapon[] = [
   { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 90, fireRate: 8, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' }
 ];
 
+// REFACTORED EXOTIC WEAPONS - NO TRACKING, NO MINING, VISUAL OVERHAUL
 export const EXOTIC_WEAPONS: Weapon[] = [
-  { id: 'exotic_wave', name: 'Wave Disruptor', type: WeaponType.LASER, price: 0, damage: 250, fireRate: 2.5, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#f472b6' },
-  { id: 'exotic_bolt', name: 'Stormbringer', type: WeaponType.LASER, price: 0, damage: 480, fireRate: 1.8, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#60a5fa' },
-  { id: 'exotic_bubbles', name: 'Shimmer Bubbles', type: WeaponType.PROJECTILE, price: 0, damage: 35, fireRate: 15, energyCost: 8, cargoWeight: 0, isAmmoBased: false, beamColor: '#22d3ee' },
-  { id: 'exotic_fan', name: 'Fan Spread', type: WeaponType.PROJECTILE, price: 0, damage: 55, fireRate: 6, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#fde047' },
-  { id: 'exotic_seeker', name: 'Auto-Seeker', type: WeaponType.PROJECTILE, price: 0, damage: 40, fireRate: 12, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#4ade80' },
-  { id: 'exotic_arc', name: 'Lightning Ark', type: WeaponType.LASER, price: 0, damage: 900, fireRate: 1.1, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#00f2ff' },
-  { id: 'exotic_plasma_ball', name: 'Plasma Sphere', type: WeaponType.PROJECTILE, price: 0, damage: 400, fireRate: 2, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#22c55e' },
-  { id: 'exotic_flame', name: 'Flame Emitter', type: WeaponType.PROJECTILE, price: 0, damage: 15, fireRate: 45, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#f97316' },
-  { id: 'exotic_gravity', name: 'Gravity Spike', type: WeaponType.LASER, price: 0, damage: 1400, fireRate: 0.8, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#38bdf8' },
-  { id: 'exotic_nova', name: 'Nova Burst', type: WeaponType.PROJECTILE, price: 0, damage: 150, fireRate: 5, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' },
-  { id: 'exotic_venom', name: 'Acid Rain', type: WeaponType.PROJECTILE, price: 0, damage: 45, fireRate: 18, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#84cc16' },
-  { id: 'exotic_mining_laser', name: 'Astro-Mining Laser', type: WeaponType.LASER, price: 0, damage: 60, fireRate: 10, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24' }
+  { id: 'exotic_wave', name: 'Plasma Ring', type: WeaponType.LASER, price: 0, damage: 250, fireRate: 3, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#d946ef' }, // Ring
+  { id: 'exotic_bolt', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 0, damage: 480, fireRate: 1.8, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#60a5fa' }, // Thunder
+  { id: 'exotic_bubbles', name: 'Void Sphere', type: WeaponType.PROJECTILE, price: 0, damage: 65, fireRate: 8, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#06b6d4' }, // Solid Glow
+  { id: 'exotic_fan', name: 'Scatter Spindle', type: WeaponType.PROJECTILE, price: 0, damage: 55, fireRate: 6, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#facc15' }, // Spindle (spread)
+  { id: 'exotic_seeker', name: 'Neutron Dart', type: WeaponType.PROJECTILE, price: 0, damage: 85, fireRate: 10, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#10b981' }, // Comet (Was Seeker)
+  { id: 'exotic_arc', name: 'Arc Lash', type: WeaponType.LASER, price: 0, damage: 900, fireRate: 1.1, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#22d3ee' }, // Spindle (long)
+  { id: 'exotic_plasma_ball', name: 'Magma Bolt', type: WeaponType.PROJECTILE, price: 0, damage: 400, fireRate: 2, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#ea580c' }, // Comet (Hot)
+  { id: 'exotic_flame', name: 'Inferno Jet', type: WeaponType.PROJECTILE, price: 0, damage: 20, fireRate: 35, energyCost: 6, cargoWeight: 0, isAmmoBased: false, beamColor: '#f97316' }, // Fuzzy
+  { id: 'exotic_gravity', name: 'Singularity Shot', type: WeaponType.LASER, price: 0, damage: 1400, fireRate: 0.8, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#1e293b' }, // Solid Glow (Dark)
+  { id: 'exotic_nova', name: 'Star Shard', type: WeaponType.PROJECTILE, price: 0, damage: 150, fireRate: 5, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' }, // Solid Glow (Bright)
+  { id: 'exotic_venom', name: 'Bio-Plasma', type: WeaponType.PROJECTILE, price: 0, damage: 45, fireRate: 18, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#84cc16' }, // Spindle (Green)
+  { id: 'exotic_mining_laser', name: 'Proton Lance', type: WeaponType.LASER, price: 0, damage: 320, fireRate: 4, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24' } // Thunder (Was Mining)
 ];
 
 export const SHIELDS: Shield[] = [
