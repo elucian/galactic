@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V81.99
-// VERSION: V81.99
+// CHECKPOINT: Defender V85.00
+// VERSION: V85.00 - OVERLOAD MECHANICS
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -12,6 +12,13 @@ export interface ExtendedShipConfig extends ShipConfig {
   hullShapeType: 'trapezoid' | 'triangle' | 'oval' | 'finger' | 'angled-flat' | 'rounded' | 'block' | 'needle';
   extraDetail?: 'reservoir' | 'antenna' | 'both' | 'none';
   maxFuel: number;
+  // Explicitly redeclare properties to ensure visibility if inheritance has issues
+  id: string;
+  maxEnergy: number;
+  engines: number;
+  defaultGuns: number;
+  defaultColor?: string;
+  weaponId?: string;
 }
 
 export const SHIPS: ExtendedShipConfig[] = [
@@ -42,35 +49,35 @@ export const BOSS_SHIPS: ExtendedShipConfig[] = [
   { id: 'boss_kappa', name: 'Final Nemesis', description: 'The absolute threat.', price: 0, maxEnergy: 25000, maxCargo: 0, speed: 2, shape: 'star-t', canLayMines: true, engines: 12, defaultGuns: 2, noseType: 'flat', wingConfig: 'front-heavy', gunMount: 'strut', wingStyle: 'x-wing', wingCurve: 'forward', hullShapeType: 'needle', maxFuel: 100, weaponId: 'exotic_gravity' },
 ];
 
+// REGULAR WEAPONS: 2, 4, 6, 8 per second
 export const WEAPONS: Weapon[] = [
-  { id: 'gun_bolt', name: 'Ion Pulse', type: WeaponType.PROJECTILE, price: 5000, damage: 15, fireRate: 6, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#60a5fa' },
-  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 12, fireRate: 18, energyCost: 20, cargoWeight: 10, isAmmoBased: true, beamColor: '#fbbf24' },
+  { id: 'gun_bolt', name: 'Ion Pulse', type: WeaponType.PROJECTILE, price: 5000, damage: 25, fireRate: 2, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#60a5fa' },
   { id: 'gun_heavy', name: 'Heavy Autocannon', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 4, energyCost: 40, cargoWeight: 25, isAmmoBased: true, beamColor: '#f87171' },
-  { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 90, fireRate: 8, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' }
+  { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 70, fireRate: 6, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' },
+  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 15, fireRate: 8, energyCost: 20, cargoWeight: 10, isAmmoBased: true, beamColor: '#fbbf24' },
 ];
 
-// REFACTORED EXOTIC WEAPONS - NO TRACKING, NO MINING, VISUAL OVERHAUL
-// FIRE RATE: 2 to 8. SIMPLER = LESS POWER. DISTINCT COLORS.
+// EXOTIC WEAPONS: 3 to 12 per second. HIGHER LEVEL = FASTER + STRONGER
 export const EXOTIC_WEAPONS: Weapon[] = [
-  // TIER 1: SIMPLE (High Rate, Lower Power)
-  { id: 'exotic_bubbles', name: 'Void Sphere', type: WeaponType.PROJECTILE, price: 0, damage: 40, fireRate: 8, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff' }, // Cyan - Solid Glow
-  { id: 'exotic_venom', name: 'Bio-Plasma', type: WeaponType.PROJECTILE, price: 0, damage: 45, fireRate: 7.5, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#39ff14' }, // Neon Green - Spindle
-  { id: 'exotic_fan', name: 'Scatter Spindle', type: WeaponType.PROJECTILE, price: 0, damage: 50, fireRate: 7, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffff00' }, // Yellow - Spindle
+  // TIER 1: SIMPLE (3-5 Shots/s, Lower Power)
+  { id: 'exotic_bubbles', name: 'Void Sphere', type: WeaponType.PROJECTILE, price: 0, damage: 55, fireRate: 3, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff' }, // Cyan
+  { id: 'exotic_venom', name: 'Bio-Plasma', type: WeaponType.PROJECTILE, price: 0, damage: 60, fireRate: 4, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#39ff14' }, // Neon Green
+  { id: 'exotic_fan', name: 'Scatter Spindle', type: WeaponType.PROJECTILE, price: 0, damage: 65, fireRate: 5, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffff00' }, // Yellow
   
-  // TIER 2: MODERATE (Medium Rate, Medium Power)
-  { id: 'exotic_seeker', name: 'Neutron Dart', type: WeaponType.PROJECTILE, price: 0, damage: 65, fireRate: 6.5, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff00ff' }, // Magenta - Comet
-  { id: 'exotic_flame', name: 'Inferno Jet', type: WeaponType.PROJECTILE, price: 0, damage: 70, fireRate: 6, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff4500' }, // OrangeRed - Comet
-  { id: 'exotic_nova', name: 'Star Shard', type: WeaponType.PROJECTILE, price: 0, damage: 85, fireRate: 5.5, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' }, // White - Solid Glow
+  // TIER 2: MODERATE (6-8 Shots/s, Medium Power)
+  { id: 'exotic_seeker', name: 'Neutron Dart', type: WeaponType.PROJECTILE, price: 0, damage: 80, fireRate: 6, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff00ff' }, // Magenta
+  { id: 'exotic_flame', name: 'Inferno Jet', type: WeaponType.PROJECTILE, price: 0, damage: 85, fireRate: 7, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff4500' }, // OrangeRed
+  { id: 'exotic_nova', name: 'Star Shard', type: WeaponType.PROJECTILE, price: 0, damage: 95, fireRate: 8, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' }, // White
   
-  // TIER 3: COMPLEX (Lower Rate, High Power)
-  { id: 'exotic_plasma_ball', name: 'Magma Bolt', type: WeaponType.PROJECTILE, price: 0, damage: 110, fireRate: 5, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff8c00' }, // DarkOrange - Comet
-  { id: 'exotic_mining_laser', name: 'Proton Lance', type: WeaponType.LASER, price: 0, damage: 140, fireRate: 4, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#00bfff' }, // DeepSkyBlue - Thunder
-  { id: 'exotic_wave', name: 'Plasma Ring', type: WeaponType.LASER, price: 0, damage: 180, fireRate: 3.5, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#9400d3' }, // DarkViolet - Ring
+  // TIER 3: COMPLEX (9-10 Shots/s, High Power)
+  { id: 'exotic_plasma_ball', name: 'Magma Bolt', type: WeaponType.PROJECTILE, price: 0, damage: 120, fireRate: 9, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff8c00' }, // DarkOrange
+  { id: 'exotic_mining_laser', name: 'Proton Lance', type: WeaponType.LASER, price: 0, damage: 150, fireRate: 9.5, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#00bfff' }, // DeepSkyBlue
+  { id: 'exotic_wave', name: 'Plasma Ring', type: WeaponType.LASER, price: 0, damage: 180, fireRate: 10, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#9400d3' }, // DarkViolet
   
-  // TIER 4: SOPHISTICATED (Lowest Rate, Extreme Power)
-  { id: 'exotic_arc', name: 'Arc Lash', type: WeaponType.LASER, price: 0, damage: 240, fireRate: 3, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#1e90ff' }, // DodgerBlue - Spindle
-  { id: 'exotic_bolt', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 0, damage: 320, fireRate: 2.5, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#4169e1' }, // RoyalBlue - Thunder
-  { id: 'exotic_gravity', name: 'Singularity Shot', type: WeaponType.LASER, price: 0, damage: 450, fireRate: 2, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#dda0dd' }, // Plum - Solid Glow
+  // TIER 4: SOPHISTICATED (11-12 Shots/s, Extreme Power)
+  { id: 'exotic_arc', name: 'Arc Lash', type: WeaponType.LASER, price: 0, damage: 220, fireRate: 11, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#1e90ff' }, // DodgerBlue
+  { id: 'exotic_bolt', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 0, damage: 280, fireRate: 11.5, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#4169e1' }, // RoyalBlue
+  { id: 'exotic_gravity', name: 'Singularity Shot', type: WeaponType.LASER, price: 0, damage: 350, fireRate: 12, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#dda0dd' }, // Plum
 ];
 
 export const SHIELDS: Shield[] = [

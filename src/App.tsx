@@ -1,7 +1,8 @@
 
 import React, { useState } from 'react';
-import { ExtendedShipConfig } from './constants';
+import { ExtendedShipConfig, SHIPS, PLANETS, SHIELDS } from './constants';
 import GameEngine from './components/GameEngine';
+import { QuadrantType, ShipFitting } from './types';
 
 // Export ShipIcon for LaunchSequence
 export const ShipIcon: React.FC<{
@@ -9,6 +10,15 @@ export const ShipIcon: React.FC<{
   showJets?: boolean;
   className?: string;
   color?: string;
+  hullColor?: string;
+  wingColor?: string;
+  cockpitColor?: string;
+  gunColor?: string;
+  gunBodyColor?: string;
+  engineColor?: string;
+  nozzleColor?: string;
+  activePart?: any;
+  onPartSelect?: any;
 }> = ({ config, showJets, className, color }) => {
   return (
     <div className={`relative ${className || ''}`}>
@@ -28,6 +38,32 @@ export default function App() {
   
   // Placeholder for game state management
   const [gameActive, setGameActive] = useState(false);
+
+  // Default fitting for the demo
+  const defaultFitting: ShipFitting = {
+    weapons: [{ id: 'gun_bolt', count: 1 }],
+    shieldId: 'sh_alpha',
+    secondShieldId: null,
+    flareId: null,
+    reactorLevel: 1,
+    engineType: 'standard',
+    rocketCount: 10,
+    mineCount: 5,
+    hullPacks: 2,
+    wingWeaponId: null,
+    health: 100,
+    ammoPercent: 100,
+    lives: 1,
+    fuel: 100,
+    cargo: []
+  };
+
+  const demoShip = {
+    config: SHIPS[0],
+    fitting: defaultFitting,
+    color: SHIPS[0].defaultColor || '#94a3b8',
+    gunColor: '#60a5fa'
+  };
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden font-sans select-none">
@@ -50,7 +86,14 @@ export default function App() {
                </button>
             </div>
           ) : (
-             <GameEngine onGameOver={() => setGameActive(false)} />
+             <GameEngine 
+               ships={[demoShip]}
+               shield={SHIELDS[0]}
+               difficulty={1}
+               currentPlanet={PLANETS[0]}
+               quadrant={QuadrantType.ALFA}
+               onGameOver={() => setGameActive(false)} 
+             />
           )}
        </div>
 
