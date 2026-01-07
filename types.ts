@@ -1,3 +1,4 @@
+
 export enum MissionType {
   DEFENSE = 'DEFENSE',
   ATTACK = 'ATTACK',
@@ -24,7 +25,7 @@ export enum WeaponType {
 
 export interface CargoItem {
   instanceId: string;
-  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'shield';
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'shield' | 'energy';
   id?: string;
   name: string;
   weight: number;
