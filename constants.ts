@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Defender V81.99
-// VERSION: V81.99
+// CHECKPOINT: Defender V85.30
+// VERSION: V85.30 - BOSS SHIELDS & EMP MINES
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -12,6 +12,23 @@ export interface ExtendedShipConfig extends ShipConfig {
   hullShapeType: 'trapezoid' | 'triangle' | 'oval' | 'finger' | 'angled-flat' | 'rounded' | 'block' | 'needle';
   extraDetail?: 'reservoir' | 'antenna' | 'both' | 'none';
   maxFuel: number;
+  
+  // Re-declare base properties to ensure type safety in components
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  maxEnergy: number;
+  maxCargo: number;
+  speed: number;
+  shape: 'arrow' | 'block' | 'wing' | 'stealth' | 'mine-layer' | 'saucer' | 'frigate' | 'star-t' | 'dragonfly';
+  canLayMines: boolean;
+  defaultColor?: string;
+  engines: number;
+  defaultGuns: number;
+  noseType: 'rounded' | 'flat';
+  wingConfig: 'front-heavy' | 'rear-heavy' | 'balanced';
+  weaponId?: string;
 }
 
 export const SHIPS: ExtendedShipConfig[] = [
@@ -43,34 +60,25 @@ export const BOSS_SHIPS: ExtendedShipConfig[] = [
 ];
 
 export const WEAPONS: Weapon[] = [
-  { id: 'gun_bolt', name: 'Ion Pulse', type: WeaponType.PROJECTILE, price: 5000, damage: 15, fireRate: 6, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#60a5fa' },
-  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 12, fireRate: 18, energyCost: 20, cargoWeight: 10, isAmmoBased: true, beamColor: '#fbbf24' },
-  { id: 'gun_heavy', name: 'Heavy Autocannon', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 4, energyCost: 40, cargoWeight: 25, isAmmoBased: true, beamColor: '#f87171' },
-  { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 90, fireRate: 8, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' }
+  { id: 'gun_bolt', name: 'Ion Pulse', type: WeaponType.PROJECTILE, price: 5000, damage: 45, fireRate: 2, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#60a5fa' },
+  { id: 'gun_vulcan', name: 'Solar Red Glow', type: WeaponType.PROJECTILE, price: 15000, damage: 35, fireRate: 4, energyCost: 20, cargoWeight: 10, isAmmoBased: false, beamColor: '#ef4444' }, 
+  { id: 'gun_heavy', name: 'Neutron Cannon', type: WeaponType.PROJECTILE, price: 35000, damage: 30, fireRate: 6, energyCost: 40, cargoWeight: 25, isAmmoBased: true, beamColor: '#fbbf24' }, 
+  { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 25, fireRate: 8, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' } 
 ];
 
-// REFACTORED EXOTIC WEAPONS - NO TRACKING, NO MINING, VISUAL OVERHAUL
-// FIRE RATE: 2 to 8. SIMPLER = LESS POWER. DISTINCT COLORS.
 export const EXOTIC_WEAPONS: Weapon[] = [
-  // TIER 1: SIMPLE (High Rate, Lower Power)
-  { id: 'exotic_bubbles', name: 'Void Sphere', type: WeaponType.PROJECTILE, price: 0, damage: 40, fireRate: 8, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff' }, // Cyan - Solid Glow
-  { id: 'exotic_venom', name: 'Bio-Plasma', type: WeaponType.PROJECTILE, price: 0, damage: 45, fireRate: 7.5, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#39ff14' }, // Neon Green - Spindle
-  { id: 'exotic_fan', name: 'Scatter Spindle', type: WeaponType.PROJECTILE, price: 0, damage: 50, fireRate: 7, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffff00' }, // Yellow - Spindle
-  
-  // TIER 2: MODERATE (Medium Rate, Medium Power)
-  { id: 'exotic_seeker', name: 'Neutron Dart', type: WeaponType.PROJECTILE, price: 0, damage: 65, fireRate: 6.5, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff00ff' }, // Magenta - Comet
-  { id: 'exotic_flame', name: 'Inferno Jet', type: WeaponType.PROJECTILE, price: 0, damage: 70, fireRate: 6, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff4500' }, // OrangeRed - Comet
-  { id: 'exotic_nova', name: 'Star Shard', type: WeaponType.PROJECTILE, price: 0, damage: 85, fireRate: 5.5, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' }, // White - Solid Glow
-  
-  // TIER 3: COMPLEX (Lower Rate, High Power)
-  { id: 'exotic_plasma_ball', name: 'Magma Bolt', type: WeaponType.PROJECTILE, price: 0, damage: 110, fireRate: 5, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff8c00' }, // DarkOrange - Comet
-  { id: 'exotic_mining_laser', name: 'Proton Lance', type: WeaponType.LASER, price: 0, damage: 140, fireRate: 4, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#00bfff' }, // DeepSkyBlue - Thunder
-  { id: 'exotic_wave', name: 'Plasma Ring', type: WeaponType.LASER, price: 0, damage: 180, fireRate: 3.5, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#9400d3' }, // DarkViolet - Ring
-  
-  // TIER 4: SOPHISTICATED (Lowest Rate, Extreme Power)
-  { id: 'exotic_arc', name: 'Arc Lash', type: WeaponType.LASER, price: 0, damage: 240, fireRate: 3, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#1e90ff' }, // DodgerBlue - Spindle
-  { id: 'exotic_bolt', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 0, damage: 320, fireRate: 2.5, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#4169e1' }, // RoyalBlue - Thunder
-  { id: 'exotic_gravity', name: 'Singularity Shot', type: WeaponType.LASER, price: 0, damage: 450, fireRate: 2, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#dda0dd' }, // Plum - Solid Glow
+  { id: 'exotic_bubbles', name: 'Void Sphere', type: WeaponType.PROJECTILE, price: 0, damage: 45, fireRate: 5, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff' }, 
+  { id: 'exotic_venom', name: 'Bio-Plasma', type: WeaponType.PROJECTILE, price: 0, damage: 50, fireRate: 6, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#39ff14' }, 
+  { id: 'exotic_fan', name: 'Scatter Spindle', type: WeaponType.PROJECTILE, price: 0, damage: 55, fireRate: 7, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffff00' }, 
+  { id: 'exotic_seeker', name: 'Neutron Dart', type: WeaponType.PROJECTILE, price: 0, damage: 70, fireRate: 8, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff00ff' },
+  { id: 'exotic_flame', name: 'Inferno Jet', type: WeaponType.PROJECTILE, price: 0, damage: 75, fireRate: 9, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff4500' }, 
+  { id: 'exotic_nova', name: 'Star Shard', type: WeaponType.PROJECTILE, price: 0, damage: 85, fireRate: 10, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' }, 
+  { id: 'exotic_plasma_ball', name: 'Magma Bolt', type: WeaponType.PROJECTILE, price: 0, damage: 100, fireRate: 11, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff8c00' }, 
+  { id: 'exotic_mining_laser', name: 'Proton Lance', type: WeaponType.LASER, price: 0, damage: 130, fireRate: 12, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#00bfff' }, 
+  { id: 'exotic_wave', name: 'Plasma Ring', type: WeaponType.LASER, price: 0, damage: 160, fireRate: 13, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#9400d3' }, 
+  { id: 'exotic_arc', name: 'Arc Lash', type: WeaponType.LASER, price: 0, damage: 200, fireRate: 14, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#1e90ff' }, 
+  { id: 'exotic_bolt', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 0, damage: 250, fireRate: 15, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#4169e1' }, 
+  { id: 'exotic_gravity', name: 'Singularity Shot', type: WeaponType.LASER, price: 0, damage: 350, fireRate: 8, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#dda0dd' }, 
 ];
 
 export const SHIELDS: Shield[] = [
@@ -86,6 +94,14 @@ export const EXOTIC_SHIELDS: Shield[] = [
   { id: 'exotic_sh_pulsar', name: 'Pulsar Starfield', price: 0, capacity: 5000, regenRate: 20, energyCost: 100, visualType: 'inner-full', color: '#fbbf24' }
 ];
 
+export const BOSS_EXOTIC_SHIELDS = [
+  { id: 'boss_sh_kinetic', color: '#f97316', type: 'kinetic', name: 'Kinetic Barrier', immunity: 'kinetic' }, // Orange - Immune to Missiles/Mines
+  { id: 'boss_sh_energy', color: '#3b82f6', type: 'energy', name: 'Energy Dampener', immunity: 'energy' }, // Blue - Immune to Lasers/Bolts
+  { id: 'boss_sh_regen', color: '#a855f7', type: 'regen', name: 'Phased Array', immunity: 'none' }, // Purple - Fast Regen
+  { id: 'boss_sh_heavy', color: '#ffffff', type: 'heavy', name: 'Hardened Shell', immunity: 'none' }, // White - High HP
+  { id: 'boss_sh_reactive', color: '#10b981', type: 'reactive', name: 'Reactive Matrix', immunity: 'none' } // Green - Balanced
+];
+
 export const DEFENSE_SYSTEMS = [
   { id: 'df_flares', name: 'Flare Dispenser Mk I', price: 15000, description: 'Anti-missile countermeasure system.' }
 ];
@@ -94,8 +110,8 @@ export const EXPLODING_ORDNANCE = [
   { id: 'ord_missile_light', name: 'Sparrow Missiles', price: 8000, count: 10 },
   { id: 'ord_missile_heavy', name: 'Titan Missiles', price: 25000, count: 10 },
   { id: 'ord_missile_emp', name: 'EMP Shock Missiles', price: 35000, count: 10 },
-  { id: 'ord_mine_std', name: 'Gravity Mines', price: 12000, count: 10 },
-  { id: 'ord_mine_plasma', name: 'Plasma Core Mines', price: 45000, count: 10 }
+  { id: 'ord_mine_plasma', name: 'Plasma Core Mines', price: 45000, count: 10 },
+  { id: 'ord_mine_emp', name: 'EMP Auto-Mines', price: 30000, count: 10 }
 ];
 
 export const ENGINES = [
@@ -113,15 +129,12 @@ export const PLANETS: Planet[] = [
   { id: 'p1', name: 'New Horizon', description: 'Central hub of the Terran Alliance.', difficulty: 1, status: 'friendly', orbitRadius: 60, orbitSpeed: 0.005, orbitDirection: 1, size: 2.5, color: '#064e3b', quadrant: QuadrantType.ALFA, moons: [] },
   { id: 'p2', name: 'Aegis IV', description: 'Shield production world under threat.', difficulty: 2, status: 'siege', orbitRadius: 100, orbitSpeed: 0.003, size: 2.0, color: '#334155', quadrant: QuadrantType.ALFA, moons: [] },
   { id: 'p3', name: 'Vulcan Forge', description: 'Weapon testing site.', difficulty: 3, status: 'occupied', orbitRadius: 80, orbitSpeed: 0.004, size: 3.2, color: '#991b1b', quadrant: QuadrantType.ALFA, moons: [] },
-  
   { id: 'p4', name: 'Tundra Prime', description: 'Frozen wasteland.', difficulty: 4, status: 'siege', orbitRadius: 140, orbitSpeed: 0.002, size: 2.8, color: '#60a5fa', quadrant: QuadrantType.BETA, moons: [] },
   { id: 'p5', name: 'Crystalline Void', description: 'Anomalous sector.', difficulty: 5, status: 'occupied', orbitRadius: 90, orbitSpeed: 0.006, size: 2.1, color: '#a855f7', quadrant: QuadrantType.BETA, moons: [] },
   { id: 'p6', name: 'Bio-Sphere X', description: 'Reclaimed by alien fauna.', difficulty: 6, status: 'siege', orbitRadius: 120, orbitSpeed: 0.002, size: 3.5, color: '#10b981', quadrant: QuadrantType.BETA, moons: [] },
-  
   { id: 'p9', name: 'Neon Outpost', description: 'Hyper-visual frontier station.', difficulty: 7, status: 'occupied', orbitRadius: 100, orbitSpeed: 0.003, size: 2.5, color: '#e11d48', quadrant: QuadrantType.GAMA, moons: [] },
   { id: 'p7', name: 'Dread Shore', description: 'Dark matter refinery.', difficulty: 8, status: 'occupied', orbitRadius: 70, orbitSpeed: 0.008, size: 4.0, color: '#171717', quadrant: QuadrantType.GAMA, moons: [] },
   { id: 'p10', name: 'Prism Core', description: 'Crystallized tectonic world.', difficulty: 9, status: 'siege', orbitRadius: 80, orbitSpeed: 0.005, size: 2.8, color: '#fb7185', quadrant: QuadrantType.GAMA, moons: [] },
-  
   { id: 'p8', name: 'Final Frontier', description: 'Absolute edge of colonized space.', difficulty: 10, status: 'siege', orbitRadius: 150, orbitSpeed: 0.001, size: 2.5, color: '#ffffff', quadrant: QuadrantType.DELTA, moons: [] },
   { id: 'p11', name: 'Singularity Rift', description: 'Gravitational anomaly nexus.', difficulty: 11, status: 'occupied', orbitRadius: 110, orbitSpeed: 0.002, size: 3.2, color: '#4c1d95', quadrant: QuadrantType.DELTA, moons: [] },
   { id: 'p12', name: 'Omega Terminus', description: 'The absolute edge of existence.', difficulty: 12, status: 'siege', orbitRadius: 140, orbitSpeed: 0.001, size: 4.0, color: '#1e293b', quadrant: QuadrantType.DELTA, moons: [] }

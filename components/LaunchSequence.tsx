@@ -1,6 +1,3 @@
-
-// CHECKPOINT: Defender V49.0
-// VERSION: V49.0 - Master Cinematic Launch
 import { ExtendedShipConfig } from '../constants';
 import { ShipIcon } from '../App';
 import React, { useEffect, useRef, useState, useMemo } from 'react';
@@ -269,50 +266,4 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, ownedShips, onC
                 position: 'absolute',
                 left: `calc(50% + ${horizontalX}px)`,
                 top: `${verticalY}px`,
-                transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`,
-                opacity: finalOpacity,
-                zIndex: 3000,
-                transition: 'opacity 0.2s ease-out'
-              }}
-              className="w-48 h-48 flex items-center justify-center"
-            >
-              <ShipIcon 
-                config={ship.config} 
-                {...ship.colors} 
-                showJets={isThrusting} 
-                className="w-full h-full drop-shadow-[0_0_60px_rgba(239,68,68,0.9)]" 
-              />
-            </div>
-          );
-        })}
-      </div>
-
-      {/* CINEMATIC HUD OVERLAY */}
-      <div className="absolute top-12 left-12 p-10 border-l-4 border-emerald-500 bg-black/60 backdrop-blur-3xl border-b border-emerald-500/10 rounded-br-2xl">
-        <div className="retro-font text-[18px] text-emerald-400 animate-pulse uppercase tracking-[0.6em] mb-4 shadow-emerald-500/20 shadow-lg">
-          { (Date.now() - startTime) / duration > 0.85 ? 'STABLE ORBIT' : 'ASCENT PHASE' }
-        </div>
-        <div className="flex flex-col gap-2">
-          <div className="retro-font text-[9px] text-zinc-400 uppercase tracking-widest">
-            Altitude: {Math.floor(Math.pow((Date.now() - startTime) / duration, 2) * 450)} km
-          </div>
-          <div className="retro-font text-[9px] text-zinc-500 uppercase tracking-widest">
-            Status: { (Date.now() - startTime) / duration > 0.88 ? 'ENGINES COLD - DRIFT' : 'ENGINES HOT - BURN' }
-          </div>
-        </div>
-      </div>
-      
-      <div className="absolute bottom-12 right-12 text-right pointer-events-none">
-         {/* FIX: Use type guard to safely access quadrant on Planet | Moon union type */}
-         <div className="retro-font text-[10px] text-zinc-600 uppercase tracking-widest mb-2 border-r-2 border-emerald-500/20 pr-4">Targeting Sector: {'quadrant' in planet ? planet.quadrant : 'LOCAL'}</div>
-         <div className="retro-font text-[24px] text-white uppercase tracking-[1.2em] drop-shadow-[0_0_30px_rgba(255,255,255,0.6)]">TRANSIT {planet.name}</div>
-      </div>
-
-      {/* Screen Effects */}
-      <div className="absolute inset-0 pointer-events-none opacity-25 bg-gradient-to-t from-orange-500/10 via-red-500/5 to-transparent mix-blend-screen" />
-      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle,transparent_40%,rgba(0,0,0,0.5)_100%)]" />
-    </div>
-  );
-};
-
-export default LaunchSequence;
+                transform: `translate

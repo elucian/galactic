@@ -1,6 +1,3 @@
-
-// CHECKPOINT: Defender V84.50
-// VERSION: V84.50
 export enum MissionType {
   DEFENSE = 'DEFENSE',
   ATTACK = 'ATTACK',

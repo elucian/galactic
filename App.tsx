@@ -1,6 +1,3 @@
-
-// CHECKPOINT: Defender V84.70
-// VERSION: V84.86 - INTELLIGENT WEAPON SWAP & REFUNDS
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { GameState, Planet, MissionType, ShipConfig, QuadrantType, OwnedShipInstance, WeaponType, ShipFitting, ShipPart, Weapon, Shield, Moon, EquippedWeapon, CargoItem } from './types.ts';
 import { INITIAL_CREDITS, SHIPS, ENGINES, REACTORS, WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig, SHIELDS, EXOTIC_SHIELDS, PLANETS, EXPLODING_ORDNANCE, DEFENSE_SYSTEMS } from './constants.ts';
@@ -50,11 +47,22 @@ export const EnginePod = ({ x, y, color = '#334155', nozzleColor = '#171717', sh
 
 export const ShipGuns = ({ count, gunColor = '#60a5fa', gunBodyColor = '#1c1917', activePart, onPartSelect }: { count: number, gunColor?: string, gunBodyColor?: string, activePart?: ShipPart | null, onPartSelect?: (part: ShipPart) => void }) => {
   const s = count === 1 ? 0.35 : 0.55;
+  // NEW GUN DESIGN: Engine Body + Retractable Crystal
   const renderGun = (x: number, y: number) => (
     <g transform={`translate(${x}, ${y}) scale(${s})`}>
-      <g onClick={(e) => { e.stopPropagation(); onPartSelect?.('guns'); }} className="cursor-pointer"><rect x="-1" y="-18" width="2" height="42" fill={gunColor} stroke={activePart === 'guns' ? '#fff' : 'transparent'} strokeWidth="2" /></g>
-      <g onClick={(e) => { e.stopPropagation(); onPartSelect?.('gun_body'); }} className="cursor-pointer"><rect x="-7" y="-5" width="14" height="22" fill={gunBodyColor} rx="1" stroke={activePart === 'gun_body' ? '#fff' : 'rgba(0,0,0,0.5)'} strokeWidth="1" /></g>
-      <g onClick={(e) => { e.stopPropagation(); onPartSelect?.('guns'); }} className="cursor-pointer"><rect x="-4" y="-24" width="8" height="20" fill="#334155" rx="1.5" stroke={activePart === 'guns' ? '#fff' : 'transparent'} strokeWidth="1" /><rect x="-1" y="-48" width="2" height="32" fill={gunColor} rx="0.5" /></g>
+      {/* Crystal - Retracted */}
+      <g onClick={(e) => { e.stopPropagation(); onPartSelect?.('guns'); }} className="cursor-pointer">
+         <path d="M0 -25 L6 -15 L0 -5 L-6 -15 Z" fill={gunColor} stroke={activePart === 'guns' ? '#fff' : 'transparent'} strokeWidth="2" />
+      </g>
+      {/* Body - Engine Style with Fins */}
+      <g onClick={(e) => { e.stopPropagation(); onPartSelect?.('gun_body'); }} className="cursor-pointer">
+         <rect x="-8" y="-15" width="16" height="30" fill={gunBodyColor || '#1c1917'} stroke={activePart === 'gun_body' ? '#fff' : 'rgba(0,0,0,0.5)'} strokeWidth="1" />
+         {/* Cooling Fins */}
+         <line x1="-8" y1="-10" x2="8" y2="-10" stroke="rgba(0,0,0,0.3)" strokeWidth="2" />
+         <line x1="-8" y1="-5" x2="8" y2="-5" stroke="rgba(0,0,0,0.3)" strokeWidth="2" />
+         <line x1="-8" y1="0" x2="8" y2="0" stroke="rgba(0,0,0,0.3)" strokeWidth="2" />
+         <line x1="-8" y1="5" x2="8" y2="5" stroke="rgba(0,0,0,0.3)" strokeWidth="2" />
+      </g>
     </g>
   );
   return <g>{count === 1 ? renderGun(50, 15) : <>{renderGun(25, 45)}{renderGun(75, 45)}</>}</g>;
@@ -522,9 +530,42 @@ const App: React.FC = () => {
            <div className="w-full max-w-xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col shadow-2xl">
               <header className="p-3 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
                  <h2 className="retro-font text-emerald-400 text-[10px] uppercase">Strategic Systems Config</h2>
-                 <button onClick={() => setIsOptionsOpen(false)} className="text-zinc-500 hover:text-white text-[9px] uppercase font-black">EXIT</button>
+                 <button onClick={() => setIsOptionsOpen(false)} className="text-zinc-500 hover:text-white text-[9px] uppercase font-black px-4 py-2 border border-zinc-700 rounded">EXIT</button>
               </header>
-              <div className="p-4 space-y-4">
+              <div className="p-4 space-y-6 max-h-[80vh] overflow-y-auto custom-scrollbar">
+                 
+                 {/* PILOT IDENTITY SECTION */}
+                 <div className="space-y-3">
+                    <label className="text-[9px] uppercase font-black text-zinc-500 tracking-widest">Pilot Credentials</label>
+                    <div className="space-y-4 bg-zinc-900/40 p-4 rounded-lg border border-zinc-800/50">
+                       <div className="flex flex-col gap-2">
+                          <span className="text-[10px] font-black uppercase text-zinc-300">Callsign</span>
+                          <input 
+                             type="text" 
+                             value={gameState.pilotName} 
+                             maxLength={12}
+                             onChange={e => setGameState(p => ({ ...p, pilotName: e.target.value.toUpperCase().slice(0, 12) }))}
+                             className="w-full bg-black border border-zinc-700 p-2 text-emerald-400 retro-font text-[10px] focus:border-emerald-500 outline-none"
+                          />
+                       </div>
+                       <div className="flex flex-col gap-2">
+                          <span className="text-[10px] font-black uppercase text-zinc-300">Biometric Profile</span>
+                          <div className="grid grid-cols-5 gap-2">
+                             {AVATARS.map((avatar) => (
+                                <button 
+                                   key={avatar.label}
+                                   onClick={() => { setGameState(p => ({ ...p, pilotAvatar: avatar.icon })); audioService.playSfx('click'); }}
+                                   className={`aspect-square flex items-center justify-center text-2xl bg-black border rounded-lg transition-all ${gameState.pilotAvatar === avatar.icon ? 'border-emerald-500 bg-emerald-500/10' : 'border-zinc-800 opacity-60 hover:opacity-100'}`}
+                                >
+                                   {avatar.icon}
+                                </button>
+                             ))}
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+
+                 {/* AUDIO CONTROLS */}
                  <div className="space-y-3">
                     <label className="text-[9px] uppercase font-black text-zinc-500 tracking-widest">Audio Protocols</label>
                     <div className="space-y-4 bg-zinc-900/40 p-4 rounded-lg border border-zinc-800/50">
@@ -661,7 +702,7 @@ const App: React.FC = () => {
             })}
           </div>
           <footer className="bg-zinc-950/90 p-3 sm:p-4 rounded-xl border-2 border-zinc-800 flex justify-between items-center backdrop-blur-md shadow-2xl shrink-0 overflow-hidden">
-            <div onClick={() => setScreenState('intro')} className="flex items-center gap-2 sm:gap-3 bg-zinc-900/60 p-1 pr-2 sm:pr-4 rounded-lg border border-zinc-800 group hover:border-emerald-500/30 transition-colors cursor-pointer shrink-0">
+            <div onClick={() => setIsOptionsOpen(true)} className="flex items-center gap-2 sm:gap-3 bg-zinc-900/60 p-1 pr-2 sm:pr-4 rounded-lg border border-zinc-800 group hover:border-emerald-500/30 transition-colors cursor-pointer shrink-0">
                <div className="w-8 h-8 sm:w-10 sm:h-10 flex items-center justify-center text-xl sm:text-2xl bg-zinc-950 rounded border border-zinc-700 group-hover:border-emerald-500/50 transition-colors">{gameState.pilotAvatar}</div>
                <div className="hidden sm:flex flex-col"><span className="text-[6px] uppercase font-black text-zinc-500">Pilot</span><span className="text-[9px] font-black uppercase text-emerald-400 tracking-widest">{gameState.pilotName}</span></div>
             </div>
@@ -678,7 +719,7 @@ const App: React.FC = () => {
                {isStalemate ? (
                  <button onClick={restartGame} className="px-2 py-2.5 sm:px-6 sm:py-3 bg-red-600 border border-red-400 text-white text-[7px] sm:text-[9px] font-black uppercase tracking-widest shadow-lg rounded-md animate-pulse">REBOOT</button>
                ) : (
-                 <button onClick={() => setScreenState('map')} disabled={!selectedFitting || selectedFitting.fuel <= 0 || selectedFitting.health <= 0 || selectedFitting.weapons.length === 0} className="px-2 py-2.5 sm:px-6 sm:py-3 bg-emerald-600 border-2 border-emerald-400 text-white text-[7px] sm:text-[9px] font-black uppercase tracking-widest shadow-lg rounded-md disabled:opacity-30 w-auto">LANCH</button>
+                 <button onClick={() => setScreenState('map')} disabled={!selectedFitting || selectedFitting.fuel <= 0 || selectedFitting.health <= 0 || selectedFitting.weapons.length === 0} className="px-2 py-2.5 sm:px-6 sm:py-3 bg-emerald-600 border-2 border-emerald-400 text-white text-[7px] sm:text-[9px] font-black uppercase tracking-widest shadow-lg rounded-md disabled:opacity-30 w-auto">LAUNCH</button>
                )}
             </div>
           </footer>
@@ -832,7 +873,6 @@ const App: React.FC = () => {
           <div className="flex-grow flex flex-wrap items-center justify-center gap-4 sm:gap-12 overflow-y-auto content-center">
             {PLANETS.filter(p => p.quadrant === gameState.currentQuadrant).map(p => (
               <div key={p.id} onClick={() => setGameState(prev => ({ ...prev, currentPlanet: p }))} className={`group p-3 sm:p-6 border-2 rounded-xl flex flex-col items-center transition-all cursor-pointer ${gameState.currentPlanet?.id === p.id ? 'border-emerald-500 bg-emerald-500/10 scale-105 shadow-xl' : 'border-zinc-800/40 hover:border-zinc-700 opacity-60 hover:opacity-100'}`}>
-                {/* Planet Sphere - Fully Opaque (solid color) as requested */}
                 <div className="w-12 h-12 sm:w-24 sm:h-24 rounded-full mb-3 sm:mb-6 shadow-2xl transition-transform group-hover:rotate-6 opacity-100" style={{ backgroundColor: p.color, backgroundImage: `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.2), transparent)` }} />
                 <p className="text-[10px] sm:text-[12px] font-black uppercase text-white mb-0.5 tracking-widest text-center">{p.name}</p>
                 <p className="text-[7px] sm:text-[9px] uppercase text-zinc-500 font-black">LVL {p.difficulty}</p>

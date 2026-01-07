@@ -1,6 +1,3 @@
-
-// CHECKPOINT: Defender V80.33
-// VERSION: V80.33
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
