@@ -1,3 +1,5 @@
+
+// [Existing imports]
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import GameEngine from './components/GameEngine.tsx';
 import SectorMap from './components/SectorMap.tsx';
@@ -223,13 +225,25 @@ export default function App() {
     });
 
     if (aborted) {
-        setWarpDestination('hangar');
-        setScreen('warp');
+        const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1'));
+        const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA;
+        const currentQuad = gameState.currentQuadrant;
+        const showTrans = gameState.settings.showTransitions;
+
+        if (currentQuad !== homeQuad && showTrans) {
+            setWarpDestination('hangar');
+            setScreen('warp');
+        } else {
+            setGameState(prev => ({ ...prev, currentQuadrant: homeQuad }));
+            setScreen('hangar');
+            audioService.playTrack('command');
+        }
     } else {
         if (payload?.health > 0 && gameState.settings.showTransitions && success) {
             setScreen('landing');
         } else {
             setScreen('hangar');
+            audioService.playTrack('command');
         }
     }
   };
@@ -291,6 +305,10 @@ export default function App() {
 
   const handleWarpComplete = () => {
       if (warpDestination === 'hangar') {
+          const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1'));
+          const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA;
+          setGameState(prev => ({ ...prev, currentQuadrant: homeQuad }));
+          
           setScreen('hangar');
           audioService.playTrack('command');
       } else if (warpDestination === 'landing') {
@@ -331,6 +349,8 @@ export default function App() {
     });
     setIsStoreOpen(false); audioService.playSfx('buy');
   };
+  
+  // [Existing handler functions: moveItems, marketBuy, setPartColor, etc. remain unchanged]
   const getTransferBatchSize = (type: string) => { if (['missile', 'mine', 'fuel', 'energy'].includes(type)) return 10; if (['gold', 'platinum', 'lithium'].includes(type)) return 50; return 1; };
   const moveAllItems = (direction: 'to_reserve' | 'to_ship') => {
       if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; const config = selectedShipConfig; if (!config) return;
@@ -449,6 +469,11 @@ export default function App() {
             planetRegistry={gameState.planetRegistry}
             onLaunch={handlePlanetSelection} 
             onBack={() => setScreen('hangar')} 
+            testMode={!!gameState.settings.testMode}
+            onTestLanding={(planet) => {
+                setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: planet.quadrant }));
+                setScreen('landing');
+            }}
         />
       )}
       
@@ -502,7 +527,20 @@ export default function App() {
           mode={gameMode} 
         />
       )}
-      {screen === 'landing' && gameState.currentPlanet && (<LandingScene planet={gameState.currentPlanet} shipShape={selectedShipConfig?.shape || 'arrow'} onComplete={() => { setScreen('hangar'); audioService.playTrack('command'); }} />)}
+      {screen === 'landing' && gameState.currentPlanet && (
+        <LandingScene 
+            planet={gameState.currentPlanet} 
+            shipShape={selectedShipConfig?.shape || 'arrow'} 
+            onComplete={() => { 
+                // Ensure docked planet is updated upon successful landing
+                if (gameState.currentPlanet) {
+                    setGameState(prev => ({...prev, dockedPlanetId: prev.currentPlanet!.id}));
+                }
+                setScreen('hangar'); 
+                audioService.playTrack('command'); 
+            }} 
+        />
+      )}
     </div>
   );
 }

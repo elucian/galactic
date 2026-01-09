@@ -135,7 +135,16 @@ export const ShipIcon = ({
             ctx.moveTo(ex-8, ey+20); ctx.lineTo(ex+8, ey+20); ctx.lineTo(ex, ey+45); ctx.fill(); ctx.globalAlpha = 1.0;
         }
       };
-      if (engineCount === 1) drawEngine(50, 82); else { [25,75].forEach(ex => drawEngine(ex, 75)); }
+      
+      if (engineCount === 1) {
+          drawEngine(50, 82);
+      } else if (engineCount === 2) {
+          [25, 75].forEach(ex => drawEngine(ex, 75));
+      } else if (engineCount === 3) {
+          [25, 50, 75].forEach(ex => drawEngine(ex, 75));
+      } else if (engineCount >= 4) {
+          [20, 40, 60, 80].forEach(ex => drawEngine(ex, 75));
+      }
 
       drawPart('wings', () => {
           ctx.fillStyle = wingColor || '#64748b'; ctx.beginPath(); 

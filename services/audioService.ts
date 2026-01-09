@@ -15,6 +15,12 @@ class AudioService {
   // Launch Sound State
   private launchGain: GainNode | null = null;
 
+  // Landing Sound State
+  private landingThrusterOsc: AudioBufferSourceNode | null = null;
+  private landingThrusterGain: GainNode | null = null;
+  private landingThrusterFilter: BiquadFilterNode | null = null;
+  private ambienceNodes: AudioNode[] = [];
+
   init() {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -41,6 +47,193 @@ class AudioService {
   setEnabled(e: boolean) {
     this.enabled = e;
     this.updateVolume(this.volume);
+  }
+
+  startLandingThruster() {
+    this.init();
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    
+    // Create Brown Noise Buffer for heavy rumble
+    // 4 seconds loop to avoid repetition artifacts
+    const bufferSize = ctx.sampleRate * 4;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    
+    let lastOut = 0;
+    for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        // Leaky integrator for brown noise approximation
+        lastOut = (lastOut + (0.02 * white)) / 1.02;
+        data[i] = lastOut * 3.5; 
+        // Add a tiny bit of white noise back for high-freq hiss
+        data[i] += white * 0.05; 
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    // Filter to shape the roar dynamically
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 100; // Start deep and muffled
+
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain!);
+    
+    noise.start();
+    
+    this.landingThrusterOsc = noise;
+    this.landingThrusterFilter = filter;
+    this.landingThrusterGain = gain;
+  }
+
+  updateLandingThruster(intensity: number) {
+    if (this.landingThrusterGain && this.landingThrusterFilter && this.ctx) {
+        const t = this.ctx.currentTime;
+        // Volume: 0 to 0.7 based on intensity
+        const vol = Math.max(0, Math.min(0.7, intensity));
+        this.landingThrusterGain.gain.setTargetAtTime(vol, t, 0.1);
+        
+        // Filter Freq: 80Hz (idle rumble) to 600Hz (full throttle roar)
+        const freq = 80 + (intensity * 520); 
+        this.landingThrusterFilter.frequency.setTargetAtTime(freq, t, 0.1);
+    }
+  }
+
+  stopLandingThruster() {
+    if (this.landingThrusterGain && this.ctx) {
+        this.landingThrusterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
+        setTimeout(() => {
+            if (this.landingThrusterOsc) {
+                try { this.landingThrusterOsc.stop(); } catch(e){}
+                this.landingThrusterOsc.disconnect();
+                this.landingThrusterOsc = null;
+            }
+            if (this.landingThrusterFilter) {
+                this.landingThrusterFilter.disconnect();
+                this.landingThrusterFilter = null;
+            }
+            if (this.landingThrusterGain) {
+                this.landingThrusterGain.disconnect();
+                this.landingThrusterGain = null;
+            }
+        }, 600);
+    }
+  }
+
+  playLandThud() {
+    this.init();
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    // 1. Heavy Low Thud (Sine drop) - The "weight"
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(120, t);
+    osc.frequency.exponentialRampToValueAtTime(10, t + 0.3);
+    
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.8, t);
+    gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+    
+    osc.connect(gain);
+    gain.connect(this.masterGain!);
+    osc.start(t);
+    osc.stop(t + 0.4);
+
+    // 2. Metallic Clank (Bandpass Square) - The "gear"
+    const metalOsc = ctx.createOscillator();
+    metalOsc.type = 'square';
+    metalOsc.frequency.setValueAtTime(200, t);
+    metalOsc.frequency.linearRampToValueAtTime(50, t + 0.15);
+    
+    const metalFilter = ctx.createBiquadFilter();
+    metalFilter.type = 'bandpass';
+    metalFilter.Q.value = 5;
+    metalFilter.frequency.setValueAtTime(1000, t);
+
+    const metalGain = ctx.createGain();
+    metalGain.gain.setValueAtTime(0.3, t);
+    metalGain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
+
+    metalOsc.connect(metalFilter);
+    metalFilter.connect(metalGain);
+    metalGain.connect(this.masterGain!);
+    metalOsc.start(t);
+    metalOsc.stop(t + 0.2);
+
+    // 3. Impact Hiss (Filtered Noise) - The "dust/hydraulics"
+    const noise = ctx.createBufferSource();
+    const bSize = ctx.sampleRate * 0.5;
+    const b = ctx.createBuffer(1, bSize, ctx.sampleRate);
+    const d = b.getChannelData(0);
+    for(let i=0; i<bSize; i++) d[i] = Math.random()*2-1;
+    noise.buffer = b;
+
+    const noiseFilter = ctx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.setValueAtTime(800, t);
+    noiseFilter.frequency.linearRampToValueAtTime(100, t + 0.4);
+
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.5, t);
+    noiseGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(this.masterGain!);
+    noise.start(t);
+    noise.stop(t + 0.4);
+  }
+
+  startCrickets() {
+    this.init();
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    
+    // Create a rhythmic high pitch chirp
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = 4000;
+    
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    
+    // LFO for chirping rhythm
+    const lfo = ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = 4; // 4 chirps per second roughly
+    
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 0.05; // Modulation depth
+    
+    // Connect LFO to Gain
+    lfo.connect(gain.gain);
+    
+    osc.connect(gain);
+    gain.connect(this.masterGain!);
+    
+    osc.start();
+    lfo.start();
+    
+    this.ambienceNodes.push(osc, lfo, gain, lfoGain);
+  }
+
+  stopAmbience() {
+    this.ambienceNodes.forEach(node => {
+        try { node.disconnect(); } catch(e){}
+        if (node instanceof OscillatorNode || node instanceof AudioBufferSourceNode) {
+            try { node.stop(); } catch(e){}
+        }
+    });
+    this.ambienceNodes = [];
   }
 
   playLaunchSequence() {
@@ -394,6 +587,8 @@ class AudioService {
       this.stop();
       this.stopCharging();
       this.stopLaunchSequence();
+      this.stopLandingThruster();
+      this.stopAmbience();
     }
   }
 

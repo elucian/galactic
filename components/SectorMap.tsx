@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Planet, QuadrantType, MissionType, PlanetStatusData } from '../types.ts';
 import { PLANETS } from '../constants.ts';
@@ -10,9 +11,11 @@ interface SectorMapProps {
   orbitOffsets: Record<string, number>;
   universeStartTime: number;
   planetRegistry?: Record<string, PlanetStatusData>;
+  testMode?: boolean;
+  onTestLanding?: (planet: Planet) => void;
 }
 
-const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack, orbitOffsets, universeStartTime, planetRegistry }) => {
+const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack, orbitOffsets, universeStartTime, planetRegistry, testMode, onTestLanding }) => {
   const [activeQuadrant, setActiveQuadrant] = useState<QuadrantType>(currentQuadrant);
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -491,13 +494,19 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                 </div>
              </div>
 
-             <div className="mt-auto pt-4">
+             <div className="mt-auto pt-4 flex flex-col gap-2">
                 <button onClick={() => onLaunch(selectedPlanet)} className={`w-full py-4 text-white font-black uppercase tracking-[0.2em] text-xs rounded shadow-lg transition-all hover:scale-[1.02] active:scale-95 group relative overflow-hidden ${getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'bg-red-700 hover:bg-red-600 shadow-[0_0_20px_rgba(220,38,38,0.3)]'}`}>
                    <span className="relative z-10 group-hover:animate-pulse">
                        {getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'INITIATE LANDING' : 'ENGAGE HOSTILES'}
                    </span>
                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1s_infinite]" />
                 </button>
+                
+                {testMode && onTestLanding && (
+                    <button onClick={() => onTestLanding(selectedPlanet)} className="w-full py-2 bg-orange-600/20 border border-orange-500 text-orange-500 font-black uppercase tracking-widest text-[10px] rounded hover:bg-orange-600 hover:text-white transition-colors">
+                        TEST LANDING SEQUENCE
+                    </button>
+                )}
              </div>
           </div>
         ) : (
