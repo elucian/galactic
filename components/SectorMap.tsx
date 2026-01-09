@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Planet, QuadrantType, MissionType } from '../types.ts';
+import { Planet, QuadrantType, MissionType, PlanetStatusData } from '../types.ts';
 import { PLANETS } from '../constants.ts';
 import { getMissionBriefing } from '../services/geminiService.ts';
 
@@ -9,9 +9,10 @@ interface SectorMapProps {
   onBack: () => void;
   orbitOffsets: Record<string, number>;
   universeStartTime: number;
+  planetRegistry?: Record<string, PlanetStatusData>;
 }
 
-const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack, orbitOffsets, universeStartTime }) => {
+const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack, orbitOffsets, universeStartTime, planetRegistry }) => {
   const [activeQuadrant, setActiveQuadrant] = useState<QuadrantType>(currentQuadrant);
   const [selectedPlanetId, setSelectedPlanetId] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(Date.now());
@@ -23,25 +24,41 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const selectedPlanet = useMemo(() => PLANETS.find(p => p.id === selectedPlanetId), [selectedPlanetId]);
   const isWhiteDwarf = selectedPlanetId === 'white_dwarf';
 
+  const getPlanetStatus = (id: string) => {
+      if (!planetRegistry) return 'occupied';
+      return planetRegistry[id]?.status || 'occupied';
+  };
+
+  const getWins = (id: string) => {
+      if (!planetRegistry) return 0;
+      return planetRegistry[id]?.wins || 0;
+  };
+
   // Generate visual-only properties for the view (orbits, moons)
   const planetVisuals = useMemo(() => {
-    return sectorPlanets.map((p, i) => ({
-      ...p,
-      // Distribute orbits evenly for visual clarity
-      visualDistance: 160 + (i * 100), 
-      orbitSpeedFactor: 1 / (i + 1), 
-      orbitOffset: orbitOffsets[p.id] || 0,
-      orbitDirection: Math.random() > 0.5 ? 1 : -1,
-      // Procedural visual moons - randomized per session as they are decoration
-      visualMoons: Array.from({ length: Math.floor(Math.random() * 3) + (i === 1 ? 1 : 0) }).map((_, mi) => ({
-        dist: 25 + (mi * 10),
-        speed: 0.02 + (Math.random() * 0.02),
-        offset: Math.random() * Math.PI * 2,
-        direction: Math.random() > 0.5 ? 1 : -1,
-        size: 5 + Math.random() * 4 
-      }))
-    }));
-  }, [sectorPlanets, orbitOffsets]);
+    return sectorPlanets.map((p, i) => {
+      const status = getPlanetStatus(p.id);
+      return {
+        ...p,
+        // Override status color based on registry
+        statusColor: status === 'friendly' ? '#10b981' : (status === 'siege' ? '#f97316' : '#ef4444'),
+        actualStatus: status,
+        // Distribute orbits evenly for visual clarity
+        visualDistance: 160 + (i * 100), 
+        orbitSpeedFactor: 1 / (i + 1), 
+        orbitOffset: orbitOffsets[p.id] || 0,
+        orbitDirection: Math.random() > 0.5 ? 1 : -1,
+        // Procedural visual moons - randomized per session as they are decoration
+        visualMoons: Array.from({ length: Math.floor(Math.random() * 3) + (i === 1 ? 1 : 0) }).map((_, mi) => ({
+          dist: 25 + (mi * 10),
+          speed: 0.02 + (Math.random() * 0.02),
+          offset: Math.random() * Math.PI * 2,
+          direction: Math.random() > 0.5 ? 1 : -1,
+          size: 5 + Math.random() * 4 
+        }))
+      };
+    });
+  }, [sectorPlanets, orbitOffsets, planetRegistry]);
 
   // Generate background stars with twinkle properties
   const stars = useMemo(() => {
@@ -71,7 +88,10 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
     if (selectedPlanet) {
       setIsLoadingBriefing(true);
       setBriefing("");
-      getMissionBriefing(selectedPlanet.name, MissionType.ATTACK, selectedPlanet.difficulty)
+      const status = getPlanetStatus(selectedPlanet.id);
+      const missionType = status === 'friendly' ? MissionType.TRAVEL : (status === 'siege' ? MissionType.DEFENSE : MissionType.ATTACK);
+      
+      getMissionBriefing(selectedPlanet.name, missionType, selectedPlanet.difficulty)
         .then(text => {
           setBriefing(text);
           setIsLoadingBriefing(false);
@@ -81,7 +101,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
           setIsLoadingBriefing(false);
         });
     }
-  }, [selectedPlanetId]);
+  }, [selectedPlanetId, planetRegistry]);
 
   const getSunVisuals = (q: QuadrantType) => {
     switch (q) {
@@ -115,104 +135,41 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   };
 
   const elapsed = currentTime - universeStartTime;
-  // Speed Calibration: 
-  // Old logic: angle += 0.001 per frame. ~60fps => ~0.06 rad/sec.
-  // New logic: elapsed (ms). 1000ms = 1 sec.
-  // We want 0.06 rad/sec. So constant K = 0.06 / 1000 = 0.00006.
   const SPEED_CONSTANT = 0.00006;
 
   const renderWhiteDwarf = () => {
     if (activeQuadrant !== QuadrantType.DELTA) return null;
-
-    // Use consistent time base for white dwarf too
-    const orbitSpeed = 0.01 * 0.06; // calibrated to approx match old speed relative to planets
-    const angle = elapsed * SPEED_CONSTANT * 10; // White dwarf is fast
-    
-    // Moved closer by 15% (Original approx 126 -> 107)
-    const a = 107; 
-    const b = 30;  
-    const tilt = -Math.PI / 8;
-
-    // Current Pos
-    const ux = Math.cos(angle) * a;
-    const uy = Math.sin(angle) * b;
+    const angle = elapsed * SPEED_CONSTANT * 10; 
+    const a = 107; const b = 30; const tilt = -Math.PI / 8;
+    const ux = Math.cos(angle) * a; const uy = Math.sin(angle) * b;
     const x = ux * Math.cos(tilt) - uy * Math.sin(tilt);
     const y = ux * Math.sin(tilt) + uy * Math.cos(tilt);
-
-    // Depth check
     const isBehind = Math.sin(angle) < 0; 
     const zIndex = isBehind ? 5 : 30; 
 
-    // Generate Accretion Stream (Sucked into Black Hole)
-    // Points interpolated from Star -> Center with spiral distortion
-    const trailPoints = [];
-    const trailLength = 40; // Length of the stream
-    
+    const trailPoints = []; const trailLength = 40; 
     for(let i = 0; i < trailLength; i++) {
-        // t goes from 0 (at star) to 1 (near black hole)
         const t = i / trailLength;
-        
-        // Lerp towards center (0,0)
-        // We stop slightly before 0,0 to simulate horizon (radius ~20)
         const distFactor = 1.0 - (t * 0.9); 
-        
-        // Add spiral curve (accretion spin) - curves toward horizon
         const spiralAngle = t * Math.PI * 1.2; 
-        
-        // Base position relative to star, moving towards 0
-        let tx = x * distFactor;
-        let ty = y * distFactor;
-        
-        // Apply spiral rotation to this point around center (0,0)
-        // Rotating the vector (tx, ty) by spiralAngle
+        let tx = x * distFactor; let ty = y * distFactor;
         const rotX = tx * Math.cos(spiralAngle) - ty * Math.sin(spiralAngle);
         const rotY = tx * Math.sin(spiralAngle) + ty * Math.cos(spiralAngle);
-        
-        // Turbulence
         const jitter = (Math.random() - 0.5) * (i * 0.2);
-
-        trailPoints.push({
-            x: rotX + jitter, 
-            y: rotY + jitter,
-            // Becomes more transparent as it nears the black hole
-            opacity: 0.8 * (1 - t),
-            size: 4 * (1 - t * 0.5), // Shrinks as it falls in
-            blur: 1 + (t * 2)
-        });
+        trailPoints.push({ x: rotX + jitter, y: rotY + jitter, opacity: 0.8 * (1 - t), size: 4 * (1 - t * 0.5), blur: 1 + (t * 2) });
     }
 
     return (
         <>
             <div className="absolute left-1/2 top-1/2 w-0 h-0 pointer-events-none" style={{ zIndex: zIndex - 1 }}>
                 {trailPoints.map((tp, i) => (
-                    <div 
-                        key={i}
-                        className="absolute rounded-full"
-                        style={{
-                            transform: `translate(${tp.x}px, ${tp.y}px) translate(-50%, -50%)`,
-                            width: `${tp.size}px`, 
-                            height: `${tp.size}px`,
-                            backgroundColor: '#a5f3fc', 
-                            opacity: tp.opacity,
-                            filter: `blur(${tp.blur}px)`,
-                            boxShadow: `0 0 ${tp.size * 2}px rgba(165, 243, 252, 0.4)`
-                        }}
-                    />
+                    <div key={i} className="absolute rounded-full"
+                        style={{ transform: `translate(${tp.x}px, ${tp.y}px) translate(-50%, -50%)`, width: `${tp.size}px`, height: `${tp.size}px`, backgroundColor: '#a5f3fc', opacity: tp.opacity, filter: `blur(${tp.blur}px)`, boxShadow: `0 0 ${tp.size * 2}px rgba(165, 243, 252, 0.4)` }} />
                 ))}
             </div>
-            {/* Expanded click target for easier selection */}
-            <div 
-                className="absolute left-1/2 top-1/2 cursor-pointer group flex items-center justify-center"
-                style={{
-                    transform: `translate(${x}px, ${y}px) translate(-50%, -50%)`,
-                    zIndex: zIndex + 1, // Ensure above everything
-                    width: '40px', height: '40px' // Larger hit area
-                }}
-                onClick={(e) => {
-                    e.stopPropagation();
-                    setSelectedPlanetId('white_dwarf');
-                }}
-            >
+            <div className="absolute left-1/2 top-1/2 cursor-pointer group flex items-center justify-center"
+                style={{ transform: `translate(${x}px, ${y}px) translate(-50%, -50%)`, zIndex: zIndex + 1, width: '40px', height: '40px' }}
+                onClick={(e) => { e.stopPropagation(); setSelectedPlanetId('white_dwarf'); }} >
                 <div className={`w-3 h-3 bg-white rounded-full shadow-[0_0_15px_#fff] transition-all duration-300 pointer-events-none ${selectedPlanetId === 'white_dwarf' ? 'scale-150 shadow-[0_0_25px_#22d3ee]' : 'group-hover:scale-125'}`} />
             </div>
         </>
@@ -221,63 +178,20 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
   const renderComet = () => {
     if (activeQuadrant !== QuadrantType.GAMA) return null;
-    
-    // Comet parameters - elliptical orbit
-    const t = elapsed * 0.00005; // Slow orbital period
-    
-    // Large orbit to ensure clearing the sun with significant margin
-    // Sun visual radius is approx 64px (w-32)
-    // We want perhelion > 128px
-    const a = 600; // Semi-major axis
-    const b = 360; // Semi-minor axis (eccentricity ~0.8)
-    
-    // c = distance from center to focus
-    // c^2 = a^2 - b^2 = 360000 - 129600 = 230400
-    // c = 480
-    const c = 480; 
-    
-    // Calculate position
-    // We shift X by +c so the left focus is at (0,0) where the Sun is
-    const rawX = Math.cos(t) * a + c; 
-    const rawY = Math.sin(t) * b;
-    
-    // Precession: Rotate the entire orbit around the sun
-    // "Focal point rotating around the sun like a planet"
-    // Using a slow rotation speed comparable to outer planets
+    const t = elapsed * 0.00005; 
+    const a = 600; const b = 360; const c = 480; 
+    const rawX = Math.cos(t) * a + c; const rawY = Math.sin(t) * b;
     const precessionSpeed = 0.000015; 
     const baseTilt = -Math.PI / 8;
     const totalRotation = baseTilt + (elapsed * precessionSpeed);
-    
     const x = rawX * Math.cos(totalRotation) - rawY * Math.sin(totalRotation);
     const y = rawX * Math.sin(totalRotation) + rawY * Math.cos(totalRotation);
-    
-    // Ion Tail Logic: Points RADIALLY AWAY from the Sun (0,0)
     const tailAngle = Math.atan2(y, x);
-
-    // Depth check
     const zIndex = Math.sin(t) < 0 ? 5 : 25;
 
     return (
-      <div 
-        className="absolute w-0 h-0 pointer-events-none"
-        style={{ 
-            zIndex,
-            left: '50%', top: '50%',
-            transform: `translate(${x}px, ${y}px)`
-        }}
-      >
-         {/* Tail (Rendered first to stay behind head) */}
-         <div 
-            className="absolute h-[3px] origin-left bg-gradient-to-r from-cyan-200 via-cyan-500/40 to-transparent blur-[1px]"
-            style={{ 
-                top: '-1.5px', // Center tail vertically on the point (thickness 3px)
-                left: '0px',
-                width: '160px', 
-                transform: `rotate(${tailAngle}rad)`, // Points away from (0,0)
-            }}
-         />
-         
-         {/* Comet Head */}
+      <div className="absolute w-0 h-0 pointer-events-none" style={{ zIndex, left: '50%', top: '50%', transform: `translate(${x}px, ${y}px)` }}>
+         <div className="absolute h-[3px] origin-left bg-gradient-to-r from-cyan-200 via-cyan-500/40 to-transparent blur-[1px]" style={{ top: '-1.5px', left: '0px', width: '160px', transform: `rotate(${tailAngle}rad)` }} />
          <div className="absolute w-2.5 h-2.5 bg-white rounded-full shadow-[0_0_15px_#22d3ee] -translate-x-1/2 -translate-y-1/2" />
       </div>
     );
@@ -285,62 +199,18 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
   const sunStyle = getSunVisuals(activeQuadrant);
 
-  // Black Hole Pulsar Logic
-  // Cycle: 45s (45000ms)
-  // Active: 10s (10000ms)
-  // Off: 35s (35000ms)
   const renderBlackHoleJets = () => {
       if (!sunStyle.isBlackHole) return null;
-      
-      const cycleLength = 45000;
-      const cyclePos = elapsed % cycleLength;
-      const activeDuration = 10000; 
-      
-      if (cyclePos > activeDuration + 1000) return null; // +1000 for fade out
-
-      // Fade in/out logic
-      let opacity = 0;
-      if (cyclePos < 1000) opacity = cyclePos / 1000; // Fade in 1s
-      else if (cyclePos < activeDuration) opacity = 1; // Full on
-      else opacity = 1 - ((cyclePos - activeDuration) / 1000); // Fade out 1s
-      
-      // Oscillation: 5 degrees back and forth
-      // elapsed * 0.003 approx matches time * 0.05 (if time was 60fps)
+      const cycleLength = 45000; const cyclePos = elapsed % cycleLength; const activeDuration = 10000; 
+      if (cyclePos > activeDuration + 1000) return null; 
+      let opacity = 0; if (cyclePos < 1000) opacity = cyclePos / 1000; else if (cyclePos < activeDuration) opacity = 1; else opacity = 1 - ((cyclePos - activeDuration) / 1000); 
       const oscillation = Math.sin(elapsed * 0.003) * 5; 
-
       return (
           <div className="absolute left-1/2 top-1/2 w-0 h-0 z-0" style={{ opacity }}>
-             {/* Top Jet */}
-             <div 
-                className="absolute bottom-0 left-1/2 w-[12px] h-[450px] origin-bottom blur-xl pointer-events-none mix-blend-screen"
-                style={{
-                    background: 'linear-gradient(to top, rgba(168, 85, 247, 0.8), rgba(255, 255, 255, 0))',
-                    transform: `translate(-50%, 0%) rotate(${oscillation}deg)`,
-                }}
-             />
-             <div 
-                className="absolute bottom-0 left-1/2 w-[4px] h-[400px] origin-bottom blur-sm pointer-events-none mix-blend-screen"
-                style={{
-                    background: 'linear-gradient(to top, #fff, transparent)',
-                    transform: `translate(-50%, 0%) rotate(${oscillation}deg)`,
-                }}
-             />
-
-             {/* Bottom Jet */}
-             <div 
-                className="absolute top-0 left-1/2 w-[12px] h-[450px] origin-top blur-xl pointer-events-none mix-blend-screen"
-                style={{
-                    background: 'linear-gradient(to bottom, rgba(168, 85, 247, 0.8), rgba(255, 255, 255, 0))',
-                    transform: `translate(-50%, 0%) rotate(${oscillation}deg)`,
-                }}
-             />
-             <div 
-                className="absolute top-0 left-1/2 w-[4px] h-[400px] origin-top blur-sm pointer-events-none mix-blend-screen"
-                style={{
-                    background: 'linear-gradient(to bottom, #fff, transparent)',
-                    transform: `translate(-50%, 0%) rotate(${oscillation}deg)`,
-                }}
-             />
+             <div className="absolute bottom-0 left-1/2 w-[12px] h-[450px] origin-bottom blur-xl pointer-events-none mix-blend-screen" style={{ background: 'linear-gradient(to top, rgba(168, 85, 247, 0.8), rgba(255, 255, 255, 0))', transform: `translate(-50%, 0%) rotate(${oscillation}deg)` }} />
+             <div className="absolute bottom-0 left-1/2 w-[4px] h-[400px] origin-bottom blur-sm pointer-events-none mix-blend-screen" style={{ background: 'linear-gradient(to top, #fff, transparent)', transform: `translate(-50%, 0%) rotate(${oscillation}deg)` }} />
+             <div className="absolute top-0 left-1/2 w-[12px] h-[450px] origin-top blur-xl pointer-events-none mix-blend-screen" style={{ background: 'linear-gradient(to bottom, rgba(168, 85, 247, 0.8), rgba(255, 255, 255, 0))', transform: `translate(-50%, 0%) rotate(${oscillation}deg)` }} />
+             <div className="absolute top-0 left-1/2 w-[4px] h-[400px] origin-top blur-sm pointer-events-none mix-blend-screen" style={{ background: 'linear-gradient(to bottom, #fff, transparent)', transform: `translate(-50%, 0%) rotate(${oscillation}deg)` }} />
           </div>
       );
   };
@@ -356,15 +226,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_#111_0%,_#000_100%)]" />
            {stars.map((s, i) => (
              <div key={i} className="absolute rounded-full bg-white animate-pulse" 
-                  style={{ 
-                    left: `${s.left}%`, 
-                    top: `${s.top}%`, 
-                    width: s.size, 
-                    height: s.size, 
-                    opacity: s.opacity,
-                    animationDuration: `${s.animDuration}s`,
-                    animationDelay: `${s.animDelay}s`
-                  }} />
+                  style={{ left: `${s.left}%`, top: `${s.top}%`, width: s.size, height: s.size, opacity: s.opacity, animationDuration: `${s.animDuration}s`, animationDelay: `${s.animDelay}s` }} />
            ))}
         </div>
 
@@ -379,14 +241,10 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                  onClick={() => { setActiveQuadrant(q); setSelectedPlanetId(null); }}
                  className={`flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all duration-300 bg-zinc-950/80 backdrop-blur-md ${isActive ? 'border-white scale-105 shadow-lg' : 'border-zinc-700 opacity-70 hover:opacity-100 hover:border-zinc-500'}`}
                >
-                 {/* Sun Icon Container - Fixed Size for Uniformity */}
                  <div className="relative w-10 h-10 rounded-full shadow-inner overflow-hidden flex-shrink-0">
                     <div className="absolute inset-0" style={{ background: style.gradient }} />
-                    {style.isBlackHole && (
-                        <div className="absolute inset-0 border-[1px] border-white/60 rounded-full scale-[0.7] animate-[spin_3s_linear_infinite]" />
-                    )}
+                    {style.isBlackHole && <div className="absolute inset-0 border-[1px] border-white/60 rounded-full scale-[0.7] animate-[spin_3s_linear_infinite]" />}
                  </div>
-                 {/* Label */}
                  <span className={`text-[10px] font-black uppercase tracking-widest ${isActive ? 'text-white' : 'text-zinc-500'}`}>{q}</span>
                </button>
              )
@@ -394,24 +252,18 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
         </div>
 
         {/* Solar System Container */}
-        {/* We use a fixed container size that scales with CSS transform to ensure orbits remain circular regardless of screen aspect ratio */}
         <div className="relative w-[1000px] h-[1000px] flex items-center justify-center transform scale-[0.5] md:scale-[0.65] lg:scale-[0.8] xl:scale-100 transition-transform duration-700">
            
-           {/* Pulsar Jets - Rendered BEHIND the sun (Z-0) */}
+           {/* Pulsar Jets */}
            {renderBlackHoleJets()}
 
-           {/* Central Sun - Rendered ABOVE jets (Z-10) */}
+           {/* Central Sun */}
            <div 
              className="absolute z-10 w-32 h-32 rounded-full transition-all duration-1000"
-             style={{ 
-               background: sunStyle.gradient, 
-               boxShadow: sunStyle.shadow,
-               border: sunStyle.border || 'none'
-             }}
+             style={{ background: sunStyle.gradient, boxShadow: sunStyle.shadow, border: sunStyle.border || 'none' }}
            >
              {sunStyle.isBlackHole && (
                <>
-                 {/* Accretion Disk / Event Horizon Glow (No Crossbeams/X) */}
                  <div className="absolute inset-[-5px] border-[3px] border-purple-500/30 rounded-full animate-[spin_4s_linear_infinite]" />
                  <div className="absolute inset-[-15px] border-[1px] border-white/10 rounded-full animate-[spin_7s_linear_infinite_reverse]" />
                </>
@@ -426,8 +278,6 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
            {/* Planets & Orbits */}
            {planetVisuals.map((p) => {
-             // Continuous Orbit Logic: (Time * Speed) + Initial Offset
-             // Random orbitDirection (-1 or 1) ensures planets don't all move the same way
              const angle = (elapsed * SPEED_CONSTANT * p.orbitSpeedFactor * (p.orbitDirection || 1)) + p.orbitOffset;
              const x = Math.cos(angle) * p.visualDistance;
              const y = Math.sin(angle) * p.visualDistance;
@@ -436,10 +286,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
              return (
                <React.Fragment key={p.id}>
                  {/* Orbit Ring */}
-                 <div 
-                   className="absolute rounded-full border border-zinc-800/60 pointer-events-none"
-                   style={{ width: p.visualDistance * 2, height: p.visualDistance * 2 }} 
-                 />
+                 <div className="absolute rounded-full border border-zinc-800/60 pointer-events-none" style={{ width: p.visualDistance * 2, height: p.visualDistance * 2 }} />
                  
                  {/* Planet Body Group */}
                  <div 
@@ -452,30 +299,21 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                           className={`w-10 h-10 rounded-full shadow-lg transition-all duration-300 relative z-10 ${isSelected ? 'ring-2 ring-offset-4 ring-offset-black ring-white scale-125' : 'group-hover:scale-110'}`}
                           style={{ backgroundColor: p.color, boxShadow: `inset -4px -4px 10px rgba(0,0,0,0.8), 0 0 20px ${p.color}44` }}
                         >
-                          {/* Planet selection ring animation */}
-                          {isSelected && (
-                            <div className="absolute -inset-6 border border-dashed border-emerald-500/60 rounded-full animate-[spin_8s_linear_infinite]" />
-                          )}
+                          {isSelected && <div className="absolute -inset-6 border border-dashed border-emerald-500/60 rounded-full animate-[spin_8s_linear_infinite]" />}
                         </div>
+                        {/* Status Halo */}
+                        {p.actualStatus !== 'friendly' && (
+                            <div className={`absolute -inset-4 rounded-full border-2 border-dotted animate-[spin_10s_linear_infinite] ${p.actualStatus === 'siege' ? 'border-orange-500/50' : 'border-red-500/50'}`} />
+                        )}
                     </div>
 
-                    {/* Moons - Centered Orbit Fix */}
-                    {/* Position moons absolutely within the planet group, but use left/top 50% as origin */}
+                    {/* Moons */}
                     {p.visualMoons.map((m, mi) => {
-                      // Moons use simplified local time as they are purely decorative and fast
-                      // Added direction multiplier for randomized orbits
                       const mAngle = (elapsed * 0.06 * m.speed * (m.direction || 1)) + m.offset;
                       const mx = Math.cos(mAngle) * m.dist;
                       const my = Math.sin(mAngle) * m.dist;
                       return (
-                        <div 
-                          key={mi}
-                          className="absolute bg-zinc-400 rounded-full pointer-events-none shadow-sm left-1/2 top-1/2"
-                          style={{ 
-                            width: m.size, height: m.size,
-                            transform: `translate(-50%, -50%) translate(${mx}px, ${my}px)`
-                          }}
-                        />
+                        <div key={mi} className="absolute bg-zinc-400 rounded-full pointer-events-none shadow-sm left-1/2 top-1/2" style={{ width: m.size, height: m.size, transform: `translate(-50%, -50%) translate(${mx}px, ${my}px)` }} />
                       )
                     })}
                  </div>
@@ -493,10 +331,8 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
       {/* RIGHT PANEL: Fixed Property Panel */}
       <div className="w-80 h-full bg-zinc-950 border-l border-zinc-800 flex flex-col shrink-0 z-40 shadow-2xl relative">
-        {/* Subtle grid background */}
         <div className="absolute inset-0 pointer-events-none opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px]" />
         
-        {/* Panel Header */}
         <div className="p-5 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur flex justify-between items-center shrink-0 z-10">
           <h2 className="retro-font text-emerald-500 text-xs uppercase tracking-wide">Target Intel</h2>
           <button onClick={onBack} className="text-zinc-500 hover:text-white text-[10px] uppercase font-black tracking-widest border border-zinc-700 px-3 py-1 rounded hover:bg-zinc-800 transition-colors">BACK</button>
@@ -504,7 +340,6 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
         {selectedPlanet ? (
           <div className="flex-grow flex flex-col overflow-y-auto custom-scrollbar p-6 gap-6 z-10">
-             {/* Planet Preview */}
              <div className="w-full aspect-square bg-black rounded-lg border-2 border-zinc-700 relative flex items-center justify-center overflow-hidden shadow-[inset_0_0_30px_rgba(0,0,0,1)]">
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_#000_100%)] z-10" />
                 <div className="w-32 h-32 rounded-full shadow-[inset_-12px_-12px_25px_rgba(0,0,0,0.9)] relative flex items-center justify-center" style={{ backgroundColor: selectedPlanet.color }}>
@@ -520,9 +355,12 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                 <div className="border-b border-zinc-800 pb-4">
                    <h3 className="text-2xl font-black text-white uppercase leading-none">{selectedPlanet.name}</h3>
                    <div className="flex items-center gap-2 mt-2">
-                      <div className={`w-2 h-2 rounded-full ${selectedPlanet.status === 'friendly' ? 'bg-emerald-500' : 'bg-red-500 animate-pulse'}`} />
-                      <span className="text-[10px] text-zinc-400 font-mono tracking-widest uppercase">{selectedPlanet.status} STATUS</span>
+                      <div className={`w-2 h-2 rounded-full ${getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'bg-emerald-500' : (getPlanetStatus(selectedPlanet.id) === 'siege' ? 'bg-orange-500 animate-pulse' : 'bg-red-500 animate-pulse')}`} />
+                      <span className="text-[10px] text-zinc-400 font-mono tracking-widest uppercase">{getPlanetStatus(selectedPlanet.id)} STATUS</span>
                    </div>
+                   {getPlanetStatus(selectedPlanet.id) !== 'friendly' && (
+                       <div className="text-[9px] text-zinc-500 font-mono mt-1">LIBERATION PROGRESS: {getWins(selectedPlanet.id)}/2 WINS</div>
+                   )}
                 </div>
 
                 <div className="grid grid-cols-2 gap-2">
@@ -548,8 +386,10 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
              </div>
 
              <div className="mt-auto pt-4">
-                <button onClick={() => onLaunch(selectedPlanet)} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-[0.2em] text-xs rounded shadow-[0_0_20px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.02] active:scale-95 group relative overflow-hidden">
-                   <span className="relative z-10 group-hover:animate-pulse">INITIATE LAUNCH</span>
+                <button onClick={() => onLaunch(selectedPlanet)} className={`w-full py-4 text-white font-black uppercase tracking-[0.2em] text-xs rounded shadow-lg transition-all hover:scale-[1.02] active:scale-95 group relative overflow-hidden ${getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'bg-red-700 hover:bg-red-600 shadow-[0_0_20px_rgba(220,38,38,0.3)]'}`}>
+                   <span className="relative z-10 group-hover:animate-pulse">
+                       {getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'INITIATE LANDING' : 'ENGAGE HOSTILES'}
+                   </span>
                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1s_infinite]" />
                 </button>
              </div>

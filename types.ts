@@ -117,6 +117,13 @@ export interface GameMessage {
   timestamp: number;
 }
 
+export interface PlanetStatusData {
+  id: string;
+  status: 'friendly' | 'siege' | 'occupied';
+  wins: number;
+  losses: number;
+}
+
 export interface GameState {
   credits: number;
   selectedShipInstanceId: string | null;
@@ -157,6 +164,7 @@ export interface GameState {
   messages: GameMessage[];
   planetOrbitOffsets: Record<string, number>;
   universeStartTime: number;
+  planetRegistry: Record<string, PlanetStatusData>;
 }
 
 export type DisplayMode = 'windowed' | 'fullscreen';

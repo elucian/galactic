@@ -14,7 +14,7 @@ import { MessagesDialog } from './components/MessagesDialog.tsx';
 import { OptionsDialog } from './components/OptionsDialog.tsx';
 import { ManualDialog } from './components/ManualDialog.tsx';
 import { audioService } from './services/audioService.ts';
-import { GameState, MissionType, QuadrantType, ShipFitting, CargoItem, EquippedWeapon, DisplayMode, GameMessage, GameSettings, Planet, Moon, ShipPart, Shield } from './types.ts';
+import { GameState, MissionType, QuadrantType, ShipFitting, CargoItem, EquippedWeapon, DisplayMode, GameMessage, GameSettings, Planet, Moon, ShipPart, Shield, PlanetStatusData } from './types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS } from './constants.ts';
 
 const SAVE_KEY = 'galactic_defender_v85_50';
@@ -48,10 +48,18 @@ export default function App() {
       initialColors[os.instanceId] = config.defaultColor || '#94a3b8'; 
     });
     
-    // Randomize planet start positions once per save file
     const initialOffsets: Record<string, number> = {};
-    PLANETS.forEach(p => {
+    const initialRegistry: Record<string, PlanetStatusData> = {};
+    
+    PLANETS.forEach((p, i) => {
       initialOffsets[p.id] = Math.random() * Math.PI * 2;
+      initialRegistry[p.id] = {
+          id: p.id,
+          // First planet (p1) is friendly, others take default from config
+          status: i === 0 ? 'friendly' : p.status, 
+          wins: 0,
+          losses: 0
+      };
     });
 
     return {
@@ -61,7 +69,8 @@ export default function App() {
       currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, marketListingsByPlanet: {},
       messages: [{ id: 'init', type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }],
       planetOrbitOffsets: initialOffsets,
-      universeStartTime: Date.now()
+      universeStartTime: Date.now(),
+      planetRegistry: initialRegistry
     };
   };
 
@@ -71,7 +80,16 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (!parsed.settings.fontSize) parsed.settings.fontSize = 'medium';
         if (!parsed.customColors) parsed.customColors = ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'];
-        // Ensure new orbital fields exist for legacy saves
+        
+        // Migration: Ensure planet registry exists
+        if (!parsed.planetRegistry) {
+            const reg: Record<string, PlanetStatusData> = {};
+            PLANETS.forEach((p, i) => {
+                reg[p.id] = { id: p.id, status: i === 0 ? 'friendly' : p.status, wins: 0, losses: 0 };
+            });
+            parsed.planetRegistry = reg;
+        }
+        
         if (!parsed.planetOrbitOffsets) {
             const offs: Record<string, number> = {};
             PLANETS.forEach(p => offs[p.id] = Math.random() * Math.PI * 2);
@@ -112,6 +130,8 @@ export default function App() {
   const selectedFitting = useMemo(() => gameState.selectedShipInstanceId ? gameState.shipFittings[gameState.selectedShipInstanceId] : null, [gameState]);
   const selectedShipConfig = useMemo(() => { if (!gameState.selectedShipInstanceId) return null; const instance = gameState.ownedShips.find(s => s.instanceId === gameState.selectedShipInstanceId); return instance ? SHIPS.find(s => s.id === instance.shipTypeId) || null : null; }, [gameState]);
   const dockedId = gameState.dockedPlanetId || 'p1';
+  // Use registry for dynamic status lookup
+  const dockedPlanetStatus = gameState.planetRegistry[dockedId]?.status || 'friendly';
   const dockedPlanet = PLANETS.find(p => p.id === dockedId);
   const currentReserves = useMemo(() => gameState.reserveByPlanet[dockedId] || [], [gameState.reserveByPlanet, dockedId]);
   const currentListings = useMemo(() => gameState.marketListingsByPlanet[dockedId] || [], [gameState.marketListingsByPlanet, dockedId]);
@@ -189,19 +209,130 @@ export default function App() {
          hullPacks: payload?.hullPacks ?? fitting.hullPacks,
          cargo: payload?.cargo ?? fitting.cargo
        };
+
+       // PLANET STATUS UPDATE LOGIC
+       const reg = { ...prev.planetRegistry };
+       const currentPId = prev.currentPlanet!.id;
+       const pEntry = { ...reg[currentPId] };
+       let newMessages = [...prev.messages];
+
+       if (success) {
+           pEntry.wins += 1;
+           // Reset losses on win? Keep them? Let's say a win breaks the loss streak.
+           pEntry.losses = 0; 
+           
+           if (pEntry.status !== 'friendly' && pEntry.wins >= 2) {
+               pEntry.status = 'friendly';
+               pEntry.wins = 0; // Reset wins after status change
+               newMessages.unshift({
+                   id: `msg_${Date.now()}`,
+                   type: 'activity',
+                   pilotName: 'COMMAND',
+                   pilotAvatar: '🛰️',
+                   text: `SECTOR ${prev.currentPlanet?.name} LIBERATED. LANDING AUTHORIZED.`,
+                   timestamp: Date.now()
+               });
+           }
+       } else {
+           if (!aborted) { // Only count loss if destroyed, not aborted
+               pEntry.losses += 1;
+               if (pEntry.losses >= 3) {
+                   pEntry.losses = 0; // Reset loss streak
+                   // Find previous planet to regress
+                   const pIndex = PLANETS.findIndex(p => p.id === currentPId);
+                   if (pIndex > 0) {
+                       const prevPId = PLANETS[pIndex - 1].id;
+                       const prevEntry = { ...reg[prevPId] };
+                       
+                       let regressionHappened = false;
+                       if (prevEntry.status === 'friendly') {
+                           prevEntry.status = 'siege';
+                           regressionHappened = true;
+                       } else if (prevEntry.status === 'siege') {
+                           prevEntry.status = 'occupied';
+                           regressionHappened = true;
+                       }
+                       
+                       if (regressionHappened) {
+                           reg[prevPId] = prevEntry;
+                           newMessages.unshift({
+                               id: `msg_${Date.now()}`,
+                               type: 'activity',
+                               pilotName: 'COMMAND',
+                               pilotAvatar: '⚠️',
+                               text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`,
+                               timestamp: Date.now()
+                           });
+                       }
+                   }
+               }
+           }
+       }
+       reg[currentPId] = pEntry;
+
        return {
          ...prev,
          credits: newCredits,
          shipFittings: { ...prev.shipFittings, [sId]: updatedFitting },
-         gameInProgress: false
+         gameInProgress: false,
+         planetRegistry: reg,
+         messages: newMessages
        };
     });
+
     if (payload?.health > 0 && gameState.settings.showTransitions) {
         setScreen('landing');
     } else {
         setScreen('hangar');
     }
   };
+
+  const handlePlanetSelection = (planet: Planet) => {
+      // Logic:
+      // 1. If planet is Friendly -> Launch Sequence -> Land (Move base)
+      // 2. If planet is Hostile (Siege/Occupied) -> Launch Sequence -> Fight (GameEngine)
+      
+      const status = gameState.planetRegistry[planet.id]?.status || 'occupied';
+      const isFriendly = status === 'friendly';
+
+      setGameState(prev => ({ 
+          ...prev, 
+          currentPlanet: planet, 
+          currentQuadrant: planet.quadrant,
+          // Only update dockedPlanetId if friendly. If fighting, we are just 'at' the planet but not docked safely until we win?
+          // Actually, if we fly to a friendly planet, we re-dock there. 
+          // If we fly to a hostile one, we remain "docked" at previous base until we return? 
+          // Or we are "in orbit".
+          // Let's keep dockedPlanetId as the *last friendly base*.
+          dockedPlanetId: isFriendly ? planet.id : prev.dockedPlanetId
+      }));
+
+      if (gameState.settings.showTransitions) {
+          setScreen('launch');
+      } else {
+          if (isFriendly) {
+              setScreen('hangar');
+              audioService.playTrack('command');
+          } else {
+              setScreen('game');
+              audioService.playTrack('combat');
+          }
+      }
+  };
+
+  const handleLaunchSequenceComplete = () => {
+      const status = gameState.planetRegistry[gameState.currentPlanet!.id]?.status || 'occupied';
+      if (status === 'friendly') {
+          setScreen('landing'); // Friendly -> Land
+      } else {
+          setScreen('game'); // Hostile -> Fight
+          audioService.playTrack('combat');
+      }
+  };
+
+  // ... [Existing helper functions like replaceShip, moveItems, etc. remain unchanged] ...
+  // Re-declare them here for context, but using placeholders for brevity if they didn't change logic-wise
+  // Actually I must include them fully as per instructions.
 
   const replaceShip = (shipTypeId: string) => {
     const shipConfig = SHIPS.find(s => s.id === shipTypeId);
@@ -733,8 +864,34 @@ export default function App() {
         fontSize={gameState.settings.fontSize}
       />
 
-      {screen === 'map' && (<SectorMap currentQuadrant={gameState.currentQuadrant} orbitOffsets={gameState.planetOrbitOffsets} universeStartTime={gameState.universeStartTime} onLaunch={(planet) => { setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: planet.quadrant, dockedPlanetId: planet.id })); if (!gameState.settings.showTransitions) { setScreen('game'); audioService.playTrack('combat'); } else { setScreen('launch'); } }} onBack={() => setScreen('hangar')} />)}
-      {screen === 'launch' && gameState.currentPlanet && (<LaunchSequence planet={gameState.currentPlanet} ownedShips={gameState.ownedShips.map(inst => ({ config: SHIPS.find(s => s.id === inst.shipTypeId)!, colors: { hull: gameState.shipColors[inst.instanceId], wings: gameState.shipWingColors[inst.instanceId], cockpit: gameState.shipCockpitColors[inst.instanceId], guns: gameState.shipGunColors[inst.instanceId], gun_body: gameState.shipGunBodyColors[inst.instanceId], engines: gameState.shipEngineColors[inst.instanceId], nozzles: gameState.shipNozzleColors[inst.instanceId] } }))} onComplete={() => { setScreen('game'); audioService.playTrack('combat'); }} />)}
+      {screen === 'map' && (
+        <SectorMap 
+            currentQuadrant={gameState.currentQuadrant} 
+            orbitOffsets={gameState.planetOrbitOffsets} 
+            universeStartTime={gameState.universeStartTime} 
+            planetRegistry={gameState.planetRegistry} // Pass registry
+            onLaunch={handlePlanetSelection} 
+            onBack={() => setScreen('hangar')} 
+        />
+      )}
+      {screen === 'launch' && gameState.currentPlanet && (
+        <LaunchSequence 
+            planet={gameState.currentPlanet} 
+            ownedShips={gameState.ownedShips.map(inst => ({ 
+                config: SHIPS.find(s => s.id === inst.shipTypeId)!, 
+                colors: { 
+                    hull: gameState.shipColors[inst.instanceId], 
+                    wings: gameState.shipWingColors[inst.instanceId], 
+                    cockpit: gameState.shipCockpitColors[inst.instanceId], 
+                    guns: gameState.shipGunColors[inst.instanceId], 
+                    gun_body: gameState.shipGunBodyColors[inst.instanceId], 
+                    engines: gameState.shipEngineColors[inst.instanceId], 
+                    nozzles: gameState.shipNozzleColors[inst.instanceId] 
+                } 
+            }))} 
+            onComplete={handleLaunchSequenceComplete} 
+        />
+      )}
       {screen === 'game' && gameState.currentPlanet && (
         <GameEngine
           ships={gameState.ownedShips.filter(os => os.instanceId === gameState.selectedShipInstanceId).map(os => ({
