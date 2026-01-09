@@ -1,4 +1,5 @@
 
+// [Existing imports]
 export enum MissionType {
   DEFENSE = 'DEFENSE',
   ATTACK = 'ATTACK',
@@ -25,11 +26,13 @@ export enum WeaponType {
 
 export interface CargoItem {
   instanceId: string;
-  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'shield' | 'energy';
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser';
   id?: string;
   name: string;
   weight: number;
   quantity: number;
+  price?: number;
+  status?: 'listed' | 'sold';
 }
 
 export interface Weapon {
@@ -75,7 +78,7 @@ export interface ShipConfig {
 }
 
 export interface ShipFitting {
-  weapons: EquippedWeapon[];
+  weapons: (EquippedWeapon | null)[];
   shieldId: string | null;
   secondShieldId: string | null;
   flareId: string | null;
@@ -104,6 +107,16 @@ export interface OwnedShipInstance {
 
 export type ShipPart = 'hull' | 'wings' | 'cockpit' | 'guns' | 'gun_body' | 'engines' | 'bars' | 'nozzles';
 
+export interface GameMessage {
+  id: string;
+  type: 'activity' | 'score';
+  pilotName: string;
+  pilotAvatar: string;
+  text: string;
+  score?: number;
+  timestamp: number;
+}
+
 export interface GameState {
   credits: number;
   selectedShipInstanceId: string | null;
@@ -118,6 +131,7 @@ export interface GameState {
   shipEngineColors: Record<string, string>;
   shipBarColors: Record<string, string>;
   shipNozzleColors: Record<string, string>;
+  customColors: string[];
   currentPlanet: Planet | null;
   currentMoon: Moon | null;
   currentMission: MissionType | null;
@@ -138,7 +152,9 @@ export interface GameState {
   victories: number;
   failures: number;
   typeColors: Record<string, Record<ShipPart, string>>;
-  reserve: CargoItem[];
+  reserveByPlanet: Record<string, CargoItem[]>;
+  marketListingsByPlanet: Record<string, CargoItem[]>;
+  messages: GameMessage[];
 }
 
 export type DisplayMode = 'windowed' | 'fullscreen';
@@ -150,6 +166,9 @@ export interface GameSettings {
   sfxEnabled: boolean;
   displayMode: DisplayMode;
   autosaveEnabled: boolean;
+  showTransitions: boolean;
+  testMode?: boolean;
+  fontSize: 'small' | 'medium' | 'large';
 }
 
 export interface Moon {

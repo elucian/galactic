@@ -1,7 +1,8 @@
-import { ExtendedShipConfig } from '../constants';
-import { ShipIcon } from '../App';
+
+import { ExtendedShipConfig } from '../constants.ts';
+import { ShipIcon } from './ShipIcon.tsx';
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Planet, Moon } from '../types';
+import { Planet, Moon } from '../types.ts';
 
 interface LaunchSequenceProps {
   planet: Planet | Moon;
@@ -266,4 +267,34 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, ownedShips, onC
                 position: 'absolute',
                 left: `calc(50% + ${horizontalX}px)`,
                 top: `${verticalY}px`,
-                transform: `translate
+                transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`,
+                opacity: finalOpacity,
+                transition: 'transform 0.1s linear, opacity 0.2s linear'
+              }}
+            >
+              <div className="relative">
+                {isThrusting && (
+                  <div className="absolute top-[85%] left-1/2 -translate-x-1/2 w-[60%] h-[150%] bg-gradient-to-b from-orange-500 to-transparent blur-md opacity-80 animate-pulse" />
+                )}
+                <ShipIcon 
+                  config={ship.config} 
+                  className="w-16 h-16 drop-shadow-xl" 
+                  hullColor={ship.colors.hull}
+                  wingColor={ship.colors.wings}
+                  cockpitColor={ship.colors.cockpit}
+                  gunColor={ship.colors.guns}
+                  gunBodyColor={ship.colors.gun_body}
+                  engineColor={ship.colors.engines}
+                  nozzleColor={ship.colors.nozzles}
+                  showJets={isThrusting}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+export default LaunchSequence;

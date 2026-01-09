@@ -1,9 +1,14 @@
 
-// CHECKPOINT: Defender V85.30
-// VERSION: V85.30 - BOSS SHIELDS & EMP MINES
+// CHECKPOINT: Defender V85.42
+// VERSION: V85.42 - 3D ASSETS & BOSS LOGIC
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType } from './types';
 
 export const INITIAL_CREDITS = 250000;
+export const MAX_FLEET_SIZE = 3;
+
+export const AVATARS = [
+  { label: 'White', icon: '👨🏻' }, { label: 'Girl', icon: '👩🏼' }, { label: 'Black Man', icon: '👨🏾' }, { label: 'Black Girl', icon: '👩🏾' }, { label: 'Alien', icon: '👽' }
+];
 
 export interface ExtendedShipConfig extends ShipConfig {
   gunMount: 'wing' | 'hull' | 'strut';
@@ -66,19 +71,20 @@ export const WEAPONS: Weapon[] = [
   { id: 'gun_plasma', name: 'Plasma Shredder', type: WeaponType.PROJECTILE, price: 85000, damage: 25, fireRate: 8, energyCost: 100, cargoWeight: 30, isAmmoBased: false, beamColor: '#10b981' } 
 ];
 
+// EXOTIC WEAPONS - High Price for Test Mode / Late Game
 export const EXOTIC_WEAPONS: Weapon[] = [
-  { id: 'exotic_bubbles', name: 'Void Sphere', type: WeaponType.PROJECTILE, price: 0, damage: 45, fireRate: 5, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff' }, 
-  { id: 'exotic_venom', name: 'Bio-Plasma', type: WeaponType.PROJECTILE, price: 0, damage: 50, fireRate: 6, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#39ff14' }, 
-  { id: 'exotic_fan', name: 'Scatter Spindle', type: WeaponType.PROJECTILE, price: 0, damage: 55, fireRate: 7, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffff00' }, 
-  { id: 'exotic_seeker', name: 'Neutron Dart', type: WeaponType.PROJECTILE, price: 0, damage: 70, fireRate: 8, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff00ff' },
-  { id: 'exotic_flame', name: 'Inferno Jet', type: WeaponType.PROJECTILE, price: 0, damage: 75, fireRate: 9, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff4500' }, 
-  { id: 'exotic_nova', name: 'Star Shard', type: WeaponType.PROJECTILE, price: 0, damage: 85, fireRate: 10, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' }, 
-  { id: 'exotic_plasma_ball', name: 'Magma Bolt', type: WeaponType.PROJECTILE, price: 0, damage: 100, fireRate: 11, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff8c00' }, 
-  { id: 'exotic_mining_laser', name: 'Proton Lance', type: WeaponType.LASER, price: 0, damage: 130, fireRate: 12, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#00bfff' }, 
-  { id: 'exotic_wave', name: 'Plasma Ring', type: WeaponType.LASER, price: 0, damage: 160, fireRate: 13, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#9400d3' }, 
-  { id: 'exotic_arc', name: 'Arc Lash', type: WeaponType.LASER, price: 0, damage: 200, fireRate: 14, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#1e90ff' }, 
-  { id: 'exotic_bolt', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 0, damage: 250, fireRate: 15, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#4169e1' }, 
-  { id: 'exotic_gravity', name: 'Singularity Shot', type: WeaponType.LASER, price: 0, damage: 350, fireRate: 8, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#dda0dd' }, 
+  { id: 'exotic_bubbles', name: 'Void Sphere', type: WeaponType.PROJECTILE, price: 250000, damage: 45, fireRate: 5, energyCost: 15, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff' }, 
+  { id: 'exotic_venom', name: 'Bio-Plasma', type: WeaponType.PROJECTILE, price: 260000, damage: 50, fireRate: 6, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#39ff14' }, 
+  { id: 'exotic_fan', name: 'Scatter Spindle', type: WeaponType.PROJECTILE, price: 270000, damage: 55, fireRate: 7, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffff00' }, 
+  { id: 'exotic_seeker', name: 'Neutron Dart', type: WeaponType.PROJECTILE, price: 280000, damage: 70, fireRate: 8, energyCost: 25, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff00ff' },
+  { id: 'exotic_flame', name: 'Inferno Jet', type: WeaponType.PROJECTILE, price: 290000, damage: 75, fireRate: 9, energyCost: 20, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff4500' }, 
+  { id: 'exotic_nova', name: 'Star Shard', type: WeaponType.PROJECTILE, price: 300000, damage: 85, fireRate: 10, energyCost: 60, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff' }, 
+  { id: 'exotic_plasma_ball', name: 'Magma Bolt', type: WeaponType.PROJECTILE, price: 350000, damage: 100, fireRate: 11, energyCost: 130, cargoWeight: 0, isAmmoBased: false, beamColor: '#ff8c00' }, 
+  { id: 'exotic_mining_laser', name: 'Proton Lance', type: WeaponType.LASER, price: 400000, damage: 130, fireRate: 12, energyCost: 45, cargoWeight: 0, isAmmoBased: false, beamColor: '#00bfff' }, 
+  { id: 'exotic_wave', name: 'Plasma Ring', type: WeaponType.LASER, price: 420000, damage: 160, fireRate: 13, energyCost: 35, cargoWeight: 0, isAmmoBased: false, beamColor: '#9400d3' }, 
+  { id: 'exotic_arc', name: 'Arc Lash', type: WeaponType.LASER, price: 450000, damage: 200, fireRate: 14, energyCost: 110, cargoWeight: 0, isAmmoBased: false, beamColor: '#1e90ff' }, 
+  { id: 'exotic_bolt', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 500000, damage: 250, fireRate: 15, energyCost: 65, cargoWeight: 0, isAmmoBased: false, beamColor: '#4169e1' }, 
+  { id: 'exotic_gravity', name: 'Singularity Shot', type: WeaponType.LASER, price: 750000, damage: 350, fireRate: 8, energyCost: 180, cargoWeight: 0, isAmmoBased: false, beamColor: '#dda0dd' }, 
 ];
 
 export const SHIELDS: Shield[] = [
@@ -88,10 +94,11 @@ export const SHIELDS: Shield[] = [
   { id: 'sh_omega', name: 'Nova Kinetic Shell', price: 150000, capacity: 2000, regenRate: 35, energyCost: 120, visualType: 'inner-full', color: '#d946ef' }
 ];
 
+// EXOTIC SHIELDS - High Price for Test Mode / Late Game
 export const EXOTIC_SHIELDS: Shield[] = [
-  { id: 'exotic_sh_void', name: 'Void Mantle', price: 0, capacity: 3500, regenRate: 50, energyCost: 150, visualType: 'inner-full', color: '#a855f7' },
-  { id: 'exotic_sh_plasma', name: 'Plasma Aegis', price: 0, capacity: 2800, regenRate: 80, energyCost: 200, visualType: 'inner-full', color: '#10b981' },
-  { id: 'exotic_sh_pulsar', name: 'Pulsar Starfield', price: 0, capacity: 5000, regenRate: 20, energyCost: 100, visualType: 'inner-full', color: '#fbbf24' }
+  { id: 'exotic_sh_void', name: 'Void Mantle', price: 500000, capacity: 3500, regenRate: 50, energyCost: 150, visualType: 'inner-full', color: '#a855f7' },
+  { id: 'exotic_sh_plasma', name: 'Plasma Aegis', price: 600000, capacity: 2800, regenRate: 80, energyCost: 200, visualType: 'inner-full', color: '#10b981' },
+  { id: 'exotic_sh_pulsar', name: 'Pulsar Starfield', price: 750000, capacity: 5000, regenRate: 20, energyCost: 100, visualType: 'inner-full', color: '#fbbf24' }
 ];
 
 export const BOSS_EXOTIC_SHIELDS = [
@@ -112,6 +119,12 @@ export const EXPLODING_ORDNANCE = [
   { id: 'ord_missile_emp', name: 'EMP Shock Missiles', price: 35000, count: 10 },
   { id: 'ord_mine_plasma', name: 'Plasma Core Mines', price: 45000, count: 10 },
   { id: 'ord_mine_emp', name: 'EMP Auto-Mines', price: 30000, count: 10 }
+];
+
+export const COMMODITIES = [
+    { id: 'gold', name: 'Gold Bullion', price: 1000, type: 'gold' },
+    { id: 'platinum', name: 'Platinum Ingot', price: 2500, type: 'platinum' },
+    { id: 'lithium', name: 'Lithium Crystal', price: 4000, type: 'lithium' }
 ];
 
 export const ENGINES = [

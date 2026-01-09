@@ -1,5 +1,6 @@
+
 import React, { useEffect, useRef, useState } from 'react';
-import { Planet, Moon } from '../types';
+import { Planet, Moon } from '../types.ts';
 
 interface LandingSceneProps {
   planet: Planet | Moon;
