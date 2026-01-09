@@ -154,8 +154,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                     <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden"><div className={`h-full transition-all duration-500 ${f.fuel < (config.maxFuel*0.2) ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${(f.fuel/config.maxFuel)*100}%` }} /></div>
                 </div>
                 <div className="grid grid-cols-3 gap-1 pt-2">
-                    <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>DRY DOCK</button>
-                    <button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>FITTING</button>
+                    <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>REPLACE</button>
+                    <button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>EQUIP</button>
                     <button onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>PAINT</button>
                 </div>
               </div>

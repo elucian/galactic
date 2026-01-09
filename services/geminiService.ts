@@ -28,8 +28,14 @@ export async function getMissionBriefing(targetName: string, type: MissionType, 
     });
 
     return response.text?.trim() || "Communication interference detected. Standard combat protocols are in effect.";
-  } catch (error) {
-    console.error("Gemini Briefing Error:", error);
+  } catch (error: any) {
+    // Gracefully handle quota exhaustion (429) without console spam
+    const isQuotaError = error?.status === 429 || error?.code === 429 || error?.message?.includes('429') || error?.message?.includes('RESOURCE_EXHAUSTED');
+    
+    if (!isQuotaError) {
+        console.warn("Gemini Briefing Error:", error);
+    }
+    
     // Return a themed fallback
     const fallbacks = [
       `Intelligence reports a surge in Xenos activity near ${targetName}. Strategic Command mandates an immediate ${type} operation.`,

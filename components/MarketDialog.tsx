@@ -28,6 +28,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   const btnPadding = fontSize === 'small' ? 'px-6 py-3' : (fontSize === 'large' ? 'px-8 py-5' : 'px-7 py-4');
   const iconSize = fontSize === 'small' ? 22 : (fontSize === 'large' ? 32 : 26);
 
+  const isExoticItem = (id?: string) => {
+      if (!id) return false;
+      return [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].some(ex => ex.id === id);
+  };
+
   return (
     <div className="fixed inset-0 z-[9800] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
         <div className="w-full max-w-4xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[85vh] shadow-2xl">
@@ -48,17 +53,17 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                                 itemsToBuy = [...itemsToBuy, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
                             }
                             return itemsToBuy.map(it => {
-                                const isExotic = [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].some(ex => ex.id === it.id);
+                                const isExotic = isExoticItem(it.id);
                                 return (
-                                    <button key={it.id} onClick={() => marketBuy(it)} className={`flex justify-between items-center p-3 bg-zinc-900/40 border border-zinc-800 hover:border-emerald-500/40 hover:bg-zinc-800 rounded group transition-all text-left ${isExotic ? 'border-purple-500/30 bg-purple-900/10 hover:border-purple-500 hover:bg-purple-900/30' : ''}`}>
+                                    <button key={it.id} onClick={() => marketBuy(it)} className={`flex justify-between items-center p-3 bg-zinc-900/40 border border-zinc-800 hover:border-emerald-500/40 hover:bg-zinc-800 rounded group transition-all text-left ${isExotic ? 'border-orange-500/30 bg-orange-900/10 hover:border-orange-500 hover:bg-orange-900/30' : ''}`}>
                                         <div className="flex items-center gap-3">
-                                            <div className={`w-8 h-8 flex items-center justify-center bg-black border border-zinc-700 rounded ${isExotic ? 'border-purple-500 shadow-[0_0_10px_#a855f7]' : ''}`}>
-                                                <ItemSVG type={(it as any).damage ? 'weapon' : ((it as any).capacity ? 'shield' : ((it as any).type || 'goods'))} color={isExotic ? '#d8b4fe' : '#10b981'} size={iconSize}/>
+                                            <div className={`w-8 h-8 flex items-center justify-center bg-black border border-zinc-700 rounded ${isExotic ? 'border-orange-500 shadow-[0_0_10px_#f97316]' : ''}`}>
+                                                <ItemSVG type={(it as any).damage ? 'weapon' : ((it as any).capacity ? 'shield' : ((it as any).type || 'goods'))} color={isExotic ? '#fb923c' : '#10b981'} size={iconSize}/>
                                             </div>
-                                            <span className={`text-[10px] font-black uppercase truncate w-24 ${isExotic ? 'text-purple-400' : 'text-white'}`}>{it.name}</span>
+                                            <span className={`text-[10px] font-black uppercase truncate w-24 ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name}</span>
                                         </div>
                                         <div className="flex flex-col items-end">
-                                            <span className={`text-[10px] font-black tabular-nums ${isExotic ? 'text-purple-300' : 'text-emerald-400'}`}>${it.price.toLocaleString()}</span>
+                                            <span className={`text-[10px] font-black tabular-nums ${isExotic ? 'text-orange-300' : 'text-emerald-400'}`}>${it.price.toLocaleString()}</span>
                                             <span className="text-[8px] text-zinc-600 uppercase font-black group-hover:text-emerald-500">BUY 1</span>
                                         </div>
                                     </button>
@@ -68,34 +73,40 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                     </div>
                 ) : marketTab === 'sell' ? (
                     <div className="space-y-2">
-                        {currentReserves.map((it, idx) => (
-                            <div key={it.instanceId} className="flex justify-between items-center p-4 border border-zinc-800 bg-zinc-900/40 rounded hover:border-amber-500/50 transition-all">
-                                <div className="flex items-center gap-4">
-                                    <ItemSVG type={it.type} color="#fbbf24" size={iconSize}/>
-                                    <span className="text-[11px] font-black uppercase text-white">{it.name} x{it.quantity}</span>
+                        {currentReserves.map((it, idx) => {
+                            const isExotic = isExoticItem(it.id);
+                            return (
+                                <div key={it.instanceId} className="flex justify-between items-center p-4 border border-zinc-800 bg-zinc-900/40 rounded hover:border-amber-500/50 transition-all">
+                                    <div className="flex items-center gap-4">
+                                        <ItemSVG type={it.type} color={isExotic ? '#fb923c' : '#fbbf24'} size={iconSize}/>
+                                        <span className={`text-[11px] font-black uppercase ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name} x{it.quantity}</span>
+                                    </div>
+                                    <button onClick={() => marketSell(idx)} className="px-4 py-2 bg-amber-600/20 border border-amber-600 text-amber-500 text-[9px] font-black uppercase rounded hover:bg-amber-600 hover:text-white transition-all">SELL 1 UNIT</button>
                                 </div>
-                                <button onClick={() => marketSell(idx)} className="px-4 py-2 bg-amber-600/20 border border-amber-600 text-amber-500 text-[9px] font-black uppercase rounded hover:bg-amber-600 hover:text-white transition-all">SELL 1 UNIT</button>
-                            </div>
-                        ))}
+                            );
+                        })}
                         {currentReserves.length === 0 && <div className="p-10 text-center opacity-30 text-sm font-black uppercase">No Reserve Items to Sell</div>}
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {currentListings.map((it, idx) => (
-                            <div key={it.instanceId} className={`flex justify-between items-center p-4 border rounded transition-all ${it.status === 'sold' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-zinc-900/40 border-zinc-800'}`}>
-                                <div className="flex items-center gap-4">
-                                    <ItemSVG type={it.type} color={it.status === 'sold' ? '#10b981' : '#f97316'} size={iconSize}/>
-                                    <span className="text-[11px] font-black uppercase text-white">{it.name} {it.status === 'sold' ? '(SOLD)' : '(LISTED)'}</span>
+                        {currentListings.map((it, idx) => {
+                            const isExotic = isExoticItem(it.id);
+                            return (
+                                <div key={it.instanceId} className={`flex justify-between items-center p-4 border rounded transition-all ${it.status === 'sold' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-zinc-900/40 border-zinc-800'}`}>
+                                    <div className="flex items-center gap-4">
+                                        <ItemSVG type={it.type} color={it.status === 'sold' ? '#10b981' : (isExotic ? '#fb923c' : '#f97316')} size={iconSize}/>
+                                        <span className={`text-[11px] font-black uppercase ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name} {it.status === 'sold' ? '(SOLD)' : '(LISTED)'}</span>
+                                    </div>
+                                    <div className="flex items-center gap-4">
+                                        <span className="text-[10px] font-black text-emerald-400 tabular-nums">${it.price?.toLocaleString()}</span>
+                                        {it.status === 'sold' ? 
+                                            <button onClick={() => claimSale(idx, false)} className="px-4 py-2 bg-emerald-600 text-white font-black text-[9px] rounded uppercase hover:scale-105">CLAIM</button> : 
+                                            <button onClick={() => claimSale(idx, true)} className="px-4 py-2 bg-zinc-800 text-zinc-400 font-black text-[9px] rounded uppercase hover:bg-zinc-700">CANCEL</button>
+                                        }
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-4">
-                                    <span className="text-[10px] font-black text-emerald-400 tabular-nums">${it.price?.toLocaleString()}</span>
-                                    {it.status === 'sold' ? 
-                                        <button onClick={() => claimSale(idx, false)} className="px-4 py-2 bg-emerald-600 text-white font-black text-[9px] rounded uppercase hover:scale-105">CLAIM</button> : 
-                                        <button onClick={() => claimSale(idx, true)} className="px-4 py-2 bg-zinc-800 text-zinc-400 font-black text-[9px] rounded uppercase hover:bg-zinc-700">CANCEL</button>
-                                    }
-                                </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                         {currentListings.length === 0 && <div className="p-10 text-center opacity-30 text-sm font-black uppercase">No Active Sales</div>}
                     </div>
                 )}

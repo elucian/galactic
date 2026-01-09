@@ -7,6 +7,10 @@ class AudioService {
   private enabled: boolean = true;
   private introAudio: HTMLAudioElement | null = null;
   private activeNodes: Set<AudioNode> = new Set();
+  
+  // Charge Sound State
+  private chargeOsc: OscillatorNode | null = null;
+  private chargeGain: GainNode | null = null;
 
   init() {
     if (this.ctx) return;
@@ -124,7 +128,42 @@ class AudioService {
     noise.stop(ctx.currentTime + duration);
   }
 
-  playWeaponFire(type: 'laser' | 'cannon' | 'missile' | 'mine', pan: number = 0) {
+  startCharging() {
+    this.init();
+    if (!this.ctx || !this.enabled) return;
+    if (this.chargeOsc) return; // Already charging
+
+    const ctx = this.ctx;
+    this.chargeOsc = ctx.createOscillator();
+    this.chargeGain = ctx.createGain();
+
+    this.chargeOsc.type = 'triangle';
+    this.chargeOsc.frequency.setValueAtTime(150, ctx.currentTime);
+    this.chargeOsc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 1.5); // Growing pitch
+
+    this.chargeGain.gain.setValueAtTime(0.05, ctx.currentTime);
+    this.chargeGain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 1.5);
+
+    this.chargeOsc.connect(this.chargeGain);
+    this.chargeGain.connect(this.masterGain!);
+    this.chargeOsc.start();
+  }
+
+  stopCharging() {
+    if (this.chargeOsc) {
+        try {
+            this.chargeOsc.stop();
+            this.chargeOsc.disconnect();
+        } catch(e) {}
+        this.chargeOsc = null;
+    }
+    if (this.chargeGain) {
+        this.chargeGain.disconnect();
+        this.chargeGain = null;
+    }
+  }
+
+  playWeaponFire(type: 'laser' | 'cannon' | 'missile' | 'mine' | 'rocket' | 'emp' | 'mega', pan: number = 0) {
     this.init();
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
@@ -134,46 +173,112 @@ class AudioService {
     if (panner) panner.connect(this.masterGain!);
     g.connect(destination);
 
+    const ct = ctx.currentTime;
+
     if (type === 'laser') {
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(1200, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(400, ctx.currentTime + 0.1);
-      g.gain.setValueAtTime(0.05, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+      osc.frequency.setValueAtTime(1200, ct);
+      osc.frequency.exponentialRampToValueAtTime(400, ct + 0.1);
+      g.gain.setValueAtTime(0.05, ct);
+      g.gain.exponentialRampToValueAtTime(0.001, ct + 0.1);
       osc.connect(g);
       osc.start();
-      osc.stop(ctx.currentTime + 0.1);
-    } else if (type === 'cannon') {
+      osc.stop(ct + 0.1);
+    } else if (type === 'cannon') { // PROJECTILE
       const osc = ctx.createOscillator();
       osc.type = 'square';
-      osc.frequency.setValueAtTime(150, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(50, ctx.currentTime + 0.15);
-      g.gain.setValueAtTime(0.1, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.frequency.setValueAtTime(150, ct);
+      osc.frequency.exponentialRampToValueAtTime(50, ct + 0.15);
+      g.gain.setValueAtTime(0.1, ct);
+      g.gain.exponentialRampToValueAtTime(0.001, ct + 0.15);
       osc.connect(g);
       osc.start();
-      osc.stop(ctx.currentTime + 0.15);
+      osc.stop(ct + 0.15);
     } else if (type === 'missile') {
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(100, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 0.2);
-      g.gain.setValueAtTime(0.08, ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+      osc.frequency.setValueAtTime(100, ct);
+      osc.frequency.exponentialRampToValueAtTime(800, ct + 0.2);
+      g.gain.setValueAtTime(0.08, ct);
+      g.gain.exponentialRampToValueAtTime(0.001, ct + 0.2);
       osc.connect(g);
       osc.start();
-      osc.stop(ctx.currentTime + 0.2);
+      osc.stop(ct + 0.2);
     } else if (type === 'mine') {
       const osc = ctx.createOscillator();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(600, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(200, ctx.currentTime + 0.3);
-      g.gain.setValueAtTime(0.1, ctx.currentTime);
-      g.gain.linearRampToValueAtTime(0, ctx.currentTime + 0.3);
+      osc.frequency.setValueAtTime(600, ct);
+      osc.frequency.exponentialRampToValueAtTime(200, ct + 0.3);
+      g.gain.setValueAtTime(0.1, ct);
+      g.gain.linearRampToValueAtTime(0, ct + 0.3);
       osc.connect(g);
       osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ct + 0.3);
+    } else if (type === 'rocket') {
+      // Hissing launch + thud
+      const osc = ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(80, ct);
+      osc.frequency.exponentialRampToValueAtTime(20, ct + 0.2);
+      
+      // Noise
+      const noise = ctx.createBufferSource();
+      const bSize = ctx.sampleRate * 0.2;
+      const b = ctx.createBuffer(1, bSize, ctx.sampleRate);
+      const d = b.getChannelData(0);
+      for(let i=0; i<bSize; i++) d[i] = Math.random()*2-1;
+      noise.buffer = b;
+      const nGain = ctx.createGain();
+      nGain.gain.setValueAtTime(0.3, ct);
+      nGain.gain.exponentialRampToValueAtTime(0.01, ct + 0.2);
+
+      g.gain.setValueAtTime(0.15, ct);
+      g.gain.linearRampToValueAtTime(0, ct + 0.2);
+
+      osc.connect(g);
+      noise.connect(nGain);
+      nGain.connect(destination);
+      osc.start(); osc.stop(ct + 0.2);
+      noise.start(); noise.stop(ct + 0.2);
+    } else if (type === 'emp') {
+      // Electric Zap
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(200, ct);
+      osc.frequency.linearRampToValueAtTime(1500, ct + 0.1); // Rapid rise
+      g.gain.setValueAtTime(0.15, ct);
+      g.gain.exponentialRampToValueAtTime(0.001, ct + 0.15);
+      osc.connect(g);
+      osc.start(); osc.stop(ct + 0.15);
+    } else if (type === 'mega') {
+      // Power release whoosh
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, ct);
+      osc.frequency.exponentialRampToValueAtTime(60, ct + 0.5);
+      
+      const noise = ctx.createBufferSource();
+      const bSize = ctx.sampleRate * 0.5;
+      const b = ctx.createBuffer(1, bSize, ctx.sampleRate);
+      const d = b.getChannelData(0);
+      for(let i=0; i<bSize; i++) d[i] = Math.random()*2-1;
+      noise.buffer = b;
+      
+      const nFilter = ctx.createBiquadFilter();
+      nFilter.type = 'lowpass';
+      nFilter.frequency.setValueAtTime(2000, ct);
+      nFilter.frequency.linearRampToValueAtTime(100, ct + 0.5);
+
+      g.gain.setValueAtTime(0.4, ct);
+      g.gain.exponentialRampToValueAtTime(0.001, ct + 0.5);
+
+      osc.connect(g);
+      noise.connect(nFilter);
+      nFilter.connect(g);
+
+      osc.start(); osc.stop(ct + 0.5);
+      noise.start(); noise.stop(ct + 0.5);
     }
   }
 
@@ -202,6 +307,7 @@ class AudioService {
     if (this.ctx && this.ctx.state !== 'closed') {
       // We don't necessarily want to close the context, but stop everything
       this.stop();
+      this.stopCharging();
     }
   }
 

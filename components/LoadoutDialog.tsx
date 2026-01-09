@@ -30,6 +30,11 @@ export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
   const iconSize = fontSize === 'small' ? 30 : (fontSize === 'large' ? 44 : 36);
   const listIconSize = fontSize === 'small' ? 22 : (fontSize === 'large' ? 30 : 26);
 
+  const isExoticItem = (id?: string) => {
+      if (!id) return false;
+      return [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].some(ex => ex.id === id);
+  };
+
   return (
     <div className="fixed inset-0 z-[9900] bg-black/95 flex items-center justify-center p-4 backdrop-blur-2xl">
        <div className="w-full max-w-3xl bg-zinc-950 border-2 border-zinc-800 rounded-xl flex flex-col h-[70vh] shadow-2xl overflow-hidden">
@@ -52,6 +57,7 @@ export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
                     {loadoutTab === 'guns' ? (
                         Array.from({ length: shipConfig?.defaultGuns || 1 }).map((_, i) => { 
                             const weapon = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === fitting.weapons[i]?.id);
+                            const isExotic = weapon ? isExoticItem(weapon.id) : false;
                             return (
                                 <div key={i} onClick={() => setActiveFittingSlot(i)} className={`relative flex items-center gap-4 p-4 border-2 rounded-xl cursor-pointer transition-all h-24 ${activeFittingSlot === i ? 'border-emerald-500 bg-emerald-950/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'}`}>
                                     <div className="absolute top-2 left-3 text-[8px] font-mono text-zinc-600">SLOT 0{i+1}</div>
@@ -61,7 +67,7 @@ export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
                                                 <ItemSVG type="weapon" color={weapon.beamColor || '#fff'} size={iconSize} />
                                             </div>
                                             <div className="flex-grow overflow-hidden">
-                                                <div className="text-[10px] font-black text-white uppercase truncate">{weapon.name}</div>
+                                                <div className={`text-[10px] font-black uppercase truncate ${isExotic ? 'text-orange-400' : 'text-white'}`}>{weapon.name}</div>
                                                 <div className="text-[8px] text-zinc-500 mt-1">DMG: {weapon.damage}</div>
                                             </div>
                                             <button 
@@ -81,6 +87,7 @@ export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
                         [0, 1].map(slot => { 
                             const id = slot === 0 ? fitting.shieldId : fitting.secondShieldId;
                             const sDef = id ? (id === 'dev_god_mode' ? { name: 'DEV SHIELD', capacity: 999999, color: '#fff' } : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === id)) : null;
+                            const isExotic = sDef && 'id' in sDef ? isExoticItem(sDef.id) : false;
                             return (
                                 <div key={slot} onClick={() => setActiveFittingSlot(slot)} className={`relative flex items-center gap-4 p-4 border-2 rounded-xl cursor-pointer transition-all h-24 ${activeFittingSlot === slot ? 'border-emerald-500 bg-emerald-950/20 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600'}`}>
                                     <div className="absolute top-2 left-3 text-[8px] font-mono text-zinc-600">GENERATOR 0{slot+1}</div>
@@ -90,7 +97,7 @@ export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
                                                 <ItemSVG type="shield" color={(sDef as any).color} size={iconSize} />
                                             </div>
                                             <div className="flex-grow overflow-hidden">
-                                                <div className="text-[10px] font-black text-white uppercase truncate">{sDef.name}</div>
+                                                <div className={`text-[10px] font-black uppercase truncate ${isExotic ? 'text-orange-400' : 'text-white'}`}>{sDef.name}</div>
                                                 <div className="text-[8px] text-zinc-500 mt-1">CAP: {sDef.capacity}</div>
                                             </div>
                                             <button 
@@ -155,6 +162,7 @@ export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
                                 {filteredCargo.map((it, idx) => {
                                     const realIdx = fitting.cargo.indexOf(it);
                                     const isVirtual = realIdx === -1 && it.id === 'dev_god_mode';
+                                    const isExotic = isExoticItem(it.id);
                                     
                                     const sDef = (it.type === 'shield' || SHIELDS.some(s => s.id === it.id)) ? (it.id === 'dev_god_mode' ? { name: 'DEV SHIELD', color: '#fff' } : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === it.id)) : null;
 
@@ -170,9 +178,9 @@ export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
                                             }} 
                                             className="flex items-center gap-3 p-3 bg-zinc-950 border border-zinc-800 hover:border-emerald-500 hover:bg-emerald-950/10 rounded transition-all text-left group"
                                         >
-                                            <ItemSVG type={it.type || (sDef ? 'shield' : 'weapon')} color={(sDef as any)?.color ? (sDef as any).color : (loadoutTab === 'guns' ? '#60a5fa' : '#34d399')} size={listIconSize} />
+                                            <ItemSVG type={it.type || (sDef ? 'shield' : 'weapon')} color={(sDef as any)?.color ? (sDef as any).color : (isExotic ? '#fb923c' : (loadoutTab === 'guns' ? '#60a5fa' : '#34d399'))} size={listIconSize} />
                                             <div className="flex-grow">
-                                                <div className="text-[9px] font-black text-zinc-300 group-hover:text-white uppercase truncate">{it.name}</div>
+                                                <div className={`text-[9px] font-black uppercase truncate ${isExotic ? 'text-orange-400 group-hover:text-orange-300' : 'text-emerald-400 group-hover:text-white'}`}>{it.name}</div>
                                                 <div className="text-[8px] text-zinc-600">QTY: {it.quantity}</div>
                                             </div>
                                             <div className="text-[10px] text-zinc-600 group-hover:text-emerald-400">➜</div>

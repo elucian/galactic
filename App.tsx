@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import GameEngine from './components/GameEngine.tsx';
 import SectorMap from './components/SectorMap.tsx';
@@ -48,12 +47,21 @@ export default function App() {
       initialFittings[os.instanceId] = { weapons: Array(config.defaultGuns).fill(null), shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', rocketCount: 0, mineCount: 0, hullPacks: 0, wingWeaponId: null, health: 100, ammoPercent: 100, lives: 1, fuel: config.maxFuel, cargo: [] }; 
       initialColors[os.instanceId] = config.defaultColor || '#94a3b8'; 
     });
+    
+    // Randomize planet start positions once per save file
+    const initialOffsets: Record<string, number> = {};
+    PLANETS.forEach(p => {
+      initialOffsets[p.id] = Math.random() * Math.PI * 2;
+    });
+
     return {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'], // Default grays
       currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, marketListingsByPlanet: {},
-      messages: [{ id: 'init', type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }]
+      messages: [{ id: 'init', type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }],
+      planetOrbitOffsets: initialOffsets,
+      universeStartTime: Date.now()
     };
   };
 
@@ -62,8 +70,14 @@ export default function App() {
     if (saved) try { 
         const parsed = JSON.parse(saved);
         if (!parsed.settings.fontSize) parsed.settings.fontSize = 'medium';
-        // Ensure customColors exists if loading old save
         if (!parsed.customColors) parsed.customColors = ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'];
+        // Ensure new orbital fields exist for legacy saves
+        if (!parsed.planetOrbitOffsets) {
+            const offs: Record<string, number> = {};
+            PLANETS.forEach(p => offs[p.id] = Math.random() * Math.PI * 2);
+            parsed.planetOrbitOffsets = offs;
+            parsed.universeStartTime = Date.now();
+        }
         return { ...createInitialState(), ...parsed }; 
     } catch(e) { return createInitialState(); }
     return createInitialState();
@@ -719,7 +733,7 @@ export default function App() {
         fontSize={gameState.settings.fontSize}
       />
 
-      {screen === 'map' && (<SectorMap currentQuadrant={gameState.currentQuadrant} onLaunch={(planet) => { setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: planet.quadrant, dockedPlanetId: planet.id })); if (!gameState.settings.showTransitions) { setScreen('game'); audioService.playTrack('combat'); } else { setScreen('launch'); } }} onBack={() => setScreen('hangar')} />)}
+      {screen === 'map' && (<SectorMap currentQuadrant={gameState.currentQuadrant} orbitOffsets={gameState.planetOrbitOffsets} universeStartTime={gameState.universeStartTime} onLaunch={(planet) => { setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: planet.quadrant, dockedPlanetId: planet.id })); if (!gameState.settings.showTransitions) { setScreen('game'); audioService.playTrack('combat'); } else { setScreen('launch'); } }} onBack={() => setScreen('hangar')} />)}
       {screen === 'launch' && gameState.currentPlanet && (<LaunchSequence planet={gameState.currentPlanet} ownedShips={gameState.ownedShips.map(inst => ({ config: SHIPS.find(s => s.id === inst.shipTypeId)!, colors: { hull: gameState.shipColors[inst.instanceId], wings: gameState.shipWingColors[inst.instanceId], cockpit: gameState.shipCockpitColors[inst.instanceId], guns: gameState.shipGunColors[inst.instanceId], gun_body: gameState.shipGunBodyColors[inst.instanceId], engines: gameState.shipEngineColors[inst.instanceId], nozzles: gameState.shipNozzleColors[inst.instanceId] } }))} onComplete={() => { setScreen('game'); audioService.playTrack('combat'); }} />)}
       {screen === 'game' && gameState.currentPlanet && (
         <GameEngine
@@ -754,4 +768,4 @@ export default function App() {
       {screen === 'landing' && gameState.currentPlanet && (<LandingScene planet={gameState.currentPlanet} shipShape={selectedShipConfig?.shape || 'arrow'} onComplete={() => { setScreen('hangar'); audioService.playTrack('command'); }} />)}
     </div>
   );
-};
+}

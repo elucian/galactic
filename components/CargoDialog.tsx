@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { CargoItem, ShipFitting, ShipConfig } from '../types.ts';
+import { EXOTIC_WEAPONS, EXOTIC_SHIELDS } from '../constants.ts';
 import { ItemSVG } from './Common.tsx';
 
 interface CargoDialogProps {
@@ -49,6 +50,11 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
   const iconSize = fontSize === 'small' ? 22 : (fontSize === 'large' ? 32 : 26);
   const toolBtnClass = fontSize === 'small' ? 'w-10 h-10' : (fontSize === 'large' ? 'w-14 h-14' : 'w-12 h-12');
 
+  const isExoticItem = (id?: string) => {
+      if (!id) return false;
+      return [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].some(ex => ex.id === id);
+  };
+
   // SAFE ACCESS: Check if index is valid and item exists
   const selectedShipItem = (selectedCargoIdx !== null && fitting.cargo[selectedCargoIdx]) ? fitting.cargo[selectedCargoIdx] : undefined;
   const selectedReserveItem = (selectedReserveIdx !== null && reserves[selectedReserveIdx]) ? reserves[selectedReserveIdx] : undefined;
@@ -81,15 +87,18 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                     <span className={`font-black text-white ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{fitting.cargo.reduce((a,i)=>a+i.quantity,0)} / {shipConfig?.maxCargo}</span>
                 </div>
                 <div className="flex-grow overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                    {fitting.cargo.map((it, i) => (
-                        <div key={it.instanceId} onClick={() => { setSelectedCargoIdx(i); setSelectedReserveIdx(null); }} 
-                             className={`flex justify-between items-center p-3 border cursor-pointer rounded group transition-all select-none ${selectedCargoIdx === i ? 'bg-emerald-900/30 border-emerald-500 shadow-[inset_0_0_10px_rgba(16,185,129,0.2)]' : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
-                            <div className="flex items-center gap-3">
-                                <ItemSVG type={it.type} color="#10b981" size={iconSize}/>
-                                <span className={`font-black uppercase text-white truncate max-w-[120px] ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{it.name} x{it.quantity}</span>
+                    {fitting.cargo.map((it, i) => {
+                        const isExotic = isExoticItem(it.id);
+                        return (
+                            <div key={it.instanceId} onClick={() => { setSelectedCargoIdx(i); setSelectedReserveIdx(null); }} 
+                                 className={`flex justify-between items-center p-3 border cursor-pointer rounded group transition-all select-none ${selectedCargoIdx === i ? 'bg-emerald-900/30 border-emerald-500 shadow-[inset_0_0_10px_rgba(16,185,129,0.2)]' : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
+                                <div className="flex items-center gap-3">
+                                    <ItemSVG type={it.type} color={isExotic ? "#fb923c" : "#10b981"} size={iconSize}/>
+                                    <span className={`font-black uppercase truncate max-w-[120px] ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')} ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name} x{it.quantity}</span>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {fitting.cargo.length === 0 && <div className="text-center p-10 opacity-30 text-[9px] uppercase font-black text-zinc-500">Ship Empty</div>}
                 </div>
              </div>
@@ -157,15 +166,18 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                     <span className={`font-black text-white ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{reserves.length} ITEMS</span>
                 </div>
                 <div className="flex-grow overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                    {reserves.map((it, i) => (
-                        <div key={it.instanceId} onClick={() => { setSelectedReserveIdx(i); setSelectedCargoIdx(null); }} 
-                             className={`flex justify-between items-center p-3 border cursor-pointer rounded group transition-all select-none ${selectedReserveIdx === i ? 'bg-amber-900/30 border-amber-500 shadow-[inset_0_0_10px_rgba(245,158,11,0.2)]' : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
-                            <div className="flex items-center gap-3 w-full justify-end">
-                                <span className={`font-black uppercase text-white truncate max-w-[120px] text-right ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{it.name} x{it.quantity}</span>
-                                <ItemSVG type={it.type} color="#fbbf24" size={iconSize}/>
+                    {reserves.map((it, i) => {
+                        const isExotic = isExoticItem(it.id);
+                        return (
+                            <div key={it.instanceId} onClick={() => { setSelectedReserveIdx(i); setSelectedCargoIdx(null); }} 
+                                 className={`flex justify-between items-center p-3 border cursor-pointer rounded group transition-all select-none ${selectedReserveIdx === i ? 'bg-amber-900/30 border-amber-500 shadow-[inset_0_0_10px_rgba(245,158,11,0.2)]' : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
+                                <div className="flex items-center gap-3 w-full justify-end">
+                                    <span className={`font-black uppercase truncate max-w-[120px] text-right ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')} ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name} x{it.quantity}</span>
+                                    <ItemSVG type={it.type} color={isExotic ? "#fb923c" : "#fbbf24"} size={iconSize}/>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                     {reserves.length === 0 && <div className="text-center p-10 opacity-30 text-[9px] uppercase font-black text-zinc-500">Reserve Empty</div>}
                 </div>
              </div>

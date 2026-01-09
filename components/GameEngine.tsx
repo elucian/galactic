@@ -1,5 +1,3 @@
-
-// [Existing imports remain unchanged]
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, Weapon, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
@@ -423,6 +421,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const gaugeW = fs === 'small' ? 'w-4' : (fs === 'large' ? 'w-10' : 'w-6');
   const gaugeH = fs === 'small' ? 'h-1' : (fs === 'large' ? 'h-2.5' : 'h-1.5');
   const gaugeGap = fs === 'small' ? 'gap-2' : (fs === 'large' ? 'gap-5' : 'gap-3');
+  const ledGap = fs === 'small' ? 'gap-0.5' : (fs === 'large' ? 'gap-1' : 'gap-0.5');
   
   const topBarW = fs === 'small' ? 'w-44' : (fs === 'large' ? 'w-72' : 'w-56');
   const topBarH = fs === 'small' ? 'h-2' : (fs === 'large' ? 'h-5' : 'h-3.5');
@@ -787,7 +786,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         else if (weaponDef.id === 'exotic_seeker' || weaponDef.id === 'exotic_plasma_ball' || weaponDef.id === 'exotic_flame') baseB.visualType = 'comet';
         s.bullets.push(baseB);
         const pan = xOff < 0 ? -0.4 : 0.4;
-        audioService.playWeaponFire(variant === 'mega' ? 'laser' : (weaponDef.type === WeaponType.LASER ? 'laser' : 'cannon'), pan);
+        
+        let sfxType: 'laser' | 'cannon' | 'rocket' | 'emp' | 'mega' | 'missile' | 'mine' = 'cannon';
+        if (variant === 'mega') sfxType = 'mega';
+        else if (weaponDef.type === WeaponType.LASER) sfxType = 'laser';
+        else if (weaponDef.type === WeaponType.ROCKET) sfxType = 'rocket';
+        else if (weaponDef.type === WeaponType.EMP) sfxType = 'emp';
+        else if (weaponDef.type === WeaponType.MISSILE) sfxType = 'missile';
+        
+        audioService.playWeaponFire(sfxType, pan);
+        
         const efficiency = isExotic ? 0.3 : 1.2;
         const powerFactor = (variant === 'mega' ? 10 : (variant === 'heavy_auto' ? 3 : 1));
         s.energy -= (weaponDef.energyCost / 20) * multiplier * efficiency * powerFactor;
@@ -795,7 +803,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         if (weaponDef.type === WeaponType.PROJECTILE || weaponDef.type === WeaponType.MISSILE) {
             isKineticFire = true;
-            // Flame & Smoke for projectiles
             const muzzleX = s.px + xOff + (Math.sin(angle) * 40); 
             const muzzleY = s.py - 35 - (Math.cos(angle) * 40);
             
@@ -815,9 +822,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
     }
     if (fired) {
-        // Stronger kick for projectile weapons
+        // Stronger recoil for projectile
         s.gunKick = isKineticFire ? 1.8 : 1.0;
-        if (variant === 'normal') s.gunHeat = Math.min(1.0, s.gunHeat + 0.04); 
+        if (variant === 'normal') s.gunHeat = Math.min(1.0, s.gunHeat + 0.005); 
         else if (variant === 'mega') s.gunHeat = 1.0; 
         else if (variant === 'heavy_auto') s.gunHeat = Math.min(1.0, s.gunHeat + 0.1);
         
@@ -853,8 +860,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         const now = Date.now();
         if (['Tab', 'CapsLock', 'ShiftLeft', 'Space'].includes(e.code)) e.preventDefault();
         if (e.code === 'Space') {
-            if (isDown && !s.keys.has('Space')) { s.charging.active = true; s.charging.startTime = now; s.keys.add('Space'); } 
+            if (isDown && !s.keys.has('Space')) { 
+                s.charging.active = true; 
+                s.charging.startTime = now; 
+                s.keys.add('Space'); 
+                audioService.startCharging();
+            } 
             else if (!isDown) {
+                audioService.stopCharging();
                 if (s.charging.active) {
                     const dur = now - s.charging.startTime;
                     if (dur < 1500) { const ratio = Math.min(1.0, dur / 1500); const power = 1.0 + (ratio * 9.0); fireWeapons(power, false, true, 'mega'); }
@@ -884,7 +897,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const s = stateRef.current; if (!s.gameActive) return; s.frame++; const pSpeed = 10.5, now = Date.now();
       const isVertical = !s.playerDead && (s.keys.has('KeyW') || s.keys.has('ArrowUp') || s.keys.has('KeyS') || s.keys.has('ArrowDown'));
       if (!s.isPaused) {
-        // [Existing movement/game logic remains unchanged]
         const isTryingToWarp = s.keys.has('KeyW') || s.keys.has('ArrowUp');
         const topLimit = 135; 
         const isInWarpZone = s.py < (canvas.height * 0.4); 
@@ -908,9 +920,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         const isShift = s.keys.has('ShiftLeft') || s.keys.has('ShiftRight');
         const isWeaponActive = isControl || isShift || isSpace;
         if (isWeaponActive) s.crystalExtension = Math.min(1, s.crystalExtension + 0.1); else s.crystalExtension = Math.max(0, s.crystalExtension - 0.1);
-        if (isSpace) { const chargeDur = now - s.charging.startTime; s.charging.level = Math.min(1.0, chargeDur / 1500); if (chargeDur >= 1500) fireWeapons(1.0, false, false, 'heavy_auto'); } else { s.charging.level = 0; if (isControl || isShift) fireWeapons(1.0, true, false, 'normal'); }
+        if (isSpace) { const chargeDur = now - s.charging.startTime; s.charging.level = Math.min(1.0, chargeDur / 1500); if (chargeDur >= 1500) { audioService.stopCharging(); fireWeapons(1.0, false, false, 'heavy_auto'); } } else { s.charging.level = 0; if (isControl || isShift) fireWeapons(1.0, true, false, 'normal'); }
         s.gunKick *= 0.85;
-        if (!isWeaponActive && s.gunHeat > 0) s.gunHeat = Math.max(0, s.gunHeat - 0.015);
+        if (!isWeaponActive && s.gunHeat > 0) {
+            s.gunHeat = Math.max(0, s.gunHeat - 0.015);
+            if (s.gunHeat <= 0) s.hasOverheated = false;
+        }
         if (s.gamePhase === 'travel') { if (isBossPhase) { s.gamePhase = 'observation'; s.observationTimer = 0; setStats(p => ({ ...p, alert: "SECTOR SUN DETECTED - ARRIVING" })); if (!s.sunSpawned) { s.spaceSystems.push(new SpaceSystem(canvas.width, canvas.height, quadrant, currentPlanet.id)); s.sunSpawned = true; } } } else if (s.gamePhase === 'observation') { s.observationTimer++; if (s.observationTimer > 360) { s.gamePhase = 'boss_fight'; s.bossSpawned = true; s.enemies.push(new Enemy(canvas.width/2, -450, 'boss', BOSS_SHIPS[Math.floor(Math.random() * BOSS_SHIPS.length)], difficulty)); setStats(p => ({ ...p, alert: "BOSS INTERCEPTION" })); } }
         if (!s.playerDead && !s.playerExploded) {
             if (s.fuel <= 0) { s.py += 0.8; } else if (isVertical) { if (s.keys.has('KeyW') || s.keys.has('ArrowUp')) { if (!s.isOverdrive) { s.py -= pSpeed; s.fuel = Math.max(0, s.fuel - 0.0015); } } if (s.keys.has('KeyS') || s.keys.has('ArrowDown')) s.py += pSpeed; }
@@ -936,7 +951,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (s.isMeltdown) { s.meltdownTimer--; s.fuel = Math.max(0, s.fuel - (maxFuelCapacity / 600)); s.integrity = Math.max(0, s.integrity - 0.1); setStats(p => ({ ...p, alert: `MELTDOWN T-MINUS: ${Math.ceil(s.meltdownTimer/60)}s` })); if (s.meltdownTimer <= 0) { s.isMeltdown = false; s.playerExploded = true; s.deathSequenceTimer = 300; createExplosion(s.px, s.py, true, false, false, '#f97316'); audioService.playExplosion(0, 2.5); } if (s.frame % 2 === 0) { s.particles.push({ x: s.px + (Math.random()-0.5)*40, y: s.py + (Math.random()-0.5)*40, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 0.8, color: '#f97316', size: 10, type: 'fire' }); s.particles.push({ x: s.px + (Math.random()-0.5)*30, y: s.py + (Math.random()-0.5)*30, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, life: 1.0, color: 'rgba(50,50,50,0.6)', size: 15, type: 'smoke' }); } }
         }
         
-        // [Enemy spawning, particles, etc. remain unchanged]
         if (s.integrity < 100 && !s.playerExploded) { if (s.frame % 5 === 0) { s.particles.push({ x: s.px + (Math.random()-0.5)*15, y: s.py + 10, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2 + 3, life: 0.8, color: 'rgba(60,60,60,0.5)', size: 8 + Math.random()*8, type: 'smoke' }); if (s.integrity < 60) { s.particles.push({ x: s.px + (Math.random()-0.5)*10, y: s.py + 5, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3 + 2, life: 0.5, color: '#ef4444', size: 4 + Math.random()*4, type: 'fire' }); } } }
         if (s.playerExploded) { s.deathSequenceTimer--; if (s.deathSequenceTimer <= 0) { s.playerDead = true; } }
         
@@ -1013,11 +1027,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       {stateRef.current.gamePhase === 'observation' && (<div className="absolute top-20 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none bg-blue-950/20 px-8 py-3 rounded-xl border border-blue-500/30 backdrop-blur-sm"><div className={`retro-font ${barText} text-blue-400 uppercase tracking-widest animate-pulse tracking-[0.4em]`}>PLANETARY ARRIVAL</div></div>)}
       {stateRef.current.scavengeMode && (<div className="absolute top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none bg-emerald-950/20 px-8 py-3 rounded-xl border border-emerald-500/30 backdrop-blur-sm"><div className={`retro-font ${barText} text-emerald-400 uppercase tracking-widest animate-pulse`}>SCAVENGE PHASE ACTIVE</div><div className={`retro-font ${hudText} text-white`}>EXTRACTION IN: {stats.scavengeTimer}s</div></div>)}
       <div className={`absolute right-4 top-1/2 -translate-y-1/2 flex items-end ${gaugeGap} z-50 pointer-events-none opacity-95 scale-90`}>
-        <div className="flex flex-col items-center gap-1.5"><div className={`retro-font ${btnText} uppercase font-black ${(stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? 'text-red-400 animate-pulse' : 'text-blue-400'}`}>FUE</div><div className={`flex flex-col-reverse gap-0.5 p-1 bg-zinc-950/70 border border-zinc-800/40 rounded`}>{Array.from({ length: nl }).map((_, i) => (<div key={i} className={`${gaugeW} ${gaugeH} rounded-xs transition-colors duration-300 ${i < afl ? 'shadow-[0_0_8px_currentColor]' : 'opacity-10'}`} style={{ backgroundColor: i < afl ? ((stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? '#ff004c' : '#00b7ff') : '#18181b', color: (stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? '#ff004c' : '#00b7ff' }} />))}</div><div className={`retro-font ${btnText} font-black ${(stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? 'text-red-500' : 'text-blue-500'}`}>{stats.fuel.toFixed(1)}U</div></div>
+        <div className="flex flex-col items-center gap-1.5"><div className={`retro-font ${btnText} uppercase font-black ${(stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? 'text-red-400 animate-pulse' : 'text-blue-400'}`}>FUE</div><div className={`flex flex-col-reverse ${ledGap} p-1 bg-zinc-950/70 border border-zinc-800/40 rounded`}>{Array.from({ length: nl }).map((_, i) => (<div key={i} className={`${gaugeW} ${gaugeH} rounded-xs transition-colors duration-300 ${i < afl ? 'shadow-[0_0_8px_currentColor]' : 'opacity-10'}`} style={{ backgroundColor: i < afl ? ((stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? '#ff004c' : '#00b7ff') : '#18181b', color: (stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? '#ff004c' : '#00b7ff' }} />))}</div><div className={`retro-font ${btnText} font-black ${(stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? 'text-red-500' : 'text-blue-500'}`}>{stats.fuel.toFixed(1)}U</div></div>
         
         <div className="flex flex-col items-center gap-1.5">
             <div className={`retro-font ${btnText} uppercase font-black ${(ep < 20 || stats.energyDepleted) ? 'text-red-500 animate-pulse' : (ep < 50 ? 'text-yellow-400' : 'text-cyan-400')}`}>PWR</div>
-            <div className={`flex flex-col-reverse gap-0.5 p-1 bg-zinc-950/70 border border-zinc-800/40 rounded ${stats.energyDepleted ? 'animate-pulse' : ''}`}>
+            <div className={`flex flex-col-reverse ${ledGap} p-1 bg-zinc-950/70 border border-zinc-800/40 rounded ${stats.energyDepleted ? 'animate-pulse' : ''}`}>
                 {Array.from({ length: nl }).map((_, i) => { 
                     const isActive = i < ael;
                     let color = '#00ffd0'; 
@@ -1032,7 +1046,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         </div>
       </div>
       {stats.boss && (<div className="absolute top-20 left-1/2 -translate-x-1/2 w-[350px] flex flex-col items-center gap-1 z-50 pointer-events-none bg-black/40 p-3 rounded-lg border border-white/5 opacity-95"><div className="retro-font text-[6px] text-purple-400 uppercase tracking-[0.4em] font-black drop-shadow-[0_0_80px_#a855f7]">XENOS PRIMARY</div><div className="w-full flex flex-col gap-1 mt-1.5">{stats.boss.sh > 0 && (<div className="w-full h-1.5 bg-zinc-900/40 border border-purple-900/30 rounded-full overflow-hidden"><div className="h-full bg-purple-500 shadow-[0_0_12px_#a855f7]" style={{ width: `${(stats.boss.sh/stats.boss.maxSh)*100}%` }} /></div>)}<div className="w-full h-2 bg-zinc-900/40 border border-red-900/30 rounded-full overflow-hidden"><div className="h-full bg-red-600 shadow-[0_0_12px_#dc2626]" style={{ width: `${(stats.boss.hp/stats.boss.maxHp)*100}%` }} /></div></div></div>)}
-      <div className={`absolute top-3 left-5 flex flex-col ${hudGap} pointer-events-none z-50 opacity-100 scale-90 origin-top-left`}><div className="flex items-center gap-2.5"><div className={`retro-font ${barText} uppercase w-8 font-black ${stateRef.current.isMeltdown ? 'text-red-500 animate-pulse drop-shadow-[0_0_5px_#ef4444]' : 'text-lime-400 drop-shadow-[0_0_5px_#a3e635]'}`}>HULL</div><div className={`${topBarW} ${topBarH} bg-zinc-950/50 border border-zinc-800/40 rounded-full overflow-hidden`}><div className={`h-full ${stateRef.current.isMeltdown ? 'bg-red-500' : 'bg-lime-500'}`} style={{ width: `${stats.hp}%` }} /></div></div>{shield && <div className="flex items-center gap-2.5"><div className={`retro-font ${barText} uppercase w-8 font-black`} style={{ color: shield.color }}>SHLD</div><div className={`${topBarW} ${topBarH} bg-zinc-950/50 border border-zinc-800/40 rounded-full overflow-hidden`}><div className="h-full" style={{ width: `${(stats.sh1/shield.capacity)*100}%`, backgroundColor: shield.color }} /></div></div>}</div>
+      <div className={`absolute top-3 left-5 flex flex-col ${hudGap} pointer-events-none z-50 opacity-100 scale-90 origin-top-left`}><div className="flex items-center gap-2.5"><div className={`retro-font ${barText} uppercase pr-1 font-black ${stateRef.current.isMeltdown ? 'text-red-500 animate-pulse drop-shadow-[0_0_5px_#ef4444]' : 'text-lime-400 drop-shadow-[0_0_5px_#a3e635]'}`}>HULL</div><div className={`${topBarW} ${topBarH} bg-zinc-950/50 border border-zinc-800/40 rounded-full overflow-hidden`}><div className={`h-full ${stateRef.current.isMeltdown ? 'bg-red-500' : 'bg-lime-500'}`} style={{ width: `${stats.hp}%` }} /></div></div>{shield && <div className="flex items-center gap-2.5"><div className={`retro-font ${barText} uppercase pr-1 font-black`} style={{ color: shield.color }}>SHLD</div><div className={`${topBarW} ${topBarH} bg-zinc-950/50 border border-zinc-800/40 rounded-full overflow-hidden`}><div className="h-full" style={{ width: `${(stats.sh1/shield.capacity)*100}%`, backgroundColor: shield.color }} /></div></div>}</div>
       <div className="absolute top-3 right-5 text-right flex flex-col gap-1 z-50 scale-90 origin-top-right"><div className="flex flex-col gap-1 opacity-90"><div className={`retro-font ${hudText} text-white tabular-nums`}>{stats.score.toLocaleString()}</div><div className={`retro-font ${barText} text-zinc-300 uppercase tracking-widest font-black`}>UNITS</div></div></div>
       
       <div className="absolute bottom-16 left-5 flex flex-col gap-2 pointer-events-none z-[100]">
@@ -1074,4 +1088,5 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     </div>
   );
 };
+
 export default GameEngine;

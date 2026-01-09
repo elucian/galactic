@@ -155,6 +155,8 @@ export interface GameState {
   reserveByPlanet: Record<string, CargoItem[]>;
   marketListingsByPlanet: Record<string, CargoItem[]>;
   messages: GameMessage[];
+  planetOrbitOffsets: Record<string, number>;
+  universeStartTime: number;
 }
 
 export type DisplayMode = 'windowed' | 'fullscreen';
