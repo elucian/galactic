@@ -12,6 +12,9 @@ class AudioService {
   private chargeOsc: OscillatorNode | null = null;
   private chargeGain: GainNode | null = null;
 
+  // Launch Sound State
+  private launchGain: GainNode | null = null;
+
   init() {
     if (this.ctx) return;
     this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -38,6 +41,88 @@ class AudioService {
   setEnabled(e: boolean) {
     this.enabled = e;
     this.updateVolume(this.volume);
+  }
+
+  playLaunchSequence() {
+    this.init();
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    // Create a specific gain for the launch sequence to allow fading
+    const seqGain = ctx.createGain();
+    seqGain.connect(this.masterGain!);
+    this.launchGain = seqGain;
+
+    // 1. Ignition Bang (Low Thud)
+    const bangOsc = ctx.createOscillator();
+    bangOsc.type = 'square';
+    bangOsc.frequency.setValueAtTime(80, t);
+    bangOsc.frequency.exponentialRampToValueAtTime(10, t + 0.4);
+    
+    const bangGain = ctx.createGain();
+    bangGain.gain.setValueAtTime(0.6, t);
+    bangGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
+    
+    // Lowpass filter for the bang to make it heavy
+    const bangFilter = ctx.createBiquadFilter();
+    bangFilter.type = 'lowpass';
+    bangFilter.frequency.value = 200;
+
+    bangOsc.connect(bangFilter);
+    bangFilter.connect(bangGain);
+    bangGain.connect(seqGain); // Connect to sequence gain
+    bangOsc.start(t);
+    bangOsc.stop(t + 0.4);
+
+    // 2. Engine Roar (Pink-ish Noise)
+    const duration = 12.0;
+    const bufferSize = ctx.sampleRate * duration;
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    // Simple noise generation
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+
+    const roarFilter = ctx.createBiquadFilter();
+    roarFilter.type = 'lowpass';
+    roarFilter.frequency.setValueAtTime(100, t);
+    roarFilter.frequency.linearRampToValueAtTime(800, t + 4); // Rev up
+    roarFilter.frequency.linearRampToValueAtTime(400, t + 10); // Fade out frequency
+
+    const roarGain = ctx.createGain();
+    roarGain.gain.setValueAtTime(0, t);
+    roarGain.gain.linearRampToValueAtTime(0.3, t + 0.5); // Fade in
+    roarGain.gain.linearRampToValueAtTime(0.2, t + 8);
+    roarGain.gain.linearRampToValueAtTime(0, t + 12); // Fade out
+
+    noise.connect(roarFilter);
+    roarFilter.connect(roarGain);
+    roarGain.connect(seqGain); // Connect to sequence gain
+    
+    noise.start(t);
+    noise.stop(t + duration);
+  }
+
+  stopLaunchSequence() {
+    if (this.launchGain && this.ctx) {
+        const t = this.ctx.currentTime;
+        // Fade out over 0.5 seconds
+        this.launchGain.gain.cancelScheduledValues(t);
+        this.launchGain.gain.setValueAtTime(this.launchGain.gain.value, t);
+        this.launchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+        
+        setTimeout(() => {
+            if (this.launchGain) {
+                this.launchGain.disconnect();
+                this.launchGain = null;
+            }
+        }, 550);
+    }
   }
 
   playSfx(type: 'click' | 'transition' | 'denied' | 'buy') {
@@ -308,6 +393,7 @@ class AudioService {
       // We don't necessarily want to close the context, but stop everything
       this.stop();
       this.stopCharging();
+      this.stopLaunchSequence();
     }
   }
 

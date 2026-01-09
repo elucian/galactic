@@ -104,6 +104,7 @@ export default function App() {
   const [screen, setScreen] = useState<'intro' | 'hangar' | 'map' | 'launch' | 'game' | 'landing'>('intro');
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
   const [activeFittingSlot, setActiveFittingSlot] = useState(0);
+  const [launchDestination, setLaunchDestination] = useState<'map' | 'planet'>('map');
   
   // Modals
   const [isOptionsOpen, setIsOptionsOpen] = useState(false);
@@ -192,7 +193,13 @@ export default function App() {
   const handleLaunch = () => {
     if (!selectedFitting || !selectedShipConfig) return;
     if (selectedFitting.fuel < 0.2) { audioService.playSfx('denied'); alert("Insufficient Fuel!"); return; }
-    setScreen('map');
+    setLaunchDestination('map');
+    if (gameState.settings.showTransitions) {
+        setScreen('launch');
+    } else {
+        setScreen('map');
+        audioService.playTrack('map');
+    }
   };
 
   const handleGameOver = (success: boolean, score: number, aborted: boolean, payload: any) => {
@@ -299,13 +306,10 @@ export default function App() {
           ...prev, 
           currentPlanet: planet, 
           currentQuadrant: planet.quadrant,
-          // Only update dockedPlanetId if friendly. If fighting, we are just 'at' the planet but not docked safely until we win?
-          // Actually, if we fly to a friendly planet, we re-dock there. 
-          // If we fly to a hostile one, we remain "docked" at previous base until we return? 
-          // Or we are "in orbit".
-          // Let's keep dockedPlanetId as the *last friendly base*.
           dockedPlanetId: isFriendly ? planet.id : prev.dockedPlanetId
       }));
+
+      setLaunchDestination('planet');
 
       if (gameState.settings.showTransitions) {
           setScreen('launch');
@@ -321,19 +325,21 @@ export default function App() {
   };
 
   const handleLaunchSequenceComplete = () => {
-      const status = gameState.planetRegistry[gameState.currentPlanet!.id]?.status || 'occupied';
-      if (status === 'friendly') {
-          setScreen('landing'); // Friendly -> Land
+      if (launchDestination === 'map') {
+          setScreen('map');
+          audioService.playTrack('map');
       } else {
-          setScreen('game'); // Hostile -> Fight
-          audioService.playTrack('combat');
+          const status = gameState.planetRegistry[gameState.currentPlanet!.id]?.status || 'occupied';
+          if (status === 'friendly') {
+              setScreen('landing'); // Friendly -> Land
+          } else {
+              setScreen('game'); // Hostile -> Fight
+              audioService.playTrack('combat');
+          }
       }
   };
 
-  // ... [Existing helper functions like replaceShip, moveItems, etc. remain unchanged] ...
-  // Re-declare them here for context, but using placeholders for brevity if they didn't change logic-wise
-  // Actually I must include them fully as per instructions.
-
+  // ... [Rest of helper functions like replaceShip, moveItems, etc. unchanged] ...
   const replaceShip = (shipTypeId: string) => {
     const shipConfig = SHIPS.find(s => s.id === shipTypeId);
     if (!shipConfig || !gameState.selectedShipInstanceId) return;
@@ -730,6 +736,8 @@ export default function App() {
     audioService.playSfx('click');
   };
 
+  const activeShipId = gameState.selectedShipInstanceId || gameState.ownedShips[0].instanceId;
+
   return (
     <div className="w-full h-full bg-black text-white font-sans overflow-hidden select-none relative">
       <StarBackground />
@@ -876,20 +884,19 @@ export default function App() {
       )}
       {screen === 'launch' && gameState.currentPlanet && (
         <LaunchSequence 
-            planet={gameState.currentPlanet} 
-            ownedShips={gameState.ownedShips.map(inst => ({ 
-                config: SHIPS.find(s => s.id === inst.shipTypeId)!, 
-                colors: { 
-                    hull: gameState.shipColors[inst.instanceId], 
-                    wings: gameState.shipWingColors[inst.instanceId], 
-                    cockpit: gameState.shipCockpitColors[inst.instanceId], 
-                    guns: gameState.shipGunColors[inst.instanceId], 
-                    gun_body: gameState.shipGunBodyColors[inst.instanceId], 
-                    engines: gameState.shipEngineColors[inst.instanceId], 
-                    nozzles: gameState.shipNozzleColors[inst.instanceId] 
-                } 
-            }))} 
-            onComplete={handleLaunchSequenceComplete} 
+            planet={dockedPlanet || gameState.currentPlanet} // Launch from docked planet if possible
+            shipConfig={selectedShipConfig || SHIPS[0]}
+            shipColors={{ 
+                hull: gameState.shipColors[activeShipId], 
+                wings: gameState.shipWingColors[activeShipId], 
+                cockpit: gameState.shipCockpitColors[activeShipId], 
+                guns: gameState.shipGunColors[activeShipId], 
+                gun_body: gameState.shipGunBodyColors[activeShipId], 
+                engines: gameState.shipEngineColors[activeShipId], 
+                nozzles: gameState.shipNozzleColors[activeShipId] 
+            }} 
+            onComplete={handleLaunchSequenceComplete}
+            testMode={!!gameState.settings.testMode} 
         />
       )}
       {screen === 'game' && gameState.currentPlanet && (
