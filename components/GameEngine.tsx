@@ -100,18 +100,43 @@ class Enemy {
 
     if (this.type === 'boss') {
         if (this.sh < this.maxSh && this.sh > 0) this.sh += this.shieldRegenRate;
+        
+        // --- BOSS AI ENHANCEMENT: Dodge and Move ---
         const dx = px - this.x;
-        this.vx += dx * 0.005; 
-        this.vx *= 0.94; 
-        let targetY = 150 + Math.sin(Date.now() * 0.001) * 50;
-        if (this.y > 400) targetY = 100;
+        const distToPlayer = Math.abs(dx);
+        
+        // Base tracking
+        this.vx += dx * 0.003; 
+        
+        // Evasion Logic: If player is aiming at boss (dx is small), dodge laterally
+        const isTargeted = distToPlayer < 100;
+        if (isTargeted) {
+             // Move AWAY from the player's center to dodge fire
+             // If player is left (dx > 0), move right (add vx). If player is right, move left.
+             const dodgeDir = dx > 0 ? -1 : 1; 
+             this.vx += dodgeDir * 0.4;
+        }
+
+        // Keep moving (Hit and Run)
+        // If getting too close to edges, bounce back harder
+        if (this.x < 150) this.vx += 0.3;
+        if (this.x > window.innerWidth - 150) this.vx -= 0.3;
+
+        this.vx *= 0.95; 
+        
+        let targetY = 150 + Math.sin(Date.now() * 0.001) * 80;
+        if (this.y > 350) targetY = 100;
         const dy = targetY - this.y;
         this.vy += dy * 0.01;
         this.vy *= 0.92;
+        
         this.x += this.vx;
         this.y += this.vy;
-        if (this.x < -100) this.x = window.innerWidth + 100;
-        if (this.x > window.innerWidth + 100) this.x = -100;
+        
+        // Clamp screen
+        if (this.x < 0) { this.x = 0; this.vx *= -1; }
+        if (this.x > window.innerWidth) { this.x = window.innerWidth; this.vx *= -1; }
+        
         return;
     }
 
@@ -380,22 +405,33 @@ class Asteroid {
 }
 
 class SpaceSystem {
-    x: number; y: number; vy: number = 0.15;
-    sunSize: number = 180; sunColor: string; isBlackHole: boolean; 
-    viewProgress: number = 0;
-    planets: any[];
-    comets: any[];
-    constructor(w: number, h: number, quadrant: QuadrantType, selectedPlanetId: string) {
-        this.x = w / 2; this.y = -400; 
-        this.isBlackHole = quadrant === QuadrantType.DELTA;
-        const colors = { [QuadrantType.ALFA]: '#facc15', [QuadrantType.BETA]: '#f97316', [QuadrantType.GAMA]: '#60a5fa', [QuadrantType.DELTA]: '#000000' };
+    // REFACTORED: Now serves as a dynamic orbit simulator
+    orbitAngle: number = 0;
+    sunColor: string;
+    quadrant: QuadrantType;
+    otherPlanets: any[];
+    
+    constructor(w: number, h: number, quadrant: QuadrantType, currentPlanetId: string) {
+        this.quadrant = quadrant;
+        const colors = { [QuadrantType.ALFA]: '#facc15', [QuadrantType.BETA]: '#ef4444', [QuadrantType.GAMA]: '#60a5fa', [QuadrantType.DELTA]: '#000000' };
         this.sunColor = colors[quadrant];
-        const sectorPlanets = PLANETS.filter(p => p.quadrant === quadrant);
-        this.planets = sectorPlanets.map((p, i) => ({
-            id: p.id, name: p.name, distance: 400 + (i * 220), baseSize: p.size * 5, color: p.color, angle: Math.random() * Math.PI * 2, speed: 0.0003 + Math.random() * 0.0005, isSelected: p.id === selectedPlanetId,
-            moon: Math.random() > 0.4 ? { angle: Math.random() * Math.PI * 2, distance: (p.size * 5) + 35, size: 6, speed: 0.015 } : null
+        
+        // Generate other planets to show in background
+        const sectorPlanets = PLANETS.filter(p => p.quadrant === quadrant && p.id !== currentPlanetId);
+        // Pick 2 random others to feature
+        const chosen = sectorPlanets.sort(() => 0.5 - Math.random()).slice(0, 2);
+        
+        this.otherPlanets = chosen.map(p => ({
+            color: p.color,
+            size: p.size * 2, // Relative background size
+            offset: Math.random() * Math.PI * 2,
+            distance: 400 + Math.random() * 300,
+            yOffset: (Math.random() - 0.5) * 300
         }));
-        this.comets = Array.from({length: 2}).map(() => ({ x: 0, y: 0, angle: Math.random() * Math.PI * 2, a: 800 + Math.random() * 500, b: 300 + Math.random() * 200, speed: 0.0001 + Math.random() * 0.0002, tailLength: 0 }));
+    }
+    
+    update() {
+        this.orbitAngle += 0.0005; // Slow rotation of the "view"
     }
 }
 
@@ -430,7 +466,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const btnPad = fs === 'small' ? 'px-4' : (fs === 'large' ? 'px-8' : 'px-6');
   const bottomBarHeight = fs === 'small' ? 'h-8' : (fs === 'large' ? 'h-14' : 'h-10');
 
-  const MISSION_DURATION = 180 + (difficulty - 1) * 30;
+  const MISSION_DURATION = 120 + (difficulty - 1) * 20; // Reduced travel time to fit new phases
 
   const [stats, setStats] = useState({ 
     hp: initialIntegrity, sh1: shield?.capacity || 0, sh2: secondShield?.capacity || 0, energy: maxEnergy, score: 0, missiles: activeShip?.fitting?.rocketCount || 0, mines: activeShip?.fitting?.mineCount || 0, fuel: initialFuel, hullPacks: initialHullPacks, boss: null as any, alert: "", scavengeTimer: 0, missionTimer: MISSION_DURATION, isPaused: false,
@@ -444,8 +480,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     px: 0, py: 0, integrity: initialIntegrity, fuel: initialFuel, energy: maxEnergy, sh1: shield?.capacity || 0, sh2: secondShield?.capacity || 0, score: 0, hullPacks: initialHullPacks, sh1ShatterTime: 0, sh2ShatterTime: 0, missionTime: 0, autoRepair: { active: false, timer: 0, lastTick: 0 },
     bullets: [] as any[], enemyBullets: [] as any[], missiles: [] as Missile[], mines: [] as Mine[], enemies: [] as Enemy[], particles: [] as Particle[], stars: [] as any[], gifts: [] as Gift[], asteroids: [] as Asteroid[], spaceSystems: [] as SpaceSystem[], energyBolts: [] as EnergyBolt[],
     fireflies: Array.from({length: 12}).map(() => ({x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, vx: (Math.random()-0.5)*1.5, vy: (Math.random()-0.5)*1.5, size: 2.5 + Math.random()*2.5, color: '#00f2ff'})),
-    keys: new Set<string>(), lastFire: 0, lastSpawn: 0, lastAsteroidSpawn: 0, lastBoltSpawn: 0, sunSpawned: false, gameActive: true, frame: 0, missileStock: activeShip?.fitting?.rocketCount || 0, mineStock: activeShip?.fitting?.mineCount || 0, equippedWeapons: [...(activeShip?.fitting?.weapons || [])], bossSpawned: false, bossDead: false, lootPending: false, shake: 0, playerDead: false, playerExploded: false, deathSequenceTimer: 300, scavengeMode: false, scavengeTimeRemaining: 0, starDirection: { vx: 0, vy: 1 }, isMeltdown: false, meltdownTimer: 600,
-    missionCargo: [...(activeShip?.fitting?.cargo || [])] as CargoItem[], reloading: { missiles: false, mines: false, fuel: false, repair: false, fuelFilling: false, fuelTarget: 0, energy: false, energyTimer: 0, energyActive: false }, isPaused: false, pauseStartTime: 0, gamePhase: 'travel' as 'travel' | 'observation' | 'boss_intro' | 'boss_fight', observationTimer: 0, isInitialized: false,
+    keys: new Set<string>(), lastFire: 0, lastSpawn: 0, lastAsteroidSpawn: 0, lastBoltSpawn: 0, sunSpawned: false, gameActive: true, frame: 0, missileStock: activeShip?.fitting?.rocketCount || 0, mineStock: activeShip?.fitting?.mineCount || 0, equippedWeapons: [...(activeShip?.fitting?.weapons || [])], bossSpawned: false, bossDead: false, lootPending: false, shake: 0, playerDead: false, playerExploded: false, deathSequenceTimer: 300, 
+    // Phases: 'travel' -> 'scavenge' -> 'gap' -> 'observation' -> 'boss_fight'
+    gamePhase: 'travel' as 'travel' | 'scavenge' | 'gap' | 'observation' | 'boss_fight', 
+    scavengeTimeRemaining: 0, 
+    gapTimer: 0,
+    starDirection: { vx: 0, vy: 1 }, isMeltdown: false, meltdownTimer: 600,
+    missionCargo: [...(activeShip?.fitting?.cargo || [])] as CargoItem[], reloading: { missiles: false, mines: false, fuel: false, repair: false, fuelFilling: false, fuelTarget: 0, energy: false, energyTimer: 0, energyActive: false }, isPaused: false, pauseStartTime: 0, observationTimer: 0, isInitialized: false,
     weaponCooldowns: {} as Record<string, number>,
     charging: { active: false, startTime: 0, level: 0, discharged: false },
     energyDepleted: false,
@@ -459,7 +500,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     isOverdrive: false,
     cargoMissiles: 0,
     cargoMines: 0,
-    hasOverheated: false
+    hasOverheated: false,
+    orbitVisuals: { sunScale: 1, planetScale: 1, planetX: 0, planetY: 0 }
   });
 
   const getHeatColor = (heat: number) => {
@@ -596,31 +638,35 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   };
 
   const spawnBossExplosions = (bx: number, by: number) => {
-    const s = stateRef.current; s.shake = 100; s.lootPending = true; s.scavengeMode = true; 
-    s.scavengeTimeRemaining = 1800; 
-    const iters = 12; 
-    for (let i = 0; i < iters; i++) { setTimeout(() => { const ex = bx + (Math.random() - 0.5) * 500, ey = by + (Math.random() - 0.5) * 500; createExplosion(ex, ey, true); audioService.playExplosion(0, 1.8); s.shake = 55; }, i * 60); }
+    const s = stateRef.current; 
+    s.shake = 100; 
     
-    setTimeout(() => { 
-        if (Math.random() > 0.5) {
-            const randomEx1 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
-            const randomEx2 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
-            const randomExSh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)];
-            s.gifts.push(new Gift(bx - 60, by, 'weapon', randomEx1.id, randomEx1.name)); 
-            s.gifts.push(new Gift(bx + 60, by, 'weapon', randomEx2.id, randomEx2.name)); 
-            s.gifts.push(new Gift(bx, by + 40, 'shield', randomExSh.id, randomExSh.name));
-            setStats(p => ({...p, alert: "BOSS DEFEATED - TACTICAL CACHE DETECTED"}));
-        } else {
-            for(let k=0; k<5; k++) {
-                s.gifts.push(new Gift(bx + (Math.random()-0.5)*100, by + (Math.random()-0.5)*100, 'missile', undefined, 'Missile Box'));
-                s.gifts.push(new Gift(bx + (Math.random()-0.5)*100, by + (Math.random()-0.5)*100, 'mine', undefined, 'Mine Crate'));
-            }
-            s.gifts.push(new Gift(bx, by - 50, 'fuel', undefined, 'Reserve Fuel'));
-            setStats(p => ({...p, alert: "BOSS DEFEATED - ORDNANCE SUPPLY DROP"}));
-        }
-        
-        s.lootPending = false; 
-    }, 1000);
+    // NEW LOGIC: When boss dies, immediate Victory Sequence (Landing)
+    // No more scavenge phase AFTER boss.
+    setStats(p => ({...p, alert: "TARGET NEUTRALIZED - ORBIT SECURED"}));
+    
+    const iters = 15; 
+    for (let i = 0; i < iters; i++) { 
+        setTimeout(() => { 
+            const ex = bx + (Math.random() - 0.5) * 500, ey = by + (Math.random() - 0.5) * 500; 
+            createExplosion(ex, ey, true); 
+            audioService.playExplosion(0, 1.8); 
+            s.shake = 55; 
+        }, i * 100); 
+    }
+    
+    // Drop the boss loot anyway (as a reward, even if we leave soon)
+    if (Math.random() > 0.5) {
+        const randomEx1 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
+        s.gifts.push(new Gift(bx, by, 'weapon', randomEx1.id, randomEx1.name)); 
+    } else {
+        s.gifts.push(new Gift(bx, by, 'gold', undefined, 'War Trophy'));
+    }
+
+    // Trigger Game Over (Victory) after explosions
+    setTimeout(() => {
+        onGameOverRef.current(true, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: s.fuel, bossDefeated: true, health: s.integrity, hullPacks: s.hullPacks, cargo: s.missionCargo });
+    }, 2500);
   };
 
   const drawShip = (ctx: CanvasRenderingContext2D, sInst: any, x: number, y: number, thrust: number, side: number, isBreaking: boolean, rotation: number = 0, isPlayer: boolean = false, warpFactor: number = 1.0, isOverdrive: boolean = false, scale: number = 0.5) => {
@@ -908,13 +954,46 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (s.py < topLimit) s.py = topLimit;
         s.warpFactor += (targetWarp - s.warpFactor) * 0.1;
         const deltaMs = 16.66;
-        s.missionDurationConsumed += (deltaMs * s.warpFactor) / 1000; 
-        const missionRemaining = Math.max(0, MISSION_DURATION - s.missionDurationConsumed);
-        const progressPct = s.missionDurationConsumed / MISSION_DURATION;
-        const isAsteroidPhase = progressPct < 0.15;
-        const isAlienPhase = progressPct >= 0.15 && progressPct < 0.35;
-        const isMixedPhase = progressPct >= 0.35 && progressPct < 0.95;
-        const isBossPhase = progressPct >= 0.95;
+        
+        // --- GAME PHASE LOGIC UPDATE ---
+        // Flow: Travel -> Harvest (Scavenge) -> Gap -> Arrival -> Boss
+        
+        if (s.gamePhase === 'travel') {
+            s.missionDurationConsumed += (deltaMs * s.warpFactor) / 1000;
+            if (s.missionDurationConsumed >= MISSION_DURATION) {
+                s.gamePhase = 'scavenge';
+                s.scavengeTimeRemaining = 1200; // 20 seconds at 60fps
+                setStats(p => ({...p, alert: "ENTERING DEBRIS FIELD - HARVEST PROTOCOL"}));
+            }
+        } else if (s.gamePhase === 'scavenge') {
+            s.scavengeTimeRemaining--;
+            // Scavenge handled below in spawn logic
+            if (s.scavengeTimeRemaining <= 0) {
+                s.gamePhase = 'gap';
+                s.gapTimer = 600; // 10 seconds
+                setStats(p => ({...p, alert: "APPROACHING PLANETARY ORBIT"}));
+            }
+        } else if (s.gamePhase === 'gap') {
+            s.gapTimer--;
+            if (s.gapTimer <= 0) {
+                s.gamePhase = 'observation';
+                s.observationTimer = 0;
+                setStats(p => ({...p, alert: "PLANETARY ARRIVAL"}));
+                if (!s.sunSpawned) { 
+                    s.spaceSystems.push(new SpaceSystem(canvas.width, canvas.height, quadrant, currentPlanet.id)); 
+                    s.sunSpawned = true; 
+                }
+            }
+        } else if (s.gamePhase === 'observation') {
+            s.observationTimer++;
+            if (s.observationTimer > 360) { // 6 seconds of looking at planet
+                s.gamePhase = 'boss_fight';
+                s.bossSpawned = true;
+                s.enemies.push(new Enemy(canvas.width/2, -450, 'boss', BOSS_SHIPS[Math.floor(Math.random() * BOSS_SHIPS.length)], difficulty));
+                setStats(p => ({ ...p, alert: "BOSS INTERCEPTION" }));
+            }
+        }
+
         const isSpace = s.keys.has('Space');
         const isControl = s.keys.has('ControlLeft') || s.keys.has('ControlRight');
         const isShift = s.keys.has('ShiftLeft') || s.keys.has('ShiftRight');
@@ -926,7 +1005,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             s.gunHeat = Math.max(0, s.gunHeat - 0.015);
             if (s.gunHeat <= 0) s.hasOverheated = false;
         }
-        if (s.gamePhase === 'travel') { if (isBossPhase) { s.gamePhase = 'observation'; s.observationTimer = 0; setStats(p => ({ ...p, alert: "SECTOR SUN DETECTED - ARRIVING" })); if (!s.sunSpawned) { s.spaceSystems.push(new SpaceSystem(canvas.width, canvas.height, quadrant, currentPlanet.id)); s.sunSpawned = true; } } } else if (s.gamePhase === 'observation') { s.observationTimer++; if (s.observationTimer > 360) { s.gamePhase = 'boss_fight'; s.bossSpawned = true; s.enemies.push(new Enemy(canvas.width/2, -450, 'boss', BOSS_SHIPS[Math.floor(Math.random() * BOSS_SHIPS.length)], difficulty)); setStats(p => ({ ...p, alert: "BOSS INTERCEPTION" })); } }
+        
         if (!s.playerDead && !s.playerExploded) {
             if (s.fuel <= 0) { s.py += 0.8; } else if (isVertical) { if (s.keys.has('KeyW') || s.keys.has('ArrowUp')) { if (!s.isOverdrive) { s.py -= pSpeed; s.fuel = Math.max(0, s.fuel - 0.0015); } } if (s.keys.has('KeyS') || s.keys.has('ArrowDown')) s.py += pSpeed; }
             if (s.keys.has('KeyA') || s.keys.has('ArrowLeft')) { s.px -= pSpeed; s.starDirection.vx = 2.4; s.fuel = Math.max(0, s.fuel - 0.0005); } else if (s.keys.has('KeyD') || s.keys.has('ArrowRight')) { s.px += pSpeed; s.starDirection.vx = -2.4; s.fuel = Math.max(0, s.fuel - 0.0005); } else s.starDirection.vx *= 0.93;
@@ -954,24 +1033,45 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (s.integrity < 100 && !s.playerExploded) { if (s.frame % 5 === 0) { s.particles.push({ x: s.px + (Math.random()-0.5)*15, y: s.py + 10, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2 + 3, life: 0.8, color: 'rgba(60,60,60,0.5)', size: 8 + Math.random()*8, type: 'smoke' }); if (s.integrity < 60) { s.particles.push({ x: s.px + (Math.random()-0.5)*10, y: s.py + 5, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3 + 2, life: 0.5, color: '#ef4444', size: 4 + Math.random()*4, type: 'fire' }); } } }
         if (s.playerExploded) { s.deathSequenceTimer--; if (s.deathSequenceTimer <= 0) { s.playerDead = true; } }
         
-        const shouldSpawnAsteroid = (isAsteroidPhase || (isMixedPhase && Math.random() < 0.5));
-        const shouldSpawnAlien = (isAlienPhase || (isMixedPhase && Math.random() < 0.5));
+        // --- SPAWN LOGIC PER PHASE ---
+        const isTravel = s.gamePhase === 'travel';
+        const isScavenge = s.gamePhase === 'scavenge';
+        const isGap = s.gamePhase === 'gap';
+        const isArrival = s.gamePhase === 'observation';
+        const isBoss = s.gamePhase === 'boss_fight';
 
-        if (s.gamePhase === 'travel' && shouldSpawnAsteroid && s.asteroids.length < (s.scavengeMode ? 8 : 12) && now - s.lastAsteroidSpawn > (s.scavengeMode ? 1200 : 2000)) { const fromBottom = Math.random() < 0.2; s.asteroids.push(new Asteroid(Math.random() * canvas.width, -180, difficulty, s.scavengeMode, fromBottom)); s.lastAsteroidSpawn = now; }
+        // Spawn Asteroids
+        if ((isTravel || isScavenge) && s.asteroids.length < (isScavenge ? 10 : 8) && now - s.lastAsteroidSpawn > (isScavenge ? 800 : 2000)) { 
+            const fromBottom = Math.random() < 0.2; 
+            s.asteroids.push(new Asteroid(Math.random() * canvas.width, -180, difficulty, isScavenge, fromBottom)); 
+            s.lastAsteroidSpawn = now; 
+        }
+        
+        // Spawn Enemies (Only in Travel)
         const maxAliens = difficulty < 5 ? 4 : 7;
-        if (s.gamePhase === 'travel' && shouldSpawnAlien && s.enemies.length < maxAliens && now - s.lastSpawn > (1800 / Math.sqrt(Math.max(1, difficulty)))) { const shipIdx = Math.min(SHIPS.length - 1, Math.floor(Math.random() * (difficulty + 1))); s.enemies.push(new Enemy(Math.random() * (canvas.width - 120) + 60, -150, 'fighter', SHIPS[shipIdx], difficulty)); s.lastSpawn = now; }
-        if (s.scavengeMode && s.asteroids.length < 10 && now - s.lastAsteroidSpawn > 1000) { const fromBottom = Math.random() < 0.2; s.asteroids.push(new Asteroid(Math.random() * canvas.width, -180, difficulty, true, fromBottom)); s.lastAsteroidSpawn = now; }
+        if (isTravel && s.enemies.length < maxAliens && now - s.lastSpawn > (1800 / Math.sqrt(Math.max(1, difficulty)))) { 
+            const shipIdx = Math.min(SHIPS.length - 1, Math.floor(Math.random() * (difficulty + 1))); 
+            s.enemies.push(new Enemy(Math.random() * (canvas.width - 120) + 60, -150, 'fighter', SHIPS[shipIdx], difficulty)); 
+            s.lastSpawn = now; 
+        }
 
+        // Logic Updates
         for (let i = s.mines.length - 1; i >= 0; i--) { const m = s.mines[i]; m.update(s.enemies); if (m.life <= 0) { createExplosion(m.x, m.y, false, true, false); s.mines.splice(i, 1); } else if (m.y < -200 || m.y > canvas.height + 200) s.mines.splice(i, 1); else { for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; if (Math.abs(en.z - m.z) < 120 && Math.sqrt((m.x - en.x)**2 + (m.y - en.y)**2) < 55) { applyDamageToEnemy(en, m.damage, WeaponType.MINE); createExplosion(m.x, m.y, false, true, false); s.mines.splice(i, 1); if (en.hp <= 0) { if (en.type === 'boss' && !s.bossDead) { s.bossDead = true; spawnBossExplosions(en.x, en.y); } s.enemies.splice(j, 1); } break; } } } }
         for (let i = s.missiles.length - 1; i >= 0; i--) { const m = s.missiles[i]; if (!m.target || m.target.hp <= 0) { let close = 1000; s.enemies.forEach(e => { const d = Math.sqrt((e.x - m.x)**2 + (e.y - m.y)**2); if (d < close) { close = d; m.target = e; } }); } if (m.target) { const dx = m.target.x - m.x; const dy = m.target.y - m.y; const dz = m.target.z - m.z; const dist = Math.sqrt(dx*dx + dy*dy); if (dist > 0) { m.vx += (dx/dist) * 0.5; m.vy += (dy/dist) * 0.5; m.z += dz * 0.05; } } const speed = Math.sqrt(m.vx*m.vx + m.vy*m.vy); if (speed > 12) { m.vx *= 0.9; m.vy *= 0.9; } m.x += m.vx; m.y += m.vy; m.life--; if (s.frame % 3 === 0) s.particles.push({ x: m.x, y: m.y, vx: 0, vy: 0, life: 0.6, color: 'rgba(100,100,100,0.5)', size: 4, type: 'smoke' }); let hit = false; for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; if (Math.abs(m.z - en.z) < 100 && Math.sqrt((m.x - en.x)**2 + (m.y - en.y)**2) < 40) { applyDamageToEnemy(en, m.damage, WeaponType.MISSILE); createExplosion(m.x, m.y, false, false, false, '#fb923c'); hit = true; if (en.hp <= 0) { if (en.type === 'boss' && !s.bossDead) { s.bossDead = true; spawnBossExplosions(en.x, en.y); } s.enemies.splice(j, 1); } break; } } if (hit || m.life <= 0 || m.y < -100 || m.y > canvas.height + 100) { s.missiles.splice(i, 1); } }
         for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; en.y += (s.warpFactor - 1) * 3; const droppedMine = en.updateAI(s.px, s.py, s.asteroids, s.enemies); if (droppedMine) { s.mines.push(new Mine(en.x, en.y + 40, false, en.z)); } const distToP = Math.sqrt((en.x - s.px)**2 + (en.y - s.py)**2); if (Math.abs(en.z) < 60 && distToP < 50 && !s.playerDead && !s.playerExploded) { createExplosion(en.x, en.y, en.type === 'boss'); en.hp = 0; const ramDmg = 50; if (s.sh2 > 0) { s.sh2 = Math.max(0, s.sh2 - ramDmg * 1.5); if (s.sh2 <= 0) s.sh2ShatterTime = now; } else if (s.sh1 > 0) { s.sh1 = Math.max(0, s.sh1 - ramDmg * 1.5); if (s.sh1 <= 0) s.sh1ShatterTime = now; } else { s.integrity -= ramDmg; s.shake = 20; } audioService.playShieldHit(); } for (let k = s.asteroids.length - 1; k >= 0; k--) { const ast = s.asteroids[k]; if (Math.abs(en.z - ast.z) > 60) continue; const dist = Math.sqrt((en.x - ast.x)**2 + (en.y - ast.y)**2); if (en.type === 'boss' && dist < (en.sh > 0 ? 80 : 60) + ast.size) { const angle = Math.atan2(ast.y - en.y, ast.x - en.x); ast.vx += Math.cos(angle) * 15; ast.vy += Math.sin(angle) * 15; ast.velX += (Math.random()-0.5)*0.5; if (en.sh > 0) en.sh -= 1; createExplosion(ast.x, ast.y, false, false, true, '#ffffff'); } else if (en.type !== 'boss' && dist < 30 + ast.size) { createExplosion(en.x, en.y); applyDamageToEnemy(en, 500, WeaponType.PROJECTILE, true); ast.hp -= 500; if (ast.hp <= 0) { createExplosion(ast.x, ast.y, false, false, false, '#888'); spawnAsteroidLoot(ast.x, ast.y, ast.loot, ast.z); s.asteroids.splice(k, 1); } else { const angle = Math.atan2(ast.y - en.y, ast.x - en.x); ast.vx += Math.cos(angle) * 3; ast.vy += Math.sin(angle) * 3; } } } if (en.hp <= 0 || en.y > canvas.height + 300) { if (en.hp <= 0) { createExplosion(en.x, en.y); if (en.type === 'boss' && !s.bossDead) { s.bossDead = true; spawnBossExplosions(en.x, en.y); } } s.enemies.splice(j, 1); continue; } if (now - en.lastShot > 1650 / Math.sqrt(Math.max(1, difficulty)) && en.y > 0 && Math.abs(en.z) < 60) { if (en.type === 'boss') { const wepId = en.config.weaponId; const wepDef = EXOTIC_WEAPONS.find(w => w.id === wepId); const bColor = wepDef?.beamColor || '#a855f7'; if (wepId === 'exotic_fan') { for(let a = -2; a <= 2; a++) s.enemyBullets.push({ x: en.x, y: en.y + 110, vy: 8 + difficulty, vx: a * 2.5, isExotic: true, bColor }); } else if (wepId === 'exotic_bubbles') { s.enemyBullets.push({ x: en.x, y: en.y + 110, vy: 6 + difficulty, vx: (Math.random()-0.5)*6, isExotic: true, bColor, isBubble: true }); } else if (wepId === 'exotic_arc') { const d = Math.sqrt((s.px-en.x)**2 + (s.py-en.y)**2); if (d < 900) s.enemyBullets.push({ x: en.x, y: en.y + 110, isArc: true, bColor }); } else { s.enemyBullets.push({ x: en.x - 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true, bColor }); s.enemyBullets.push({ x: en.x + 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true, bColor }); if (difficulty >= 6) s.enemyBullets.push({ x: en.x, y: en.y + 130, vy: 14 + difficulty, isExotic: true, bColor }); } } else { s.enemyBullets.push({ x: en.x, y: en.y + 50, vy: 9.0 + difficulty }); } en.lastShot = now; } }
         for (let i = s.bullets.length - 1; i >= 0; i--) { const b = s.bullets[i]; b.y += b.vy; b.x += b.vx; if (b.life !== undefined) b.life--; let hitB = false; if (b.visualType === 'comet' && s.frame % 2 === 0) { s.particles.push({ x: b.x, y: b.y, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2 + 2, life: 0.5, color: b.beamColor, size: 4, type: 'plasma' }); } for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; const distSq = (b.x-en.x)**2 + (b.y-en.y)**2; const hitRadius = en.type === 'boss' ? 70 : 28; if (distSq < hitRadius*hitRadius) { createImpactEffect(b.x, b.y, en.sh > 0 ? 'shield' : 'vessel', en.sh > 0 ? (en.type === 'boss' ? '#a855f7' : '#38bdf8') : undefined); applyDamageToEnemy(en, b.damage, b.wType); hitB = true; break; } } if (!hitB) { for (let j = s.asteroids.length - 1; j >= 0; j--) { const ast = s.asteroids[j]; if (ast.y > 0 && Math.sqrt((b.x - ast.x)**2 + (b.y - ast.y)**2) < ast.size + 30) { createImpactEffect(b.x, b.y, 'asteroid'); if (b.variant === 'mega') ast.hp = 0; else ast.hp -= b.damage; if (ast.hp < 200 && ast.hp > 0 && s.frame % 3 === 0 && ast.loot) { s.particles.push({ x: ast.x + (Math.random()-0.5)*10, y: ast.y, vx: (Math.random()-0.5)*1, vy: -1, life: 0.6, color: '#a1a1aa', size: 4, type: 'smoke' }); } if (ast.hp <= 0) { spawnAsteroidLoot(ast.x, ast.y, ast.loot, ast.z); s.asteroids.splice(j, 1); } hitB = true; break; } } } if (hitB || b.y < -250 || b.y > canvas.height + 250 || (b.life !== undefined && b.life <= 0)) s.bullets.splice(i, 1); }
         for (let i = s.enemyBullets.length - 1; i >= 0; i--) { const eb = s.enemyBullets[i]; if (eb.isArc) { const dist = Math.sqrt((eb.x-s.px)**2 + (eb.y-s.py)**2); if (dist < 900) { let dmg = 0.5; if (s.sh2 > 0) s.sh2 -= dmg; else if (s.sh1 > 0) s.sh1 -= dmg; else s.integrity -= dmg; } s.enemyBullets.splice(i, 1); continue; } eb.y += eb.vy; eb.x += (eb.vx || 0); if (!s.playerDead && !s.playerExploded && Math.sqrt((eb.x - s.px)**2 + (eb.y - s.py)**2) < 60) { s.enemyBullets.splice(i, 1); let dmg = eb.isExotic ? 45 : 34; createImpactEffect(eb.x, eb.y, (s.sh1 > 0 || s.sh2 > 0) ? 'shield' : 'vessel', (s.sh2 > 0 ? secondShield?.color : (s.sh1 > 0 ? shield?.color : undefined))); s.lastHitTime = now; if (s.sh2 > 0) { s.sh2 -= dmg * 1.5; if (s.sh2 <= 0) { s.sh2 = 0; s.sh2ShatterTime = now; } } else if (s.sh1 > 0) { s.sh1 -= dmg * 1.5; if (s.sh1 <= 0) { s.sh1 = 0; s.sh1ShatterTime = now; } } else { s.integrity -= dmg; s.shake = 15; } audioService.playShieldHit(); continue; } for (let j = s.asteroids.length - 1; j >= 0; j--) { const ast = s.asteroids[j]; if (ast.y > 0 && Math.sqrt((eb.x - ast.x)**2 + (eb.y - ast.y)**2) < ast.size + 20) { createImpactEffect(eb.x, eb.y, 'asteroid'); ast.hp -= 40; s.enemyBullets.splice(i, 1); if (ast.hp <= 0) { spawnAsteroidLoot(ast.x, ast.y, ast.loot, ast.z); s.asteroids.splice(j, 1); } break; } } if (eb.y > canvas.height + 250) s.enemyBullets.splice(i, 1); }
         s.stars.forEach(st => { st.y += st.v * s.warpFactor; st.x += s.starDirection.vx * st.v; if (st.y > canvas.height) { st.y = -10; st.x = Math.random() * canvas.width; } if (st.x < 0) st.x = canvas.width; if (st.x > canvas.width) st.x = 0; });
-        if (s.sunSpawned) { const sys = s.spaceSystems[0]; sys.viewProgress = Math.min(1, sys.viewProgress + 0.003); sys.planets.forEach(p => { p.angle += p.speed; if (p.moon) p.moon.angle += p.moon.speed; }); sys.comets.forEach(c => { c.angle += c.speed; c.x = sys.x + Math.cos(c.angle) * c.a; c.y = sys.y + Math.sin(c.angle) * c.b; const dx = c.x - sys.x, dy = c.y - sys.y, d = Math.sqrt(dx*dx + dy*dy); c.tailLength = Math.max(0, 150 - (d / 10)); }); }
+        
+        // --- SPACE SYSTEM UPDATE ---
+        if (s.sunSpawned) { 
+            const sys = s.spaceSystems[0]; 
+            sys.update();
+        }
+
         if (s.shake > 0) s.shake *= 0.93;
         if (s.playerDead) { onGameOverRef.current(false, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: 0, bossDefeated: s.bossDead, health: 0, hullPacks: s.hullPacks, cargo: s.missionCargo }); return; }
-        if (s.scavengeMode) { s.scavengeTimeRemaining--; if (s.scavengeTimeRemaining <= 0) { setStats(p => ({...p, alert: "AUTOPILOT ENGAGED - RETURNING TO BASE"})); if (!s.lootPending) { s.lootPending = true; setTimeout(() => { onGameOverRef.current(true, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: s.fuel, bossDefeated: true, health: s.integrity, hullPacks: s.hullPacks, cargo: s.missionCargo }); }, 2000); } } }
+        
         const bI = s.enemies.find(e => e.type === 'boss'), mR = Math.max(0, MISSION_DURATION - s.missionDurationConsumed);
         const cMissiles = s.missionCargo.filter(i => i.type === 'missile').reduce((acc, i) => acc + i.quantity, 0);
         const cMines = s.missionCargo.filter(i => i.type === 'mine').reduce((acc, i) => acc + i.quantity, 0);
@@ -986,10 +1086,82 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       ctx.save(); if (s.shake > 0) ctx.translate((Math.random()-0.5)*s.shake, (Math.random()-0.5)*s.shake);
       ctx.fillStyle = '#010103'; ctx.fillRect(0, 0, canvas.width, canvas.height);
       s.stars.forEach(st => { let alpha = 1.0; if (st.shimmer) { const now = Date.now(); alpha = 0.4 + (Math.sin((now * 0.005) + st.shimmerPhase) + 1) * 0.3; } ctx.globalAlpha = alpha; ctx.fillStyle = st.color; ctx.fillRect(st.x, st.y, st.s, st.s); ctx.globalAlpha = 1.0; });
-      s.spaceSystems.forEach(sys => { ctx.save(); const glow = ctx.createRadialGradient(sys.x, sys.y, 0, sys.x, sys.y, sys.sunSize * 5); glow.addColorStop(0, sys.sunColor + '66'); glow.addColorStop(1, 'transparent'); ctx.fillStyle = glow; ctx.beginPath(); ctx.arc(sys.x, sys.y, sys.sunSize*5, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = sys.sunColor; ctx.beginPath(); ctx.arc(sys.x, sys.y, sys.sunSize, 0, Math.PI*2); ctx.fill(); sys.comets.forEach(c => { const dx = c.x - sys.x, dy = c.y - sys.y, angle = Math.atan2(dy, dx), tail = ctx.createLinearGradient(0, 0, Math.cos(angle)*c.tailLength, Math.sin(angle)*c.tailLength); ctx.save(); ctx.translate(c.x, c.y); tail.addColorStop(0, '#fff'); tail.addColorStop(0.5, '#38bdf844'); tail.addColorStop(1, 'transparent'); ctx.strokeStyle = tail; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(angle)*c.tailLength, Math.sin(angle)*c.tailLength); ctx.stroke(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill(); ctx.restore(); }); sys.planets.forEach(p => { const px = sys.x + Math.cos(p.angle)*p.distance, py = sys.y + Math.sin(p.angle)*p.distance, cs = 4 + (p.baseSize - 4) * sys.viewProgress; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(px, py, cs, 0, Math.PI*2); ctx.fill(); if (p.isSelected) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.setLineDash([3,3]); ctx.beginPath(); ctx.arc(px, py, cs + 5, 0, Math.PI*2); ctx.stroke(); ctx.setLineDash([]); } if (p.moon) { const mx = px + Math.cos(p.moon.angle)*p.moon.distance, my = py + Math.sin(p.moon.angle)*p.moon.distance; ctx.fillStyle = '#9ca3af'; ctx.beginPath(); ctx.arc(mx, my, p.moon.size, 0, Math.PI*2); ctx.fill(); } }); ctx.restore(); });
+      
+      // --- PLANETARY ORBIT BACKGROUND RENDERING ---
+      if (s.gamePhase === 'observation' || s.gamePhase === 'boss_fight') {
+          // Render Main Planet
+          const p = s.orbitVisuals;
+          // Calculate pan based on time to simulate orbit
+          const orbitTime = Date.now() * 0.0001;
+          const planetY = canvas.height * 0.6 + Math.sin(orbitTime) * 50; 
+          
+          ctx.save();
+          // Draw Planet
+          const planetRadius = canvas.width * 0.35; // Large size
+          const px = canvas.width / 2;
+          const py = planetY;
+          
+          const planetGrad = ctx.createRadialGradient(px - planetRadius * 0.3, py - planetRadius * 0.3, 0, px, py, planetRadius);
+          planetGrad.addColorStop(0, currentPlanet.color);
+          planetGrad.addColorStop(0.8, '#000000');
+          ctx.fillStyle = planetGrad;
+          ctx.beginPath();
+          ctx.arc(px, py, planetRadius, 0, Math.PI * 2);
+          ctx.fill();
+          
+          // Atmosphere Glow
+          ctx.shadowColor = currentPlanet.color;
+          ctx.shadowBlur = 50;
+          ctx.beginPath();
+          ctx.arc(px, py, planetRadius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          
+          ctx.restore();
+
+          // Render Space System (Sun/Planets) in background relative to orbit
+          if (s.sunSpawned) {
+              const sys = s.spaceSystems[0];
+              const sysX = canvas.width / 2 + Math.cos(sys.orbitAngle) * (canvas.width * 0.6);
+              const sysY = -100 + Math.sin(sys.orbitAngle * 0.5) * 100;
+              
+              // Draw Sun
+              const sunSize = 80 + Math.sin(sys.orbitAngle * 3) * 20; // Pulsing distance effect
+              ctx.save();
+              const sunGlow = ctx.createRadialGradient(sysX, sysY, 0, sysX, sysY, sunSize * 2);
+              sunGlow.addColorStop(0, sys.sunColor + '88');
+              sunGlow.addColorStop(1, 'transparent');
+              ctx.fillStyle = sunGlow;
+              ctx.beginPath(); ctx.arc(sysX, sysY, sunSize * 2, 0, Math.PI * 2); ctx.fill();
+              
+              ctx.fillStyle = sys.sunColor;
+              ctx.beginPath(); ctx.arc(sysX, sysY, sunSize, 0, Math.PI * 2); ctx.fill();
+              ctx.restore();
+
+              // Draw Other Planets passing by
+              sys.otherPlanets.forEach(op => {
+                  const opAngle = sys.orbitAngle + op.offset;
+                  const opX = canvas.width / 2 + Math.cos(opAngle) * op.distance;
+                  const opY = -50 + Math.sin(opAngle) * 100 + op.yOffset;
+                  
+                  if (opY > -100 && opY < canvas.height + 100) {
+                      ctx.fillStyle = op.color;
+                      ctx.beginPath();
+                      ctx.arc(opX, opY, op.size, 0, Math.PI * 2);
+                      ctx.fill();
+                  }
+              });
+          }
+      } else if (s.sunSpawned) {
+          // Fallback if not in orbit mode but sun spawned (unlikely with new flow but safe)
+          const sys = s.spaceSystems[0];
+          // ... standard rendering ...
+      }
       
       const renderableItems: any[] = []; s.enemies.forEach(en => renderableItems.push({ type: 'enemy', z: en.z, obj: en })); s.asteroids.forEach(ast => renderableItems.push({ type: 'asteroid', z: ast.z, obj: ast })); s.gifts.forEach(g => renderableItems.push({ type: 'loot', z: g.z, obj: g })); if (activeShip && !s.playerExploded) renderableItems.push({ type: 'player', z: 0, obj: activeShip }); renderableItems.sort((a, b) => a.z - b.z);
-      const sunBaseX = s.sunSpawned && s.spaceSystems[0] ? s.spaceSystems[0].x : canvas.width / 2; const sunBaseY = s.sunSpawned && s.spaceSystems[0] ? s.spaceSystems[0].y : -1200; const lightSource = { x: sunBaseX + Math.sin(s.frame * 0.002) * 600, y: sunBaseY, z: 600 + Math.cos(s.frame * 0.002) * 150 };
+      const sunBaseX = s.sunSpawned && s.spaceSystems[0] ? (canvas.width / 2 + Math.cos(s.spaceSystems[0].orbitAngle) * (canvas.width * 0.6)) : canvas.width / 2; 
+      const sunBaseY = -1200; 
+      const lightSource = { x: sunBaseX, y: sunBaseY, z: 600 };
 
       renderableItems.forEach(item => {
           const zScale = 1 + (item.z / 1000); if (zScale <= 0) return;
@@ -1025,7 +1197,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         <div className={`retro-font ${hudText} ${stats.missionTimer < 20 ? 'text-red-500 animate-pulse' : 'text-zinc-400'}`}>{Math.floor(stats.missionTimer / 60)}:{(stats.missionTimer % 60).toString().padStart(2, '0')}</div>
       </div>
       {stateRef.current.gamePhase === 'observation' && (<div className="absolute top-20 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none bg-blue-950/20 px-8 py-3 rounded-xl border border-blue-500/30 backdrop-blur-sm"><div className={`retro-font ${barText} text-blue-400 uppercase tracking-widest animate-pulse tracking-[0.4em]`}>PLANETARY ARRIVAL</div></div>)}
-      {stateRef.current.scavengeMode && (<div className="absolute top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none bg-emerald-950/20 px-8 py-3 rounded-xl border border-emerald-500/30 backdrop-blur-sm"><div className={`retro-font ${barText} text-emerald-400 uppercase tracking-widest animate-pulse`}>SCAVENGE PHASE ACTIVE</div><div className={`retro-font ${hudText} text-white`}>EXTRACTION IN: {stats.scavengeTimer}s</div></div>)}
+      {stateRef.current.gamePhase === 'scavenge' && (<div className="absolute top-16 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 z-50 pointer-events-none bg-emerald-950/20 px-8 py-3 rounded-xl border border-emerald-500/30 backdrop-blur-sm"><div className={`retro-font ${barText} text-emerald-400 uppercase tracking-widest animate-pulse`}>SCAVENGE PHASE ACTIVE</div><div className={`retro-font ${hudText} text-white`}>HARVEST WINDOW: {stats.scavengeTimer}s</div></div>)}
       <div className={`absolute right-4 top-1/2 -translate-y-1/2 flex items-end ${gaugeGap} z-50 pointer-events-none opacity-95 scale-90`}>
         <div className="flex flex-col items-center gap-1.5"><div className={`retro-font ${btnText} uppercase font-black ${(stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? 'text-red-400 animate-pulse' : 'text-blue-400'}`}>FUE</div><div className={`flex flex-col-reverse ${ledGap} p-1 bg-zinc-950/70 border border-zinc-800/40 rounded`}>{Array.from({ length: nl }).map((_, i) => (<div key={i} className={`${gaugeW} ${gaugeH} rounded-xs transition-colors duration-300 ${i < afl ? 'shadow-[0_0_8px_currentColor]' : 'opacity-10'}`} style={{ backgroundColor: i < afl ? ((stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? '#ff004c' : '#00b7ff') : '#18181b', color: (stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? '#ff004c' : '#00b7ff' }} />))}</div><div className={`retro-font ${btnText} font-black ${(stats.fuel < (maxFuelCapacity * 0.2) || stateRef.current.isMeltdown) ? 'text-red-500' : 'text-blue-500'}`}>{stats.fuel.toFixed(1)}U</div></div>
         

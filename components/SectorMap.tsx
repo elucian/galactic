@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Planet, QuadrantType, MissionType, PlanetStatusData } from '../types.ts';
 import { PLANETS } from '../constants.ts';
 import { getMissionBriefing } from '../services/geminiService.ts';
@@ -18,6 +18,18 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [briefing, setBriefing] = useState<string>("");
   const [isLoadingBriefing, setIsLoadingBriefing] = useState(false);
+
+  // Interaction States
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoomStep, setZoomStep] = useState(5); // 0 to 10, 5 is default
+  const [isDragging, setIsDragging] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
+  
+  const dragRef = useRef({ startX: 0, startY: 0, initialPanX: 0, initialPanY: 0 });
+  const isRecalculatingRef = useRef(false);
+
+  // Calculate dynamic scale based on zoom step (Range 0.3 to 1.5)
+  const currentScale = useMemo(() => 0.3 + (zoomStep * 0.12), [zoomStep]);
 
   // Filter planets for the current sector
   const sectorPlanets = useMemo(() => PLANETS.filter(p => p.quadrant === activeQuadrant), [activeQuadrant]);
@@ -76,7 +88,9 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   useEffect(() => {
     let animId: number;
     const animate = () => {
-      setCurrentTime(Date.now()); 
+      if (!isRecalculatingRef.current) {
+          setCurrentTime(Date.now()); 
+      }
       animId = requestAnimationFrame(animate);
     };
     animId = requestAnimationFrame(animate);
@@ -102,6 +116,61 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
         });
     }
   }, [selectedPlanetId, planetRegistry]);
+
+  // Drag Handlers
+  const handleSunMouseDown = (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragging(true);
+      dragRef.current = {
+          startX: e.clientX,
+          startY: e.clientY,
+          initialPanX: pan.x,
+          initialPanY: pan.y
+      };
+  };
+
+  useEffect(() => {
+      const handleMove = (e: MouseEvent) => {
+          if (!isDragging) return;
+          const dx = e.clientX - dragRef.current.startX;
+          const dy = e.clientY - dragRef.current.startY;
+          setPan({ x: dragRef.current.initialPanX + dx, y: dragRef.current.initialPanY + dy });
+      };
+
+      const handleUp = () => {
+          if (!isDragging) return;
+          setIsDragging(false);
+          setIsRecalculating(true);
+          isRecalculatingRef.current = true;
+          
+          // "Recalculation" pause
+          setTimeout(() => {
+              setIsRecalculating(false);
+              isRecalculatingRef.current = false;
+          }, 800);
+      };
+
+      window.addEventListener('mousemove', handleMove);
+      window.addEventListener('mouseup', handleUp);
+      return () => {
+          window.removeEventListener('mousemove', handleMove);
+          window.removeEventListener('mouseup', handleUp);
+      };
+  }, [isDragging]);
+
+  // Zoom Handlers
+  const handleZoomIn = (e: React.MouseEvent) => { e.stopPropagation(); setZoomStep(prev => Math.min(10, prev + 1)); };
+  const handleZoomOut = (e: React.MouseEvent) => { e.stopPropagation(); setZoomStep(prev => Math.max(0, prev - 1)); };
+  const handleResetView = (e: React.MouseEvent) => { 
+      e.stopPropagation(); 
+      setZoomStep(5); 
+      setPan({ x: 0, y: 0 }); 
+      // Trigger recalculation effect on reset too
+      setIsRecalculating(true);
+      isRecalculatingRef.current = true;
+      setTimeout(() => { setIsRecalculating(false); isRecalculatingRef.current = false; }, 500);
+  };
 
   const getSunVisuals = (q: QuadrantType) => {
     switch (q) {
@@ -216,7 +285,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   };
 
   return (
-    <div className="w-full h-full bg-black flex overflow-hidden font-sans select-none">
+    <div className={`w-full h-full bg-black flex overflow-hidden font-sans select-none ${isRecalculating ? 'cursor-wait' : ''}`}>
       
       {/* LEFT VIEWPORT: Solar System */}
       <div className="flex-grow relative bg-black overflow-hidden flex items-center justify-center">
@@ -231,14 +300,14 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
         </div>
 
         {/* Sector Selection Panel (Top Center) - Bordered Cards Design */}
-        <div className="absolute top-6 z-30 flex gap-4">
+        <div className="absolute top-6 z-30 flex gap-4 pointer-events-auto">
            {[QuadrantType.ALFA, QuadrantType.BETA, QuadrantType.GAMA, QuadrantType.DELTA].map(q => {
              const style = getSunVisuals(q);
              const isActive = activeQuadrant === q;
              return (
                <button 
                  key={q}
-                 onClick={() => { setActiveQuadrant(q); setSelectedPlanetId(null); }}
+                 onClick={() => { setActiveQuadrant(q); setSelectedPlanetId(null); setPan({x:0, y:0}); setZoomStep(5); }}
                  className={`flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all duration-300 bg-zinc-950/80 backdrop-blur-md ${isActive ? 'border-white scale-105 shadow-lg' : 'border-zinc-700 opacity-70 hover:opacity-100 hover:border-zinc-500'}`}
                >
                  <div className="relative w-10 h-10 rounded-full shadow-inner overflow-hidden flex-shrink-0">
@@ -251,75 +320,112 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
            })}
         </div>
 
-        {/* Solar System Container */}
-        <div className="relative w-[1000px] h-[1000px] flex items-center justify-center transform scale-[0.5] md:scale-[0.65] lg:scale-[0.8] xl:scale-100 transition-transform duration-700">
-           
-           {/* Pulsar Jets */}
-           {renderBlackHoleJets()}
+        {/* Solar System Container Wrapper for Dragging */}
+        <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+            <div 
+                className="relative flex items-center justify-center"
+                style={{ 
+                    transform: `translate(${pan.x}px, ${pan.y}px)`, 
+                    transition: isDragging ? 'none' : 'transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1)' 
+                }}
+            >
+                {/* Dynamically Scaled Container */}
+                <div 
+                    className="relative w-[1000px] h-[1000px] flex items-center justify-center transition-transform duration-700 origin-center"
+                    style={{ transform: `scale(${currentScale})` }}
+                >
+                
+                {/* Pulsar Jets */}
+                {renderBlackHoleJets()}
 
-           {/* Central Sun */}
-           <div 
-             className="absolute z-10 w-32 h-32 rounded-full transition-all duration-1000"
-             style={{ background: sunStyle.gradient, boxShadow: sunStyle.shadow, border: sunStyle.border || 'none' }}
-           >
-             {sunStyle.isBlackHole && (
-               <>
-                 <div className="absolute inset-[-5px] border-[3px] border-purple-500/30 rounded-full animate-[spin_4s_linear_infinite]" />
-                 <div className="absolute inset-[-15px] border-[1px] border-white/10 rounded-full animate-[spin_7s_linear_infinite_reverse]" />
-               </>
-             )}
-           </div>
+                {/* Central Sun */}
+                <div 
+                    className={`absolute z-10 w-32 h-32 rounded-full shadow-2xl ${isDragging ? 'cursor-grabbing' : 'cursor-grab hover:scale-105'} transition-transform duration-200`}
+                    onMouseDown={handleSunMouseDown}
+                    style={{ background: sunStyle.gradient, boxShadow: sunStyle.shadow, border: sunStyle.border || 'none' }}
+                >
+                    {sunStyle.isBlackHole && (
+                    <>
+                        <div className="absolute inset-[-5px] border-[3px] border-purple-500/30 rounded-full animate-[spin_4s_linear_infinite]" />
+                        <div className="absolute inset-[-15px] border-[1px] border-white/10 rounded-full animate-[spin_7s_linear_infinite_reverse]" />
+                    </>
+                    )}
+                </div>
 
-           {/* White Dwarf Decoration */}
-           {renderWhiteDwarf()}
+                {/* White Dwarf Decoration */}
+                {renderWhiteDwarf()}
 
-           {/* Gamma Comet */}
-           {renderComet()}
+                {/* Gamma Comet */}
+                {renderComet()}
 
-           {/* Planets & Orbits */}
-           {planetVisuals.map((p) => {
-             const angle = (elapsed * SPEED_CONSTANT * p.orbitSpeedFactor * (p.orbitDirection || 1)) + p.orbitOffset;
-             const x = Math.cos(angle) * p.visualDistance;
-             const y = Math.sin(angle) * p.visualDistance;
-             const isSelected = selectedPlanetId === p.id;
+                {/* Planets & Orbits */}
+                {planetVisuals.map((p) => {
+                    const angle = (elapsed * SPEED_CONSTANT * p.orbitSpeedFactor * (p.orbitDirection || 1)) + p.orbitOffset;
+                    const x = Math.cos(angle) * p.visualDistance;
+                    const y = Math.sin(angle) * p.visualDistance;
+                    const isSelected = selectedPlanetId === p.id;
 
-             return (
-               <React.Fragment key={p.id}>
-                 {/* Orbit Ring */}
-                 <div className="absolute rounded-full border border-zinc-800/60 pointer-events-none" style={{ width: p.visualDistance * 2, height: p.visualDistance * 2 }} />
-                 
-                 {/* Planet Body Group */}
-                 <div 
-                    className="absolute z-20 cursor-pointer group"
-                    style={{ transform: `translate(${x}px, ${y}px)` }}
-                    onClick={() => setSelectedPlanetId(p.id)}
-                 >
-                    <div className="relative flex items-center justify-center">
+                    return (
+                    <React.Fragment key={p.id}>
+                        {/* Orbit Ring */}
+                        <div className="absolute rounded-full border border-zinc-800/60 pointer-events-none" style={{ width: p.visualDistance * 2, height: p.visualDistance * 2 }} />
+                        
+                        {/* Planet Body Group */}
                         <div 
-                          className={`w-10 h-10 rounded-full shadow-lg transition-all duration-300 relative z-10 ${isSelected ? 'ring-2 ring-offset-4 ring-offset-black ring-white scale-125' : 'group-hover:scale-110'}`}
-                          style={{ backgroundColor: p.color, boxShadow: `inset -4px -4px 10px rgba(0,0,0,0.8), 0 0 20px ${p.color}44` }}
+                            className="absolute z-20 cursor-pointer group"
+                            style={{ transform: `translate(${x}px, ${y}px)` }}
+                            onClick={() => setSelectedPlanetId(p.id)}
                         >
-                          {isSelected && <div className="absolute -inset-6 border border-dashed border-emerald-500/60 rounded-full animate-[spin_8s_linear_infinite]" />}
-                        </div>
-                        {/* Status Halo */}
-                        {p.actualStatus !== 'friendly' && (
-                            <div className={`absolute -inset-4 rounded-full border-2 border-dotted animate-[spin_10s_linear_infinite] ${p.actualStatus === 'siege' ? 'border-orange-500/50' : 'border-red-500/50'}`} />
-                        )}
-                    </div>
+                            <div className="relative flex items-center justify-center">
+                                <div 
+                                className={`w-10 h-10 rounded-full shadow-lg transition-all duration-300 relative z-10 ${isSelected ? 'ring-2 ring-offset-4 ring-offset-black ring-white scale-125' : 'group-hover:scale-110'}`}
+                                style={{ backgroundColor: p.color, boxShadow: `inset -4px -4px 10px rgba(0,0,0,0.8), 0 0 20px ${p.color}44` }}
+                                >
+                                {isSelected && <div className="absolute -inset-6 border border-dashed border-emerald-500/60 rounded-full animate-[spin_8s_linear_infinite]" />}
+                                </div>
+                                {/* Status Halo */}
+                                {p.actualStatus !== 'friendly' && (
+                                    <div className={`absolute -inset-4 rounded-full border-2 border-dotted animate-[spin_10s_linear_infinite] ${p.actualStatus === 'siege' ? 'border-orange-500/50' : 'border-red-500/50'}`} />
+                                )}
+                            </div>
 
-                    {/* Moons */}
-                    {p.visualMoons.map((m, mi) => {
-                      const mAngle = (elapsed * 0.06 * m.speed * (m.direction || 1)) + m.offset;
-                      const mx = Math.cos(mAngle) * m.dist;
-                      const my = Math.sin(mAngle) * m.dist;
-                      return (
-                        <div key={mi} className="absolute bg-zinc-400 rounded-full pointer-events-none shadow-sm left-1/2 top-1/2" style={{ width: m.size, height: m.size, transform: `translate(-50%, -50%) translate(${mx}px, ${my}px)` }} />
-                      )
-                    })}
-                 </div>
-               </React.Fragment>
-             );
-           })}
+                            {/* Moons */}
+                            {p.visualMoons.map((m, mi) => {
+                            const mAngle = (elapsed * 0.06 * m.speed * (m.direction || 1)) + m.offset;
+                            const mx = Math.cos(mAngle) * m.dist;
+                            const my = Math.sin(mAngle) * m.dist;
+                            return (
+                                <div key={mi} className="absolute bg-zinc-400 rounded-full pointer-events-none shadow-sm left-1/2 top-1/2" style={{ width: m.size, height: m.size, transform: `translate(-50%, -50%) translate(${mx}px, ${my}px)` }} />
+                            )
+                            })}
+                        </div>
+                    </React.Fragment>
+                    );
+                })}
+                </div>
+            </div>
+        </div>
+
+        {/* Zoom Controls (Bottom Right of Viewport) */}
+        <div className="absolute bottom-8 right-8 flex flex-col gap-2 z-30 pointer-events-auto">
+            <button 
+                onClick={handleZoomIn}
+                className="w-10 h-10 bg-zinc-900 border border-zinc-700 text-zinc-400 rounded flex items-center justify-center hover:bg-zinc-800 hover:text-white hover:border-zinc-500 transition-all shadow-lg active:scale-95"
+            >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+            <button 
+                onClick={handleResetView}
+                className="w-10 h-10 bg-zinc-900 border border-zinc-700 text-emerald-500 rounded flex items-center justify-center hover:bg-zinc-800 hover:text-emerald-400 hover:border-emerald-900 transition-all shadow-lg active:scale-95"
+            >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </button>
+            <button 
+                onClick={handleZoomOut}
+                className="w-10 h-10 bg-zinc-900 border border-zinc-700 text-zinc-400 rounded flex items-center justify-center hover:bg-zinc-800 hover:text-white hover:border-zinc-500 transition-all shadow-lg active:scale-95"
+            >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
         </div>
 
         {/* Sector Label */}
