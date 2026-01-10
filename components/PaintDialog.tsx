@@ -138,7 +138,7 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                                 <button 
                                     key={i} 
                                     onClick={() => { setPartColor(c); setSelectedCustomIndex(i); }} 
-                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 ${selectedCustomIndex === i ? 'border-emerald-500 scale-110 shadow-[0_0_10px_#10b981]' : (currentColor === c ? 'border-white' : 'border-black/20 hover:border-zinc-500'}`} 
+                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 ${selectedCustomIndex === i ? 'border-emerald-500 scale-110 shadow-[0_0_10px_#10b981]' : (currentColor === c ? 'border-white' : 'border-black/20 hover:border-zinc-500')}`} 
                                     style={{ backgroundColor: c }} 
                                 />
                             ))}
