@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ShipIcon } from './ShipIcon.tsx';
 import { ShipPart, GameState } from '../types.ts';
