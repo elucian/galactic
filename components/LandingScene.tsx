@@ -31,7 +31,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
     environmentDetails: {
         features: [] as {
             x: number, 
-            type: 'tree' | 'building' | 'rock' | 'tank' | 'chimney' | 'dome' | 'crane' | 'junk' | 'container' | 'house', 
+            type: 'tree' | 'building' | 'rock' | 'tank' | 'chimney' | 'dome' | 'crane' | 'junk' | 'container', 
             h: number, w: number, color: string, windowPattern?: number, scale?: number,
             contents?: { x: number, h: number, w: number, type: 'tree'|'building', color: string }[]
         }[],
@@ -103,7 +103,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
   useEffect(() => {
       const p = planet as Planet;
       
-      const isHabitable = ['#10b981', '#064e3b', '#60a5fa', '#3b82f6', '#a3e635'].includes(p.color);
+      const isHabitable = ['#10b981', '#064e3b', '#60a5fa', '#3b82f6'].includes(p.color);
       const isDay = isHabitable && Math.random() > 0.6;
       stateRef.current.isDay = isDay;
 
@@ -235,26 +235,14 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       stateRef.current.environmentDetails.terrainType = terrainType as any;
 
       if (biomeType === 'nature' || biomeType === 'urban') {
-          // HABITABLE WORLD GENERATION - VILLAGES
-          const count = 12 + Math.floor(Math.random() * 5);
+          const count = 8 + Math.floor(Math.random() * 5);
           for(let i=0; i<count; i++) {
               let xPos = (Math.random() - 0.5) * 800;
-              if (Math.abs(xPos) < 100) continue; // Clear landing zone
+              if (Math.abs(xPos) < 100) xPos = (xPos > 0 ? 100 : -100) + xPos; 
               
               if (biomeType === 'nature') {
-                  const typeRoll = Math.random();
-                  if (typeRoll < 0.3) {
-                      // House/Village
-                      features.push({ x: xPos, type: 'house', w: 25 + Math.random()*15, h: 20 + Math.random()*15, color: '#475569' });
-                  } else if (typeRoll < 0.4) {
-                      // Church/Tower
-                      features.push({ x: xPos, type: 'building', w: 15, h: 60, color: '#334155', windowPattern: 0.9 });
-                  } else {
-                      // Trees
-                      features.push({ x: xPos, type: 'tree', w: 15 + Math.random() * 15, h: 40 + Math.random() * 60, color: Math.random() > 0.5 ? '#065f46' : '#166534' });
-                  }
+                  features.push({ x: xPos, type: 'tree', w: 15 + Math.random() * 15, h: 40 + Math.random() * 60, color: Math.random() > 0.5 ? '#065f46' : '#166534' });
               } else {
-                  // Urban
                   features.push({ x: xPos, type: 'building', w: 30 + Math.random() * 40, h: 50 + Math.random() * 100, color: '#334155', windowPattern: Math.random() });
               }
           }
@@ -325,9 +313,11 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       const TOTAL_DURATION = p.quadrant === QuadrantType.DELTA ? 45000 : TOUCHDOWN_TIME + 4000;
 
       // PHYSICS CONSTANTS
-      const LEG_FULL_HEIGHT = 65; // Taller legs
-      const MAX_COMPRESSION = 20; 
-      const SHIP_CENTER_OFFSET = 50; 
+      // With the SVG path logic: Mount Y=50. Feet Y=100.
+      // Ship Container is 100px high. Ship Top is at 0. Feet at 100.
+      const LEG_FULL_HEIGHT = 50; // Distance from mount (50) to foot (100)
+      const MAX_COMPRESSION = 20; // How much legs can squat
+      const SHIP_CENTER_OFFSET = 50; // Visual center/mount Y in container
 
       const allowShootingStars = (p.quadrant === QuadrantType.ALFA || p.quadrant === QuadrantType.BETA) && !stateRef.current.isDay;
 
@@ -344,6 +334,9 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
           const padHeight = 20;
           const padSurfaceY = groundY - padHeight;
           
+          // Where the ship 'top' (s.shipY) should be when legs are fully extended touching ground
+          // padSurfaceY = shipY + SHIP_CENTER_OFFSET + LEG_FULL_HEIGHT
+          // => shipY = padSurfaceY - 100
           const touchY = padSurfaceY - (SHIP_CENTER_OFFSET + LEG_FULL_HEIGHT);
 
           let currentScale = 1.0;
@@ -391,6 +384,8 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
               s.shipVy += 0.15; // Gravity
               s.shipY += s.shipVy;
 
+              const distToGround = touchY - s.shipY; // Negative means above ground, Positive means penetration
+              
               if (s.shipY >= touchY) {
                   // CONTACT
                   if (!s.hasThudded) {
@@ -508,15 +503,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
                       ctx.save(); ctx.beginPath(); ctx.ellipse(fx, fy, radius, domeH, 0, Math.PI, 0); ctx.clip(); ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; ctx.lineWidth = 1; const hexSize = 25; for(let x = fx - radius; x < fx + radius; x+=hexSize) { ctx.beginPath(); ctx.moveTo(x, fy); ctx.lineTo(x + hexSize/2, fy - domeH); ctx.stroke(); ctx.beginPath(); ctx.moveTo(x, fy); ctx.lineTo(x - hexSize/2, fy - domeH); ctx.stroke(); } for(let y = fy; y > fy - domeH; y-=hexSize) { ctx.beginPath(); ctx.moveTo(fx - radius, y); ctx.lineTo(fx + radius, y); ctx.stroke(); } ctx.restore();
                       ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(fx, fy, radius, domeH, 0, Math.PI, 0); ctx.stroke(); ctx.restore();
                   } else if (f.type === 'tree') { ctx.fillStyle = '#3f2c20'; ctx.fillRect(fx - f.w*0.15, fy - f.h*0.3, f.w*0.3, f.h*0.3); ctx.fillStyle = f.color; ctx.beginPath(); ctx.moveTo(fx - f.w/2, fy - f.h*0.2); ctx.lineTo(fx, fy - f.h); ctx.lineTo(fx + f.w/2, fy - f.h*0.2); ctx.fill(); } 
-                  else if (f.type === 'building' || f.type === 'house') { 
-                      ctx.fillStyle = f.color; ctx.fillRect(fx - f.w/2, fy - f.h, f.w, f.h); 
-                      // Pitched roof for houses
-                      if (f.type === 'house') {
-                          ctx.beginPath(); ctx.moveTo(fx - f.w/2, fy - f.h); ctx.lineTo(fx, fy - f.h - 12); ctx.lineTo(fx + f.w/2, fy - f.h); ctx.fill();
-                      }
-                      ctx.fillStyle = (f.windowPattern || 0) > 0.5 ? '#fef08a' : '#e2e8f0'; 
-                      for(let r=0; r<f.h-10; r+=12) for(let c=0; c<f.w-8; c+=10) if (Math.sin(r*c + (f.windowPattern||0)) > 0) ctx.fillRect(fx - f.w/2 + 4 + c, fy - f.h + 4 + r, 4, 6); 
-                  }
+                  else if (f.type === 'building') { ctx.fillStyle = f.color; ctx.fillRect(fx - f.w/2, fy - f.h, f.w, f.h); ctx.fillStyle = (f.windowPattern || 0) > 0.5 ? '#fef08a' : '#e2e8f0'; for(let r=0; r<f.h-10; r+=12) for(let c=0; c<f.w-8; c+=10) if (Math.sin(r*c + (f.windowPattern||0)) > 0) ctx.fillRect(fx - f.w/2 + 4 + c, fy - f.h + 4 + r, 4, 6); }
               });
 
               ctx.fillStyle = s.environmentDetails.groundColor; ctx.beginPath(); ctx.moveTo(0, h); ctx.lineTo(0, renderGroundY); const segments = 20; const segW = w / segments; for(let i=0; i<=segments; i++) { let x = i * segW; let yOffset = 0; if (x > centerX - 100 && x < centerX + 100) yOffset = 0; else { if (s.environmentDetails.terrainType === 'mountains') yOffset = -Math.abs(Math.sin(i * 132.1)) * 60; else if (s.environmentDetails.terrainType === 'dunes') yOffset = Math.sin(i * 0.5) * 20; else yOffset = Math.random() * 5; } ctx.lineTo(x, renderGroundY + yOffset); } ctx.lineTo(w, h); ctx.closePath(); ctx.fill();
@@ -587,23 +574,32 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
         className="absolute left-0 top-0 will-change-transform"
         style={{ width: '100px', height: '100px' }}
       >
+          {/* Removed internal transform to ensure physics alignment */}
           <div className="absolute inset-0 z-0 overflow-visible"> 
                  <svg className="absolute w-full h-full" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
-                    {/* Telescopic Leg Animation matching Launch Sequence */}
-                    <g transform={`translate(0, ${-45 * (1 - legExtension)})`}>
-                        {/* Left Leg */}
-                        <g transform="translate(25, 60)">
-                            <rect x="-4" y="-10" width="8" height="25" fill="#334155" />
-                            <rect x="-2.5" y="10" width="5" height="30" fill="#94a3b8" />
-                            <path d="M-8,40 L8,40 L10,44 L-10,44 Z" fill="#475569" />
+                    {/* SVG Legs with Knee Bending Logic (suspension 1=extended, 0=compressed) */}
+                    
+                    <g transform={`translate(25, 50) rotate(${(1 - legExtension) * 90})`}>
+                        {/* Upper Leg: 25px long */}
+                        <path d="M0,0 L-15,25" stroke="#334155" strokeWidth="6" strokeLinecap="round" />
+                        
+                        {/* Knee Joint */}
+                        <g transform={`translate(-15, 25) rotate(${(1 - suspension) * -60})`}>
+                             {/* Lower Leg: 25px long */}
+                             <path d="M0,0 L5,25" stroke="#94a3b8" strokeWidth="3" />
+                             {/* Foot Pad */}
+                             <path d="M0,25 L15,25 L18,29 L-5,29 Z" fill="#475569" />
                         </g>
+                        <circle cx="-15" cy="25" r="3" fill="#64748b" />
+                    </g>
 
-                        {/* Right Leg */}
-                        <g transform="translate(75, 60)">
-                            <rect x="-4" y="-10" width="8" height="25" fill="#334155" />
-                            <rect x="-2.5" y="10" width="5" height="30" fill="#94a3b8" />
-                            <path d="M-8,40 L8,40 L10,44 L-10,44 Z" fill="#475569" />
+                    <g transform={`translate(75, 50) rotate(${-(1 - legExtension) * 90})`}>
+                        <path d="M0,0 L15,25" stroke="#334155" strokeWidth="6" strokeLinecap="round" />
+                        <g transform={`translate(15, 25) rotate(${(1 - suspension) * 60})`}>
+                             <path d="M0,0 L-5,25" stroke="#94a3b8" strokeWidth="3" />
+                             <path d="M0,25 L-15,25 L-18,29 L5,29 Z" fill="#475569" />
                         </g>
+                        <circle cx="15" cy="25" r="3" fill="#64748b" />
                     </g>
                  </svg>
           </div>
