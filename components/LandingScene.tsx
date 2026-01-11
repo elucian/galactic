@@ -641,7 +641,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       <div className="absolute top-0 left-0 right-0 h-12 bg-black z-20" />
       <div className="absolute bottom-0 left-0 right-0 h-12 bg-black z-20 flex items-center justify-center">
           <span className="text-[9px] text-zinc-600 uppercase tracking-[0.3em] font-black">
-              {planet.name.toUpperCase()} // SECTOR {planet.quadrant} // {stateRef.current.isDay ? 'DAY CYCLE' : 'NIGHT CYCLE'}
+              {planet.name.toUpperCase()} // SECTOR {(planet as Planet).quadrant} // {stateRef.current.isDay ? 'DAY CYCLE' : 'NIGHT CYCLE'}
           </span>
       </div>
     </div>

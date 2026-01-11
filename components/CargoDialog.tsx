@@ -37,6 +37,17 @@ const ToolButton = ({ onClick, disabled, icon, vertical = false, sizeClass }: { 
   </button>
 );
 
+const getCategory = (item: CargoItem) => {
+    const t = item.type?.toLowerCase() || '';
+    if (['weapon', 'gun', 'projectile', 'laser'].includes(t)) return 'WEAPONRY';
+    if (['shield'].includes(t)) return 'DEFENSE';
+    if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
+    if (['fuel', 'energy', 'repair'].includes(t)) return 'SUPPLIES';
+    return 'RESOURCES';
+};
+
+const CATEGORY_ORDER = ['WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
+
 export const CargoDialog: React.FC<CargoDialogProps> = ({
   isOpen, onClose, fitting, shipConfig, reserves,
   selectedCargoIdx, selectedReserveIdx, setSelectedCargoIdx, setSelectedReserveIdx,
@@ -71,6 +82,57 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
   const canMoveAllToReserve = fitting.cargo.length > 0;
   const canMoveAllToShip = reserves.length > 0;
 
+  const renderList = (items: CargoItem[], selectedIdx: number | null, onSelect: (idx: number | null) => void, side: 'ship' | 'reserve') => {
+      if (items.length === 0) {
+          return <div className="text-center p-10 opacity-30 text-[9px] uppercase font-black text-zinc-500">Empty Storage</div>;
+      }
+
+      const grouped: Record<string, { item: CargoItem, originalIdx: number }[]> = {};
+      items.forEach((item, idx) => {
+          const cat = getCategory(item);
+          if (!grouped[cat]) grouped[cat] = [];
+          grouped[cat].push({ item, originalIdx: idx });
+      });
+
+      return (
+          <div className="space-y-4 pb-2">
+              {CATEGORY_ORDER.map(cat => {
+                  const groupItems = grouped[cat];
+                  if (!groupItems || groupItems.length === 0) return null;
+                  return (
+                      <div key={cat}>
+                          <div className="text-[8px] font-black text-zinc-600 uppercase tracking-widest mb-1 pl-1 border-b border-zinc-800/50 pb-0.5">
+                              /// {cat} ///
+                          </div>
+                          <div className="space-y-1">
+                              {groupItems.map(({ item, originalIdx }) => {
+                                  const isExotic = isExoticItem(item.id);
+                                  const isSelected = selectedIdx === originalIdx;
+                                  const activeClass = side === 'ship' 
+                                      ? 'bg-emerald-900/30 border-emerald-500 shadow-[inset_0_0_10px_rgba(16,185,129,0.2)]'
+                                      : 'bg-amber-900/30 border-amber-500 shadow-[inset_0_0_10px_rgba(245,158,11,0.2)]';
+                                  
+                                  return (
+                                      <div key={item.instanceId} onClick={() => onSelect(originalIdx)} 
+                                           className={`flex justify-between items-center p-2 sm:p-3 border cursor-pointer rounded group transition-all select-none ${isSelected ? activeClass : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
+                                          <div className={`flex items-center gap-3 ${side === 'reserve' ? 'w-full justify-end' : ''}`}>
+                                              {side === 'ship' && <ItemSVG type={item.type} color={isExotic ? "#fb923c" : "#10b981"} size={iconSize}/>}
+                                              <span className={`font-black uppercase truncate max-w-[140px] ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')} ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>
+                                                  {item.name} <span className="text-white opacity-60">x{item.quantity}</span>
+                                              </span>
+                                              {side === 'reserve' && <ItemSVG type={item.type} color={isExotic ? "#fb923c" : "#fbbf24"} size={iconSize}/>}
+                                          </div>
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      </div>
+                  );
+              })}
+          </div>
+      );
+  };
+
   return (
     <div className="fixed inset-0 z-[9000] bg-black/95 flex items-center justify-center p-4 sm:p-6 backdrop-blur-xl">
        <div className="w-full max-w-6xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[85vh] shadow-[0_0_50px_rgba(0,0,0,0.8)]">
@@ -82,24 +144,12 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
              
              {/* SHIP CARGO LEFT */}
              <div className="w-full sm:flex-1 p-4 flex flex-col gap-4 border-r border-zinc-800 bg-zinc-900/20">
-                <div className="bg-zinc-900/80 p-3 rounded border border-zinc-800 flex justify-between items-center shadow-inner">
+                <div className="bg-zinc-900/80 p-3 rounded border border-zinc-800 flex justify-between items-center shadow-inner shrink-0">
                     <span className={`uppercase font-black text-emerald-400 ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>CARGO HOLD</span>
                     <span className={`font-black text-white ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{fitting.cargo.reduce((a,i)=>a+i.quantity,0)} / {shipConfig?.maxCargo}</span>
                 </div>
-                <div className="flex-grow overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                    {fitting.cargo.map((it, i) => {
-                        const isExotic = isExoticItem(it.id);
-                        return (
-                            <div key={it.instanceId} onClick={() => { setSelectedCargoIdx(i); setSelectedReserveIdx(null); }} 
-                                 className={`flex justify-between items-center p-3 border cursor-pointer rounded group transition-all select-none ${selectedCargoIdx === i ? 'bg-emerald-900/30 border-emerald-500 shadow-[inset_0_0_10px_rgba(16,185,129,0.2)]' : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
-                                <div className="flex items-center gap-3">
-                                    <ItemSVG type={it.type} color={isExotic ? "#fb923c" : "#10b981"} size={iconSize}/>
-                                    <span className={`font-black uppercase truncate max-w-[120px] ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')} ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name} x{it.quantity}</span>
-                                </div>
-                            </div>
-                        );
-                    })}
-                    {fitting.cargo.length === 0 && <div className="text-center p-10 opacity-30 text-[9px] uppercase font-black text-zinc-500">Ship Empty</div>}
+                <div className="flex-grow overflow-y-auto custom-scrollbar pr-1">
+                    {renderList(fitting.cargo, selectedCargoIdx, (idx) => { setSelectedCargoIdx(idx); setSelectedReserveIdx(null); }, 'ship')}
                 </div>
              </div>
 
@@ -161,24 +211,12 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
 
              {/* RESERVE RIGHT */}
              <div className="w-full sm:flex-1 p-4 flex flex-col gap-4 bg-zinc-900/40">
-                <div className="bg-zinc-900/80 p-3 rounded border border-zinc-800 flex justify-between items-center shadow-inner">
+                <div className="bg-zinc-900/80 p-3 rounded border border-zinc-800 flex justify-between items-center shadow-inner shrink-0">
                     <span className={`uppercase font-black text-amber-400 ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>STATION RESERVE</span>
                     <span className={`font-black text-white ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{reserves.length} ITEMS</span>
                 </div>
-                <div className="flex-grow overflow-y-auto space-y-2 custom-scrollbar pr-1">
-                    {reserves.map((it, i) => {
-                        const isExotic = isExoticItem(it.id);
-                        return (
-                            <div key={it.instanceId} onClick={() => { setSelectedReserveIdx(i); setSelectedCargoIdx(null); }} 
-                                 className={`flex justify-between items-center p-3 border cursor-pointer rounded group transition-all select-none ${selectedReserveIdx === i ? 'bg-amber-900/30 border-amber-500 shadow-[inset_0_0_10px_rgba(245,158,11,0.2)]' : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
-                                <div className="flex items-center gap-3 w-full justify-end">
-                                    <span className={`font-black uppercase truncate max-w-[120px] text-right ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')} ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name} x{it.quantity}</span>
-                                    <ItemSVG type={it.type} color={isExotic ? "#fb923c" : "#fbbf24"} size={iconSize}/>
-                                </div>
-                            </div>
-                        );
-                    })}
-                    {reserves.length === 0 && <div className="text-center p-10 opacity-30 text-[9px] uppercase font-black text-zinc-500">Reserve Empty</div>}
+                <div className="flex-grow overflow-y-auto custom-scrollbar pr-1">
+                    {renderList(reserves, selectedReserveIdx, (idx) => { setSelectedReserveIdx(idx); setSelectedCargoIdx(null); }, 'reserve')}
                 </div>
              </div>
 

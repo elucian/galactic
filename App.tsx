@@ -20,7 +20,7 @@ import { audioService } from './services/audioService.ts';
 import { GameState, MissionType, QuadrantType, ShipFitting, CargoItem, EquippedWeapon, DisplayMode, GameMessage, GameSettings, Planet, Moon, ShipPart, Shield, PlanetStatusData } from './types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS } from './constants.ts';
 
-const SAVE_KEY = 'galactic_defender_v85_50';
+const SAVE_KEY = 'galactic_defender_beta_11';
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -154,27 +154,164 @@ export default function App() {
     if (!gameState.selectedShipInstanceId) return;
     const sId = gameState.selectedShipInstanceId;
     const fit = gameState.shipFittings[sId];
-    if (100 - fit.health <= 0) return;
-    const cost = Math.ceil((100 - fit.health) * 15);
-    if (gameState.credits < cost) { audioService.playSfx('denied'); return; }
-    setGameState(prev => ({ ...prev, credits: prev.credits - cost, shipFittings: { ...prev.shipFittings, [sId]: { ...prev.shipFittings[sId], health: 100 } } }));
-    audioService.playSfx('buy');
+    if (fit.health >= 100) return;
+
+    setGameState(prev => {
+        const sId = prev.selectedShipInstanceId!;
+        const fit = prev.shipFittings[sId];
+        const newCargo = [...fit.cargo];
+        const newReserve = [...(prev.reserveByPlanet[dockedId] || [])];
+        
+        let currentHp = fit.health;
+        const hpNeeded = 100 - currentHp;
+        let hpRestored = 0;
+
+        // Resource Priority: Cheapest/Common first (Iron, Copper) -> Expensive (Gold, Plat)
+        // Values: Iron=2, Copper=4, Chromium=10, Titanium=16, Gold=20, Plat=50, Lithium=80, Repair=25
+        const resourcePriority = ['iron', 'copper', 'chromium', 'titanium', 'gold', 'repair', 'platinum', 'lithium'];
+        const repairValues: Record<string, number> = { iron: 2, copper: 4, chromium: 10, titanium: 16, gold: 20, repair: 25, platinum: 50, lithium: 80 };
+
+        const processList = (list: CargoItem[]) => {
+            let totalRestored = 0;
+            // Iterate priority order
+            for (const type of resourcePriority) {
+                if (totalRestored >= hpNeeded) break;
+                
+                // Find all items of this type in list (could be multiple stacks)
+                for (let i = 0; i < list.length; i++) {
+                    const item = list[i];
+                    if (item.type === type) {
+                        const value = repairValues[type];
+                        // How many needed?
+                        const remaining = hpNeeded - totalRestored;
+                        const needed = Math.ceil(remaining / value);
+                        const take = Math.min(item.quantity, needed);
+                        
+                        item.quantity -= take;
+                        const gain = take * value;
+                        totalRestored += gain;
+                        
+                        if (item.quantity <= 0) {
+                            list.splice(i, 1);
+                            i--; // Adjust index
+                        }
+                        if (totalRestored >= hpNeeded) break;
+                    }
+                }
+            }
+            return totalRestored;
+        };
+
+        hpRestored += processList(newReserve);
+        if (hpRestored < hpNeeded) {
+            hpRestored += processList(newCargo);
+        }
+
+        if (hpRestored > 0) {
+            audioService.playSfx('buy');
+            const finalHp = Math.min(100, currentHp + hpRestored);
+            return {
+                ...prev,
+                shipFittings: { ...prev.shipFittings, [sId]: { ...fit, health: finalHp, cargo: newCargo } },
+                reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newReserve }
+            };
+        } else {
+            audioService.playSfx('denied');
+            alert("INSUFFICIENT REPAIR RESOURCES (Iron, Copper, Chromium, etc.)");
+            return prev;
+        }
+    });
   };
 
   const refuelSelected = () => {
     if (!gameState.selectedShipInstanceId || !selectedShipConfig) return;
     const sId = gameState.selectedShipInstanceId;
     const fit = gameState.shipFittings[sId];
-    if (selectedShipConfig.maxFuel - fit.fuel <= 0.1) return;
-    const cost = Math.ceil((selectedShipConfig.maxFuel - fit.fuel) * 500); 
-    if (gameState.credits < cost) { audioService.playSfx('denied'); return; }
-    setGameState(prev => ({ ...prev, credits: prev.credits - cost, shipFittings: { ...prev.shipFittings, [sId]: { ...prev.shipFittings[sId], fuel: selectedShipConfig.maxFuel } } }));
-    audioService.playSfx('buy');
+    if (fit.fuel >= selectedShipConfig.maxFuel) return;
+
+    setGameState(prev => {
+        const sId = prev.selectedShipInstanceId!;
+        const fit = prev.shipFittings[sId];
+        const newCargo = [...fit.cargo];
+        const newReserve = [...(prev.reserveByPlanet[dockedId] || [])];
+        
+        let currentFuel = fit.fuel;
+        const maxFuel = selectedShipConfig.maxFuel;
+        let fueled = false;
+
+        const FUEL_PER_ITEM = 5.0;
+
+        const consumeFuel = (list: CargoItem[]) => {
+            for (let i = 0; i < list.length; i++) {
+                if (currentFuel >= maxFuel) break;
+                const item = list[i];
+                if (item.type === 'fuel') {
+                    // Consume 1 item at a time
+                    item.quantity--;
+                    currentFuel = Math.min(maxFuel, currentFuel + FUEL_PER_ITEM);
+                    fueled = true;
+                    if (item.quantity <= 0) {
+                        list.splice(i, 1);
+                        i--;
+                    }
+                    // Continue loop to use more if needed (e.g., recursive or while loop needed if one stack isn't enough? 
+                    // Actually this loop just checks next stack if this one empty. 
+                    // But we want to consume multiple from same stack.
+                    // Let's redo logic slightly for single stack consumption.)
+                    while (currentFuel < maxFuel && i >= 0 && i < list.length && list[i].type === 'fuel') {
+                         // Re-check item existence after potential splice
+                         if (list[i].quantity > 0) {
+                             list[i].quantity--;
+                             currentFuel = Math.min(maxFuel, currentFuel + FUEL_PER_ITEM);
+                             fueled = true;
+                             if (list[i].quantity <= 0) {
+                                 list.splice(i, 1);
+                                 i--;
+                             }
+                         }
+                    }
+                }
+            }
+        };
+
+        consumeFuel(newReserve);
+        if (currentFuel < maxFuel) {
+            consumeFuel(newCargo);
+        }
+
+        if (fueled) {
+            audioService.playSfx('buy');
+            return {
+                ...prev,
+                shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: currentFuel, cargo: newCargo } },
+                reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newReserve }
+            };
+        } else {
+            audioService.playSfx('denied');
+            alert("NO FUEL CANISTERS AVAILABLE");
+            return prev;
+        }
+    });
   };
 
   const handleLaunch = () => {
     if (!selectedFitting || !selectedShipConfig) return;
-    if (selectedFitting.fuel < 0.2) { audioService.playSfx('denied'); alert("Insufficient Fuel!"); return; }
+    const launchCost = 1.0;
+    if (selectedFitting.fuel < launchCost) { audioService.playSfx('denied'); alert("NOT ENOUGH FUEL FOR LAUNCH"); return; }
+    
+    // Deduct fuel before launch
+    setGameState(prev => {
+        const sId = prev.selectedShipInstanceId!;
+        const fit = prev.shipFittings[sId];
+        return {
+            ...prev,
+            shipFittings: {
+                ...prev.shipFittings,
+                [sId]: { ...fit, fuel: Math.max(0, fit.fuel - launchCost) }
+            }
+        };
+    });
+
     setLaunchDestination('map');
     if (gameState.settings.showTransitions) {
         setScreen('launch');
@@ -350,8 +487,7 @@ export default function App() {
     setIsStoreOpen(false); audioService.playSfx('buy');
   };
   
-  // [Existing handler functions: moveItems, marketBuy, setPartColor, etc. remain unchanged]
-  const getTransferBatchSize = (type: string) => { if (['missile', 'mine', 'fuel', 'energy'].includes(type)) return 10; if (['gold', 'platinum', 'lithium'].includes(type)) return 50; return 1; };
+  const getTransferBatchSize = (type: string) => { if (['missile', 'mine', 'fuel', 'energy'].includes(type)) return 10; if (['gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium'].includes(type)) return 50; return 1; };
   const moveAllItems = (direction: 'to_reserve' | 'to_ship') => {
       if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; const config = selectedShipConfig; if (!config) return;
       setGameState(prev => {
@@ -375,8 +511,45 @@ export default function App() {
       audioService.playSfx('click'); if (shouldNullCargo) setSelectedCargoIdx(null); if (shouldNullReserve) setSelectedReserveIdx(null);
   };
   const marketBuy = (item: any) => {
+      const sId = gameState.selectedShipInstanceId;
+      if (!sId) return;
+      const shipInst = gameState.ownedShips.find(os => os.instanceId === sId);
+      if (!shipInst) return;
+      const config = SHIPS.find(s => s.id === shipInst.shipTypeId);
+      if (!config) return;
+      
+      const fit = gameState.shipFittings[sId];
+      const currentCargoCount = fit.cargo.reduce((acc, c) => acc + c.quantity, 0);
+      
+      if (currentCargoCount >= config.maxCargo) {
+          audioService.playSfx('denied');
+          return;
+      }
+
       if (gameState.credits < item.price) { audioService.playSfx('denied'); return; }
-      setGameState(prev => { const newRes = [...(prev.reserveByPlanet[dockedId] || [])]; const existing = newRes.find(r => r.id === item.id); let itemType = item.type || 'goods'; if (item.damage || ['projectile', 'laser', 'gun'].includes(item.type?.toLowerCase())) itemType = 'weapon'; if (item.capacity || ['shield'].includes(item.type?.toLowerCase())) itemType = 'shield'; if (existing) existing.quantity++; else newRes.push({ instanceId: `buy_${Date.now()}_${item.id}`, type: itemType, id: item.id, name: item.name, weight: 1, quantity: 1 }); return { ...prev, credits: prev.credits - item.price, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newRes } }; });
+      
+      setGameState(prev => {
+          const sId = prev.selectedShipInstanceId!;
+          const fit = prev.shipFittings[sId];
+          const newCargo = [...fit.cargo];
+          
+          let itemType = item.type || 'goods'; 
+          if (item.damage || ['projectile', 'laser', 'gun'].includes(item.type?.toLowerCase())) itemType = 'weapon'; 
+          if (item.capacity || ['shield'].includes(item.type?.toLowerCase())) itemType = 'shield'; 
+          
+          const existingIdx = newCargo.findIndex(c => c.id === item.id);
+          if (existingIdx >= 0) {
+              newCargo[existingIdx] = { ...newCargo[existingIdx], quantity: newCargo[existingIdx].quantity + 1 };
+          } else {
+              newCargo.push({ instanceId: `buy_${Date.now()}_${item.id}`, type: itemType, id: item.id, name: item.name, weight: 1, quantity: 1 });
+          }
+          
+          return { 
+              ...prev, 
+              credits: prev.credits - item.price, 
+              shipFittings: { ...prev.shipFittings, [sId]: { ...fit, cargo: newCargo } }
+          }; 
+      });
       audioService.playSfx('buy');
   };
   const marketSell = (resIdx: number) => {
@@ -387,11 +560,77 @@ export default function App() {
       setGameState(prev => { const newListings = [...(prev.marketListingsByPlanet[dockedId] || [])]; const item = newListings[idx]; if (cancel && item.status !== 'sold') { newListings.splice(idx, 1); const newRes = [...(prev.reserveByPlanet[dockedId] || [])]; const existing = newRes.find(r => r.id === item.id); if (existing) existing.quantity++; else newRes.push({ ...item, status: undefined }); return { ...prev, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newRes }, marketListingsByPlanet: { ...prev.marketListingsByPlanet, [dockedId]: newListings } }; } if (!cancel && item.status === 'sold') { const value = item.price || 0; newListings.splice(idx, 1); return { ...prev, credits: prev.credits + value, marketListingsByPlanet: { ...prev.marketListingsByPlanet, [dockedId]: newListings } }; } return prev; });
       audioService.playSfx(cancel ? 'click' : 'buy');
   };
+  
   const mountFromCargo = (cargoIdx: number, slotIdx: number, type: 'weapon' | 'shield') => {
     if (!gameState.selectedShipInstanceId) return;
-    setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId], item = fit.cargo[cargoIdx], newCargo = [...fit.cargo]; if (item.quantity > 1) item.quantity--; else newCargo.splice(cargoIdx, 1); const newFits = { ...prev.shipFittings }; if (type === 'weapon') { const newWeps = [...fit.weapons]; newWeps[slotIdx] = { id: item.id!, count: 1 }; newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; } else { const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; newFits[sId] = { ...fit, [key]: item.id!, cargo: newCargo }; } return { ...prev, shipFittings: newFits }; });
+    setGameState(prev => {
+        const sId = prev.selectedShipInstanceId!;
+        const fit = prev.shipFittings[sId];
+        let newCargo = [...fit.cargo];
+
+        // 1. Check for existing item in slot and unmount to cargo if present
+        let existingId: string | null = null;
+        if (type === 'weapon') {
+            existingId = fit.weapons[slotIdx]?.id || null;
+        } else {
+            existingId = slotIdx === 0 ? fit.shieldId : fit.secondShieldId;
+            if (existingId === 'dev_god_mode') existingId = null; 
+        }
+
+        if (existingId) {
+            const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === existingId);
+            const existingCargoIdx = newCargo.findIndex(c => c.id === existingId);
+            
+            if (existingCargoIdx >= 0) {
+                // Increment existing cargo stack
+                newCargo[existingCargoIdx] = { 
+                    ...newCargo[existingCargoIdx], 
+                    quantity: newCargo[existingCargoIdx].quantity + 1 
+                };
+            } else {
+                // Add new cargo item
+                newCargo.push({ 
+                    instanceId: `unmt_${Date.now()}_${Math.random()}`, 
+                    type: type, 
+                    id: existingId, 
+                    name: def?.name || 'Item', 
+                    weight: 1, 
+                    quantity: 1 
+                });
+            }
+        }
+
+        // 2. Remove item being mounted from cargo
+        // Note: We use the index passed from UI which corresponds to the state before this update.
+        // Since we only pushed to newCargo or modified distinct indices, the index `cargoIdx` should still point to the correct item 
+        // UNLESS we are remounting the exact same item stack we just modified.
+        // However, standard use case is dragging different item.
+        
+        const itemToMount = newCargo[cargoIdx];
+        if (itemToMount) {
+            if (itemToMount.quantity > 1) {
+                newCargo[cargoIdx] = { ...itemToMount, quantity: itemToMount.quantity - 1 };
+            } else {
+                newCargo.splice(cargoIdx, 1);
+            }
+        }
+
+        // 3. Mount item to slot
+        const newFits = { ...prev.shipFittings };
+        if (type === 'weapon') {
+            const newWeps = [...fit.weapons];
+            newWeps[slotIdx] = { id: itemToMount.id!, count: 1 };
+            newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo };
+        } else {
+            const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId';
+            newFits[sId] = { ...fit, [key]: itemToMount.id!, cargo: newCargo };
+        }
+
+        return { ...prev, shipFittings: newFits };
+    });
     audioService.playSfx('click');
   };
+
   const unmountSlot = (slotIdx: number, type: 'weapon' | 'shield') => {
     if (!gameState.selectedShipInstanceId) return;
     setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId], newCargo = [...fit.cargo]; const id = type === 'weapon' ? fit.weapons[slotIdx]?.id : (slotIdx === 0 ? fit.shieldId : fit.secondShieldId); if (!id) return prev; const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === id); const existing = newCargo.find(c => c.id === id); if (existing) existing.quantity++; else newCargo.push({ instanceId: `unmt_${Date.now()}`, type: type, id, name: def?.name || 'Item', weight: 1, quantity: 1 }); const newFits = { ...prev.shipFittings }; if (type === 'weapon') { const newWeps = [...fit.weapons]; newWeps[slotIdx] = null; newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; } else { const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; newFits[sId] = { ...fit, [key]: null, cargo: newCargo }; } return { ...prev, shipFittings: newFits }; });
@@ -525,6 +764,7 @@ export default function App() {
           onGameOver={handleGameOver}
           fontSize={gameState.settings.fontSize}
           mode={gameMode} 
+          planetRegistry={gameState.planetRegistry}
         />
       )}
       {screen === 'landing' && gameState.currentPlanet && (

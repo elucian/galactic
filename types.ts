@@ -26,7 +26,7 @@ export enum WeaponType {
 
 export interface CargoItem {
   instanceId: string;
-  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser';
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'iron' | 'copper' | 'chromium' | 'titanium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser';
   id?: string;
   name: string;
   weight: number;

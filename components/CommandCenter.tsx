@@ -150,7 +150,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                     <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden"><div className={`h-full transition-all duration-500 ${f.health < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} style={{ width: `${f.health}%` }} /></div>
                 </div>
                 <div className="space-y-1">
-                    <div className={`flex justify-between ${lblSize} uppercase font-black`}><span>Fuel Level</span><span>{Math.floor((f.fuel/config.maxFuel)*100)}%</span></div>
+                    <div className={`flex justify-between ${lblSize} uppercase font-black`}><span>Fuel Level</span><span>{f.fuel.toFixed(1)} / {config.maxFuel}</span></div>
                     <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden"><div className={`h-full transition-all duration-500 ${f.fuel < (config.maxFuel*0.2) ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${(f.fuel/config.maxFuel)*100}%` }} /></div>
                 </div>
                 <div className="grid grid-cols-3 gap-1 pt-2">
@@ -180,7 +180,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             </button>
           </div>
           <div className="flex gap-2 items-center">
-            <button onClick={onRepair} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800`}>MAINT</button>
+            <button onClick={onRepair} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800`}>REPAIR</button>
             <button onClick={onRefuel} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800`}>REFUEL</button>
             <div className="w-[1px] h-8 bg-zinc-800 mx-1 hidden md:block landscape:block"/>
             <button onClick={onLaunch} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-emerald-600 border-2 border-emerald-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95`}>LAUNCH</button>

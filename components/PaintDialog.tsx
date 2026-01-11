@@ -82,6 +82,25 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
       return '#fff';
   })();
 
+  const getCustomColorButtonClass = (index: number, color: string) => {
+      const baseClass = "w-full aspect-square rounded-sm border transition-transform hover:scale-105";
+      if (selectedCustomIndex === index) {
+          return `${baseClass} border-emerald-500 scale-110 shadow-[0_0_10px_#10b981]`;
+      }
+      if (currentColor === color) {
+          return `${baseClass} border-white`;
+      }
+      return `${baseClass} border-black/20 hover:border-zinc-500`;
+  };
+
+  const getStandardColorButtonClass = (color: string) => {
+      const baseClass = "w-full aspect-square rounded-sm border transition-transform hover:scale-105";
+      if (currentColor === color && selectedCustomIndex === null) {
+          return `${baseClass} border-white scale-110 shadow-lg z-10`;
+      }
+      return `${baseClass} border-black/20 hover:border-zinc-500`;
+  };
+
   return (
     <div className="fixed inset-0 z-[9950] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
         <div className="w-full max-w-5xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[90vh] shadow-2xl">
@@ -124,7 +143,7 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                                 <button 
                                     key={c} 
                                     onClick={() => { setPartColor(c); setSelectedCustomIndex(null); }} 
-                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 ${currentColor === c && selectedCustomIndex === null ? 'border-white scale-110 shadow-lg z-10' : 'border-black/20 hover:border-zinc-500'}`} 
+                                    className={getStandardColorButtonClass(c)}
                                     style={{ backgroundColor: c }} 
                                 />
                             ))}
@@ -138,7 +157,7 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                                 <button 
                                     key={i} 
                                     onClick={() => { setPartColor(c); setSelectedCustomIndex(i); }} 
-                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 ${selectedCustomIndex === i ? 'border-emerald-500 scale-110 shadow-[0_0_10px_#10b981]' : (currentColor === c ? 'border-white' : 'border-black/20 hover:border-zinc-500')}`} 
+                                    className={getCustomColorButtonClass(i, c)}
                                     style={{ backgroundColor: c }} 
                                 />
                             ))}
