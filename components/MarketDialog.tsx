@@ -1,37 +1,37 @@
+
 import React from 'react';
 import { CargoItem } from '../types.ts';
-import { WEAPONS, SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, EXOTIC_WEAPONS, EXOTIC_SHIELDS } from '../constants.ts';
+import { WEAPONS, SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, EXOTIC_WEAPONS, EXOTIC_SHIELDS, AMMO_MARKET_ITEMS, AMMO_CONFIG } from '../constants.ts';
 import { ItemSVG } from './Common.tsx';
 
 interface MarketDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  marketTab: 'buy' | 'sell' | 'sales';
-  setMarketTab: (tab: 'buy' | 'sell' | 'sales') => void;
+  marketTab: 'buy' | 'sell';
+  setMarketTab: (tab: 'buy' | 'sell') => void;
   currentReserves: CargoItem[];
-  currentListings: CargoItem[];
   credits: number;
   testMode: boolean;
   marketBuy: (item: any) => void;
   marketSell: (resIdx: number) => void;
-  claimSale: (idx: number, cancel: boolean) => void;
   fontSize: 'small' | 'medium' | 'large';
 }
 
 const getCategory = (item: any) => {
     // Check type or infer from properties if type is generic 'goods'
     const t = (item.type || '').toLowerCase();
+    if (t === 'ammo') return 'AMMUNITION';
     if (['weapon', 'gun', 'projectile', 'laser'].includes(t) || item.damage) return 'WEAPONRY';
     if (['shield'].includes(t) || item.capacity) return 'DEFENSE';
     if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
-    if (['fuel', 'energy', 'repair'].includes(t)) return 'SUPPLIES';
+    if (['fuel', 'energy', 'repair', 'robot'].includes(t)) return 'SUPPLIES';
     return 'RESOURCES';
 };
 
-const CATEGORY_ORDER = ['WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
+const CATEGORY_ORDER = ['AMMUNITION', 'WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
 
 export const MarketDialog: React.FC<MarketDialogProps> = ({
-  isOpen, onClose, marketTab, setMarketTab, currentReserves, currentListings, credits, testMode, marketBuy, marketSell, claimSale, fontSize
+  isOpen, onClose, marketTab, setMarketTab, currentReserves, credits, testMode, marketBuy, marketSell, fontSize
 }) => {
   if (!isOpen) return null;
 
@@ -45,15 +45,14 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   };
 
   const renderBuyGrid = () => {
-      let itemsToBuy: any[] = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES];
-      // Insert Repair Pack manually as it might not be in a list or is in COMMODITIES? 
-      // Assuming 'repair' is in COMMODITIES if not explicit.
-      // Actually COMMODITIES has 'repair'? No, usually dynamic. 
-      // Let's ensure standard supplies are available.
-      // Based on constants, we have 'fuel' implicitly via logic? No, let's stick to constants content.
-      // If Repair isn't in constants, we add it visually here if needed or assume it's in the list.
-      // Checking constants... COMMODITIES has resources. No explicit repair item in list yet?
-      // Let's just use what's passed.
+      // Prepare Items: Inject types for Ordnance
+      let itemsToBuy: any[] = [
+          ...AMMO_MARKET_ITEMS, 
+          ...WEAPONS, 
+          ...SHIELDS, 
+          ...EXPLODING_ORDNANCE.map(o => ({ ...o, type: o.id.includes('mine') ? 'mine' : 'missile' })), 
+          ...COMMODITIES
+      ];
       
       // Inject Supplies if missing from constants but supported by logic
       if (!itemsToBuy.some(i => i.type === 'repair')) {
@@ -91,17 +90,48 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                               {groupItems.map(it => {
                                   const isExotic = isExoticItem(it.id);
+                                  const isAmmo = it.type === 'ammo';
+                                  const isOrdnance = cat === 'ORDNANCE';
+                                  const isBulkItem = ['missile', 'mine', 'repair'].includes(it.type);
+                                  
+                                  // Bulk Pricing for 10 units
+                                  const buyQty = isBulkItem ? 10 : 1;
+                                  const displayPrice = it.price * buyQty;
+                                  const buyLabel = isBulkItem ? "BUY 10" : "BUY 1";
+                                  
+                                  const buyAction = () => marketBuy({ ...it, price: displayPrice, _buyAmount: buyQty });
+                                  
+                                  let color = '#10b981'; // Default Green
+                                  if (isExotic) color = '#fb923c'; // Exotic Orange
+                                  else if (isAmmo) color = (AMMO_CONFIG[it.id as keyof typeof AMMO_CONFIG]?.color || '#facc15');
+                                  else if (isOrdnance) {
+                                      if (it.id.includes('missile')) color = '#ef4444'; // Red
+                                      else if (it.id.includes('emp')) color = '#3b82f6'; // Blue (EMP Mine)
+                                      else color = '#fbbf24'; // Yellow (Standard Mine)
+                                  } else {
+                                      // Check for Standard Weapon
+                                      const wDef = WEAPONS.find(w => w.id === it.id);
+                                      if (wDef) {
+                                           if (wDef.type === 'LASER') color = wDef.beamColor || '#3b82f6';
+                                           else if (wDef.type === 'PROJECTILE') color = '#9ca3af'; // Gray
+                                      }
+                                  }
+
                                   return (
-                                      <button key={it.id} onClick={() => marketBuy(it)} className={`flex justify-between items-center p-3 bg-zinc-900/40 border border-zinc-800 hover:border-emerald-500/40 hover:bg-zinc-800 rounded group transition-all text-left ${isExotic ? 'border-orange-500/30 bg-orange-900/10 hover:border-orange-500 hover:bg-orange-900/30' : ''}`}>
+                                      <button key={it.id} onClick={buyAction} className={`flex justify-between items-center p-3 bg-zinc-900/40 border border-zinc-800 hover:border-emerald-500/40 hover:bg-zinc-800 rounded group transition-all text-left ${isExotic ? 'border-orange-500/30 bg-orange-900/10 hover:border-orange-500 hover:bg-orange-900/30' : ''} ${isAmmo ? 'hover:border-yellow-500/40 hover:bg-yellow-900/10' : ''}`}>
                                           <div className="flex items-center gap-3">
-                                              <div className={`w-8 h-8 flex items-center justify-center bg-black border border-zinc-700 rounded ${isExotic ? 'border-orange-500 shadow-[0_0_10px_#f97316]' : ''}`}>
-                                                  <ItemSVG type={(it as any).damage ? 'weapon' : ((it as any).capacity ? 'shield' : ((it as any).type || 'goods'))} color={isExotic ? '#fb923c' : '#10b981'} size={iconSize}/>
+                                              <div className={`w-8 h-8 flex items-center justify-center bg-black border border-zinc-700 rounded ${isExotic ? 'border-orange-500 shadow-[0_0_10px_#f97316]' : (isAmmo ? 'border-yellow-600' : '')}`}>
+                                                  <ItemSVG 
+                                                    type={(it as any).damage ? 'weapon' : ((it as any).capacity ? 'shield' : ((it as any).type || 'goods'))} 
+                                                    color={color} 
+                                                    size={iconSize}
+                                                  />
                                               </div>
-                                              <span className={`text-[10px] font-black uppercase truncate w-24 ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name}</span>
+                                              <span className={`text-[10px] font-black uppercase truncate w-24 ${isExotic ? 'text-orange-400' : (isAmmo ? 'text-yellow-400' : 'text-emerald-400')}`}>{it.name}</span>
                                           </div>
                                           <div className="flex flex-col items-end">
-                                              <span className={`text-[10px] font-black tabular-nums ${isExotic ? 'text-orange-300' : 'text-emerald-400'}`}>${it.price.toLocaleString()}</span>
-                                              <span className="text-[8px] text-zinc-600 uppercase font-black group-hover:text-emerald-500">BUY 1</span>
+                                              <span className={`text-[10px] font-black tabular-nums ${isExotic ? 'text-orange-300' : (isAmmo ? 'text-yellow-300' : 'text-emerald-400')}`}>${displayPrice.toLocaleString()}</span>
+                                              <span className="text-[8px] text-zinc-600 uppercase font-black group-hover:text-emerald-500">{buyLabel}</span>
                                           </div>
                                       </button>
                                   );
@@ -138,10 +168,28 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                           <div className="space-y-2">
                               {groupItems.map(({ item, idx }) => {
                                   const isExotic = isExoticItem(item.id);
+                                  const isAmmo = item.type === 'ammo';
+                                  const isOrdnance = cat === 'ORDNANCE';
+                                  
+                                  let color = isExotic ? '#fb923c' : '#fbbf24';
+                                  if (isAmmo) color = AMMO_CONFIG[item.id as keyof typeof AMMO_CONFIG]?.color || '#fbbf24';
+                                  else if (isOrdnance) {
+                                      if (item.id?.includes('missile')) color = '#ef4444'; 
+                                      else if (item.id?.includes('emp')) color = '#3b82f6';
+                                      else color = '#fbbf24'; 
+                                  } else {
+                                      // Check for Standard Weapon
+                                      const wDef = WEAPONS.find(w => w.id === item.id);
+                                      if (wDef) {
+                                           if (wDef.type === 'LASER') color = wDef.beamColor || '#3b82f6';
+                                           else if (wDef.type === 'PROJECTILE') color = '#9ca3af'; 
+                                      }
+                                  }
+
                                   return (
                                       <div key={item.instanceId} className="flex justify-between items-center p-3 border border-zinc-800 bg-zinc-900/40 rounded hover:border-amber-500/50 transition-all">
                                           <div className="flex items-center gap-4">
-                                              <ItemSVG type={item.type} color={isExotic ? '#fb923c' : '#fbbf24'} size={iconSize}/>
+                                              <ItemSVG type={item.type} color={color} size={iconSize}/>
                                               <span className={`text-[11px] font-black uppercase ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{item.name} x{item.quantity}</span>
                                           </div>
                                           <button onClick={() => marketSell(idx)} className="px-4 py-2 bg-amber-600/20 border border-amber-600 text-amber-500 text-[9px] font-black uppercase rounded hover:bg-amber-600 hover:text-white transition-all">SELL 1 UNIT</button>
@@ -163,34 +211,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                 <div className="flex gap-2">
                     <button onClick={() => setMarketTab('buy')} className={`retro-font ${btnSize} uppercase ${btnPadding} rounded-t-lg transition-all ${marketTab === 'buy' ? 'bg-emerald-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-white'}`}>BUY</button>
                     <button onClick={() => setMarketTab('sell')} className={`retro-font ${btnSize} uppercase ${btnPadding} rounded-t-lg transition-all ${marketTab === 'sell' ? 'bg-amber-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-white'}`}>SELL</button>
-                    <button onClick={() => setMarketTab('sales')} className={`retro-font ${btnSize} uppercase ${btnPadding} rounded-t-lg transition-all ${marketTab === 'sales' ? 'bg-blue-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-white'}`}>SALES</button>
                 </div>
                 <button onClick={onClose} className={`text-zinc-500 ${btnSize} font-black ${btnPadding.replace('py-3','py-2').replace('py-5','py-4').replace('py-4','py-3')}`}>DONE</button>
             </header>
             <div className="flex-grow overflow-y-auto p-4 custom-scrollbar bg-black/40">
-                {marketTab === 'buy' ? renderBuyGrid() : marketTab === 'sell' ? renderSellList() : (
-                    <div className="space-y-2">
-                        {currentListings.map((it, idx) => {
-                            const isExotic = isExoticItem(it.id);
-                            return (
-                                <div key={it.instanceId} className={`flex justify-between items-center p-4 border rounded transition-all ${it.status === 'sold' ? 'bg-emerald-950/30 border-emerald-500' : 'bg-zinc-900/40 border-zinc-800'}`}>
-                                    <div className="flex items-center gap-4">
-                                        <ItemSVG type={it.type} color={it.status === 'sold' ? '#10b981' : (isExotic ? '#fb923c' : '#f97316')} size={iconSize}/>
-                                        <span className={`text-[11px] font-black uppercase ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{it.name} {it.status === 'sold' ? '(SOLD)' : '(LISTED)'}</span>
-                                    </div>
-                                    <div className="flex items-center gap-4">
-                                        <span className="text-[10px] font-black text-emerald-400 tabular-nums">${it.price?.toLocaleString()}</span>
-                                        {it.status === 'sold' ? 
-                                            <button onClick={() => claimSale(idx, false)} className="px-4 py-2 bg-emerald-600 text-white font-black text-[9px] rounded uppercase hover:scale-105">CLAIM</button> : 
-                                            <button onClick={() => claimSale(idx, true)} className="px-4 py-2 bg-zinc-800 text-zinc-400 font-black text-[9px] rounded uppercase hover:bg-zinc-700">CANCEL</button>
-                                        }
-                                    </div>
-                                </div>
-                            );
-                        })}
-                        {currentListings.length === 0 && <div className="p-10 text-center opacity-30 text-sm font-black uppercase">No Active Sales</div>}
-                    </div>
-                )}
+                {marketTab === 'buy' ? renderBuyGrid() : renderSellList()}
             </div>
         </div>
     </div>

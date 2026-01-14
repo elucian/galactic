@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { CargoItem, ShipFitting, ShipConfig } from '../types.ts';
-import { EXOTIC_WEAPONS, EXOTIC_SHIELDS } from '../constants.ts';
+import { EXOTIC_WEAPONS, EXOTIC_SHIELDS, WEAPONS } from '../constants.ts';
 import { ItemSVG } from './Common.tsx';
 
 interface CargoDialogProps {
@@ -112,15 +112,26 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                                       ? 'bg-emerald-900/30 border-emerald-500 shadow-[inset_0_0_10px_rgba(16,185,129,0.2)]'
                                       : 'bg-amber-900/30 border-amber-500 shadow-[inset_0_0_10px_rgba(245,158,11,0.2)]';
                                   
+                                  let iconColor = side === 'ship' ? "#10b981" : "#fbbf24"; 
+                                  if (isExotic) iconColor = "#fb923c";
+                                  else {
+                                      // Check Standard Weapon Colors
+                                      const wDef = WEAPONS.find(w => w.id === item.id);
+                                      if (wDef) {
+                                           if (wDef.type === 'LASER') iconColor = wDef.beamColor || '#3b82f6';
+                                           else if (wDef.type === 'PROJECTILE') iconColor = '#9ca3af';
+                                      }
+                                  }
+
                                   return (
                                       <div key={item.instanceId} onClick={() => onSelect(originalIdx)} 
                                            className={`flex justify-between items-center p-2 sm:p-3 border cursor-pointer rounded group transition-all select-none ${isSelected ? activeClass : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
                                           <div className={`flex items-center gap-3 ${side === 'reserve' ? 'w-full justify-end' : ''}`}>
-                                              {side === 'ship' && <ItemSVG type={item.type} color={isExotic ? "#fb923c" : "#10b981"} size={iconSize}/>}
+                                              {side === 'ship' && <ItemSVG type={item.type} color={iconColor} size={iconSize}/>}
                                               <span className={`font-black uppercase truncate max-w-[140px] ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')} ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>
                                                   {item.name} <span className="text-white opacity-60">x{item.quantity}</span>
                                               </span>
-                                              {side === 'reserve' && <ItemSVG type={item.type} color={isExotic ? "#fb923c" : "#fbbf24"} size={iconSize}/>}
+                                              {side === 'reserve' && <ItemSVG type={item.type} color={iconColor} size={iconSize}/>}
                                           </div>
                                       </div>
                                   );

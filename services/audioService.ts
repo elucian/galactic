@@ -11,6 +11,7 @@ class AudioService {
   // Charge Sound State
   private chargeOsc: OscillatorNode | null = null;
   private chargeGain: GainNode | null = null;
+  private chargeFilter: BiquadFilterNode | null = null; // Track filter for cleanup
 
   // Launch Sound State
   private launchGain: GainNode | null = null;
@@ -409,20 +410,30 @@ class AudioService {
   startCharging() {
     this.init();
     if (!this.ctx || !this.enabled) return;
-    if (this.chargeOsc) return; // Already charging
+    if (this.chargeOsc) return;
 
     const ctx = this.ctx;
     this.chargeOsc = ctx.createOscillator();
     this.chargeGain = ctx.createGain();
+    
+    // "Weeo" Sound: Sine wave rising pitch 
+    this.chargeOsc.type = 'sine';
+    this.chargeOsc.frequency.setValueAtTime(200, ctx.currentTime); 
+    this.chargeOsc.frequency.linearRampToValueAtTime(1000, ctx.currentTime + 2.0);
 
-    this.chargeOsc.type = 'triangle';
-    this.chargeOsc.frequency.setValueAtTime(150, ctx.currentTime);
-    this.chargeOsc.frequency.exponentialRampToValueAtTime(800, ctx.currentTime + 1.5); // Growing pitch
+    // Bandpass filter to emphasize the "ee" vowel quality as pitch rises
+    const filter = ctx.createBiquadFilter();
+    this.chargeFilter = filter;
+    filter.type = 'bandpass';
+    filter.Q.value = 2;
+    filter.frequency.setValueAtTime(300, ctx.currentTime);
+    filter.frequency.linearRampToValueAtTime(1200, ctx.currentTime + 2.0);
 
-    this.chargeGain.gain.setValueAtTime(0.05, ctx.currentTime);
-    this.chargeGain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 1.5);
+    this.chargeGain.gain.setValueAtTime(0, ctx.currentTime);
+    this.chargeGain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.2);
 
-    this.chargeOsc.connect(this.chargeGain);
+    this.chargeOsc.connect(filter);
+    filter.connect(this.chargeGain);
     this.chargeGain.connect(this.masterGain!);
     this.chargeOsc.start();
   }
@@ -435,13 +446,28 @@ class AudioService {
         } catch(e) {}
         this.chargeOsc = null;
     }
+    if (this.chargeFilter) {
+        this.chargeFilter.disconnect();
+        this.chargeFilter = null;
+    }
     if (this.chargeGain) {
         this.chargeGain.disconnect();
         this.chargeGain = null;
     }
   }
 
-  playWeaponFire(type: 'laser' | 'cannon' | 'missile' | 'mine' | 'rocket' | 'emp' | 'mega', pan: number = 0) {
+  private getShipSoundParams(id: string) {
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
+    
+    const types: OscillatorType[] = ['sine', 'triangle', 'square', 'sawtooth'];
+    const wave = types[Math.abs(hash) % 4];
+    const baseFreq = 150 + (Math.abs(hash * 3) % 400); // 150 - 550 Hz
+    
+    return { wave, baseFreq };
+  }
+
+  playWeaponFire(type: 'laser' | 'cannon' | 'missile' | 'mine' | 'rocket' | 'emp' | 'mega' | 'puff', pan: number = 0, variant?: string) {
     this.init();
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
@@ -463,16 +489,56 @@ class AudioService {
       osc.connect(g);
       osc.start();
       osc.stop(ct + 0.1);
-    } else if (type === 'cannon') { // PROJECTILE
+    } else if (type === 'puff' || type === 'cannon' || type === 'mega') {
+      // Ship-specific "Buf" sound
+      let wave: OscillatorType = 'square';
+      let freq = 150;
+      let decay = 0.15;
+      let vol = 0.1;
+
+      if (variant) {
+          const params = this.getShipSoundParams(variant);
+          wave = params.wave;
+          freq = params.baseFreq;
+      }
+
+      if (type === 'puff') {
+          vol = 0.2; // Softer
+          decay = 0.1;
+      } else if (type === 'mega') {
+          vol = 0.4;
+          decay = 0.25;
+          wave = 'sawtooth'; // Always aggressive for mega
+          freq = 1800; // Original Zap sound but blended with ship tone
+      }
+
       const osc = ctx.createOscillator();
-      osc.type = 'square';
-      osc.frequency.setValueAtTime(150, ct);
-      osc.frequency.exponentialRampToValueAtTime(50, ct + 0.15);
-      g.gain.setValueAtTime(0.1, ct);
-      g.gain.exponentialRampToValueAtTime(0.001, ct + 0.15);
-      osc.connect(g);
+      osc.type = wave;
+      
+      if (type === 'mega') {
+          // Sharp Zap
+          osc.frequency.setValueAtTime(freq, ct); 
+          osc.frequency.exponentialRampToValueAtTime(100, ct + decay);
+      } else {
+          // "Buf" drop
+          osc.frequency.setValueAtTime(freq, ct);
+          osc.frequency.exponentialRampToValueAtTime(50, ct + decay);
+      }
+
+      // Filter for muffling the "Buf"
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(type === 'mega' ? 3000 : 800, ct);
+      filter.frequency.exponentialRampToValueAtTime(type === 'mega' ? 500 : 100, ct + decay);
+
+      g.gain.setValueAtTime(vol, ct);
+      g.gain.exponentialRampToValueAtTime(0.001, ct + decay);
+
+      osc.connect(filter);
+      filter.connect(g);
       osc.start();
-      osc.stop(ct + 0.15);
+      osc.stop(ct + decay);
+
     } else if (type === 'missile') {
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
@@ -529,34 +595,6 @@ class AudioService {
       g.gain.exponentialRampToValueAtTime(0.001, ct + 0.15);
       osc.connect(g);
       osc.start(); osc.stop(ct + 0.15);
-    } else if (type === 'mega') {
-      // Power release whoosh
-      const osc = ctx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(800, ct);
-      osc.frequency.exponentialRampToValueAtTime(60, ct + 0.5);
-      
-      const noise = ctx.createBufferSource();
-      const bSize = ctx.sampleRate * 0.5;
-      const b = ctx.createBuffer(1, bSize, ctx.sampleRate);
-      const d = b.getChannelData(0);
-      for(let i=0; i<bSize; i++) d[i] = Math.random()*2-1;
-      noise.buffer = b;
-      
-      const nFilter = ctx.createBiquadFilter();
-      nFilter.type = 'lowpass';
-      nFilter.frequency.setValueAtTime(2000, ct);
-      nFilter.frequency.linearRampToValueAtTime(100, ct + 0.5);
-
-      g.gain.setValueAtTime(0.4, ct);
-      g.gain.exponentialRampToValueAtTime(0.001, ct + 0.5);
-
-      osc.connect(g);
-      noise.connect(nFilter);
-      nFilter.connect(g);
-
-      osc.start(); osc.stop(ct + 0.5);
-      noise.start(); noise.stop(ct + 0.5);
     }
   }
 
@@ -607,95 +645,7 @@ class AudioService {
   playTrack(type: 'intro' | 'command' | 'map' | 'combat') {
     this.init();
     this.stop();
-    if (!this.ctx) return;
-
-    if (type === 'intro') {
-      this.introAudio = new Audio('assets/1m-intro-galaxy-defendor.mp3');
-      this.introAudio.loop = true;
-      this.introAudio.volume = this.enabled ? this.volume : 0;
-      this.introAudio.play().catch(err => console.log("Intro audio play failed", err));
-      this.currentTrack = {
-        stop: () => {
-          if (this.introAudio) {
-            this.introAudio.pause();
-            this.introAudio.currentTime = 0;
-          }
-        }
-      };
-      return;
-    }
-
-    const ctx = this.ctx;
-    const gain = this.masterGain!;
-    let oscillators: OscillatorNode[] = [];
-    let intervals: number[] = [];
-
-    const playNote = (freq: number, duration: number, type: OscillatorType = 'square', vol = 0.1, decay = true) => {
-      const osc = ctx.createOscillator();
-      const g = ctx.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, ctx.currentTime);
-      g.gain.setValueAtTime(vol, ctx.currentTime);
-      if (decay) g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
-      osc.connect(g);
-      g.connect(gain);
-      osc.start();
-      osc.stop(ctx.currentTime + duration);
-      return osc;
-    };
-
-    if (type === 'command') {
-      let step = 0;
-      const bassNotes = [110, 110, 110, 110, 82, 82, 98, 98];
-      const leadNotes = [220, 0, 330, 0, 440, 330, 220, 0];
-      
-      intervals.push(window.setInterval(() => {
-        playNote(bassNotes[step % bassNotes.length], 0.15, 'square', 0.04);
-        if (leadNotes[step % leadNotes.length] > 0 && step % 2 === 0) {
-           playNote(leadNotes[step % leadNotes.length], 0.1, 'triangle', 0.03);
-        }
-        if (step % 4 === 0) playNote(55, 0.3, 'sawtooth', 0.05);
-        step++;
-      }, 200));
-    } else if (type === 'map') {
-      const sweep = ctx.createOscillator();
-      const sweepGain = ctx.createGain();
-      sweep.type = 'triangle';
-      sweep.frequency.setValueAtTime(110, ctx.currentTime);
-      sweepGain.gain.setValueAtTime(0.02, ctx.currentTime);
-      sweep.connect(sweepGain);
-      sweepGain.connect(gain);
-      sweep.start();
-      oscillators.push(sweep);
-
-      intervals.push(window.setInterval(() => {
-        const time = ctx.currentTime;
-        sweep.frequency.exponentialRampToValueAtTime(110 + Math.random() * 220, time + 5);
-      }, 5000));
-
-      intervals.push(window.setInterval(() => {
-        if (Math.random() > 0.5) {
-          const freq = 1000 + Math.random() * 2000;
-          playNote(freq, 0.5, 'sine', 0.01);
-        }
-      }, 800));
-    } else if (type === 'combat') {
-      let step = 0;
-      const notes = [110, 165, 220, 330, 110, 165, 440, 330];
-      intervals.push(window.setInterval(() => {
-        const freq = notes[step % notes.length];
-        playNote(freq, 0.08, 'square', 0.05);
-        if (step % 8 === 0) playNote(55, 0.4, 'sawtooth', 0.08);
-        step++;
-      }, 125));
-    }
-
-    this.currentTrack = {
-      stop: () => {
-        oscillators.forEach(o => { try { o.stop(); } catch(e) {} });
-        intervals.forEach(i => window.clearInterval(i));
-      }
-    };
+    // Background music disabled as per request.
   }
 }
 

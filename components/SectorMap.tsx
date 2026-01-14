@@ -24,7 +24,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
   // Interaction States
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [zoomStep, setZoomStep] = useState(5); // 0 to 10, 5 is default
+  const [zoomStep, setZoomStep] = useState(3); // Default Zoom Out (Step 3)
   const [isDragging, setIsDragging] = useState(false);
   const [isRecalculating, setIsRecalculating] = useState(false);
   
@@ -51,26 +51,46 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
   // Generate visual-only properties for the view (orbits, moons)
   const planetVisuals = useMemo(() => {
+    let cumulativeDist = 220; // Start further out to clear Sun
+
     return sectorPlanets.map((p, i) => {
       const status = getPlanetStatus(p.id);
-      return {
-        ...p,
-        // Override status color based on registry
-        statusColor: status === 'friendly' ? '#10b981' : (status === 'siege' ? '#f97316' : '#ef4444'),
-        actualStatus: status,
-        // Distribute orbits evenly for visual clarity
-        visualDistance: 160 + (i * 100), 
-        orbitSpeedFactor: 1 / (i + 1), 
-        orbitOffset: orbitOffsets[p.id] || 0,
-        orbitDirection: Math.random() > 0.5 ? 1 : -1,
-        // Procedural visual moons - randomized per session as they are decoration
-        visualMoons: Array.from({ length: Math.floor(Math.random() * 3) + (i === 1 ? 1 : 0) }).map((_, mi) => ({
-          dist: 25 + (mi * 10),
+      const isInner = i < 2;
+      const planetSizePx = isInner ? 28 : 36;
+      const planetRadius = planetSizePx / 2;
+
+      // Deterministic but varied moon counts
+      const moonCount = Math.floor(Math.random() * 3) + (i > 1 ? 1 : 0);
+
+      // Generate Visual Moons
+      const visualMoons = Array.from({ length: moonCount }).map((_, mi) => ({
+          dist: 38 + (mi * 22), // 22px gap between moon orbits
           speed: 0.02 + (Math.random() * 0.02),
           offset: Math.random() * Math.PI * 2,
           direction: Math.random() > 0.5 ? 1 : -1,
           size: 5 + Math.random() * 4 
-        }))
+      }));
+
+      // Calculate System Radius to ensure clearance
+      const maxMoonDist = visualMoons.length > 0 ? visualMoons[visualMoons.length - 1].dist : 0;
+      const systemRadius = planetRadius + maxMoonDist + 25; // +Buffer
+
+      // Set current orbit distance
+      const myDist = cumulativeDist;
+
+      // Increment for next planet (Current System + Gap + Next Planet approx)
+      cumulativeDist += systemRadius + 120; // Wide gap between systems
+
+      return {
+        ...p,
+        statusColor: status === 'friendly' ? '#10b981' : (status === 'siege' ? '#f97316' : '#ef4444'),
+        actualStatus: status,
+        planetSizePx,
+        visualDistance: myDist, 
+        orbitSpeedFactor: 1 / (i + 2), 
+        orbitOffset: orbitOffsets[p.id] || 0,
+        orbitDirection: Math.random() > 0.5 ? 1 : -1,
+        visualMoons
       };
     });
   }, [sectorPlanets, orbitOffsets, planetRegistry]);
@@ -167,7 +187,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const handleZoomOut = (e: React.MouseEvent) => { e.stopPropagation(); setZoomStep(prev => Math.max(0, prev - 1)); };
   const handleResetView = (e: React.MouseEvent) => { 
       e.stopPropagation(); 
-      setZoomStep(5); 
+      setZoomStep(3); // Reset to Default 3
       setPan({ x: 0, y: 0 }); 
       // Trigger recalculation effect on reset too
       setIsRecalculating(true);
@@ -251,7 +271,8 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const renderComet = () => {
     if (activeQuadrant !== QuadrantType.GAMA) return null;
     const t = elapsed * 0.00005; 
-    const a = 600; const b = 360; const c = 480; 
+    // Increased orbit to avoid inner planets
+    const a = 1000; const b = 400; const c = 600; 
     const rawX = Math.cos(t) * a + c; const rawY = Math.sin(t) * b;
     const precessionSpeed = 0.000015; 
     const baseTilt = -Math.PI / 8;
@@ -310,7 +331,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
              return (
                <button 
                  key={q}
-                 onClick={() => { setActiveQuadrant(q); setSelectedPlanetId(null); setPan({x:0, y:0}); setZoomStep(5); }}
+                 onClick={() => { setActiveQuadrant(q); setSelectedPlanetId(null); setPan({x:0, y:0}); setZoomStep(3); }}
                  className={`flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all duration-300 bg-zinc-950/80 backdrop-blur-md ${isActive ? 'border-white scale-105 shadow-lg' : 'border-zinc-700 opacity-70 hover:opacity-100 hover:border-zinc-500'}`}
                >
                  <div className="relative w-10 h-10 rounded-full shadow-inner overflow-hidden flex-shrink-0">
@@ -370,26 +391,59 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
                     return (
                     <React.Fragment key={p.id}>
-                        {/* Orbit Ring */}
-                        <div className="absolute rounded-full border border-zinc-800/60 pointer-events-none" style={{ width: p.visualDistance * 2, height: p.visualDistance * 2 }} />
+                        {/* Orbit Ring - Only show if selected to reduce clutter */}
+                        {isSelected && (
+                            <div className="absolute rounded-full border border-zinc-700/50 pointer-events-none transition-opacity duration-500" 
+                                 style={{ width: p.visualDistance * 2, height: p.visualDistance * 2 }} />
+                        )}
                         
-                        {/* Planet Body Group */}
+                        {/* Planet Body Group - Centered on Coordinate */}
                         <div 
-                            className="absolute z-20 cursor-pointer group"
-                            style={{ transform: `translate(${x}px, ${y}px)` }}
+                            className="absolute z-20 cursor-pointer group flex items-center justify-center"
+                            style={{ transform: `translate(${x}px, ${y}px) translate(-50%, -50%)` }}
                             onClick={() => setSelectedPlanetId(p.id)}
                         >
-                            <div className="relative flex items-center justify-center">
-                                <div 
-                                className={`w-10 h-10 rounded-full shadow-lg transition-all duration-300 relative z-10 ${isSelected ? 'ring-2 ring-offset-4 ring-offset-black ring-white scale-125' : 'group-hover:scale-110'}`}
-                                style={{ backgroundColor: p.color, boxShadow: `inset -4px -4px 10px rgba(0,0,0,0.8), 0 0 20px ${p.color}44` }}
-                                >
-                                {isSelected && <div className="absolute -inset-6 border border-dashed border-emerald-500/60 rounded-full animate-[spin_8s_linear_infinite]" />}
+                            {/* SMART RETICLE */}
+                            {isSelected && (
+                                <div className="absolute left-1/2 top-1/2 pointer-events-none z-0" style={{ transform: `translate(-50%, -50%) scale(${1/currentScale})` }}> 
+                                    <div className="relative flex items-center justify-center"
+                                         style={{ 
+                                             // Dynamic Size Logic: 
+                                             // 1. Base Universe Size = Planet + Gap. 
+                                             // 2. Scale by currentScale to get raw screen size.
+                                             // 3. Clamp Min (45px screen) and Max (85% Sun screen).
+                                             width: Math.min(
+                                                 Math.max((p.planetSizePx * 2.2 * currentScale), 45), 
+                                                 (128 * currentScale * 0.85)
+                                             ), 
+                                             height: Math.min(
+                                                 Math.max((p.planetSizePx * 2.2 * currentScale), 45), 
+                                                 (128 * currentScale * 0.85)
+                                             )
+                                         }}>
+                                        <div className="absolute inset-0 border border-dashed border-emerald-500/60 rounded-full animate-[spin_10s_linear_infinite]" />
+                                        <div className="absolute inset-[3px] border border-emerald-400/80 rounded-full shadow-[0_0_10px_rgba(52,211,153,0.4)]" />
+                                        
+                                        {/* Ticks */}
+                                        <div className="absolute top-0 w-[1px] h-[4px] bg-emerald-400" />
+                                        <div className="absolute bottom-0 w-[1px] h-[4px] bg-emerald-400" />
+                                        <div className="absolute left-0 w-[4px] h-[1px] bg-emerald-400" />
+                                        <div className="absolute right-0 w-[4px] h-[1px] bg-emerald-400" />
+                                    </div>
                                 </div>
-                                {/* Status Halo */}
-                                {p.actualStatus !== 'friendly' && (
-                                    <div className={`absolute -inset-4 rounded-full border-2 border-dotted animate-[spin_10s_linear_infinite] ${p.actualStatus === 'siege' ? 'border-orange-500/50' : 'border-red-500/50'}`} />
-                                )}
+                            )}
+
+                            <div className="relative flex items-center justify-center">
+                                {/* Dynamic Size Planet */}
+                                <div 
+                                className={`rounded-full shadow-lg transition-all duration-300 relative z-10 ${isSelected ? 'scale-110' : 'group-hover:scale-110'}`}
+                                style={{ 
+                                    width: `${p.planetSizePx}px`, 
+                                    height: `${p.planetSizePx}px`,
+                                    backgroundColor: p.color, 
+                                    boxShadow: `inset -4px -4px 10px rgba(0,0,0,0.8), 0 0 20px ${p.color}44` 
+                                }}
+                                />
                             </div>
 
                             {/* Moons */}
@@ -427,7 +481,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                 onClick={handleZoomOut}
                 className="w-10 h-10 bg-zinc-900 border border-zinc-700 text-zinc-400 rounded flex items-center justify-center hover:bg-zinc-800 hover:text-white hover:border-zinc-500 transition-all shadow-lg active:scale-95"
             >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
             </button>
         </div>
 

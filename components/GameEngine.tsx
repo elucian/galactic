@@ -2,828 +2,2002 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
-import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, BOSS_SHIPS, BOSS_EXOTIC_SHIELDS, PLANETS } from '../constants.ts';
-import { AlfaSystem, BetaSystem, GamaSystem, DeltaSystem } from './SolarSystems.tsx';
+import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, BOSS_SHIPS, BOSS_EXOTIC_SHIELDS, AMMO_CONFIG } from '../constants.ts';
 import { StarField } from './StarField.tsx';
+import { getEngineCoordinates, getWingMounts } from '../utils/drawingUtils.ts';
 
-// --- CLASSES ---
-interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number; type: 'fire' | 'smoke' | 'spark' | 'debris' | 'shock' | 'fuel' | 'electric' | 'plasma'; z?: number; }
-interface Point3D { x: number; y: number; z: number; }
-interface Face3D { indices: number[]; color: string; normal?: Point3D; zDepth?: number; shadeOffset: number; }
+// --- ENTITY CLASSES ---
+interface ShieldLayer {
+    color: string;
+    max: number;
+    current: number;
+    rotation: number;
+}
 
 class Enemy {
-  x: number; y: number; z: number = 0; hp: number; maxHp: number; sh: number = 0; maxSh: number = 0; type: 'scout' | 'fighter' | 'heavy' | 'boss'; config: ExtendedShipConfig; lastShot: number = 0; color: string; vx: number = 0; vy: number = 0; vz: number = 0; difficulty: number; burnLevel: number = 0; burnTimer: number = 0; aiState: 'attack' | 'evade' | 'formation' = 'attack'; shieldRegenTimer: number = 0; mineTimer: number = 0; shieldRegenRate: number = 0; shieldImmunity: 'kinetic' | 'energy' | 'none' = 'none'; shieldVisual: any = null;
-  zJumpTimer: number = 0;
-  constructor(x: number, y: number, type: 'scout' | 'fighter' | 'heavy' | 'boss', config: ExtendedShipConfig, difficulty: number) {
-    this.difficulty = difficulty; const shotCounts = [3, 5, 8, 13, 21, 34, 55, 89, 144, 233]; const diffIdx = Math.max(0, Math.min(9, Math.floor(difficulty - 1))); const baseHp = (shotCounts[diffIdx] / 3) * 100; const bossBaseHp = 8000 + (difficulty * 1000); 
-    const hpMap = { scout: baseHp * 0.8, fighter: baseHp, heavy: baseHp * 2.5, boss: bossBaseHp }; const shMap = { scout: 0, fighter: 0, heavy: 0, boss: 2000 + (difficulty * 500) };
-    this.x = x; this.y = y; this.z = type === 'boss' ? 0 : (Math.random() - 0.5) * 800; this.vz = (Math.random() - 0.5) * 0.5; this.hp = hpMap[type]; this.maxHp = hpMap[type];
-    if (type === 'boss') { this.sh = shMap[type]; this.maxSh = shMap[type]; const shieldType = BOSS_EXOTIC_SHIELDS[Math.floor(Math.random() * BOSS_EXOTIC_SHIELDS.length)]; this.shieldVisual = shieldType; this.shieldImmunity = shieldType.immunity as any; this.shieldRegenRate = shieldType.type === 'regen' ? 2.5 : 0.5; } else { if (difficulty > 5) { this.sh = 50 * (difficulty - 4); this.maxSh = this.sh; } }
-    this.type = type; this.config = config; this.color = type === 'boss' ? '#a855f7' : (type === 'heavy' ? '#ef4444' : (type === 'fighter' ? '#f97316' : '#60a5fa'));
-  }
-  updateAI(px: number, py: number, asteroids: Asteroid[], peers: Enemy[]) {
-    if (this.type === 'boss') { 
-        if (this.z > 5) this.vz = -0.5; else if (this.z < -5) this.vz = 0.5; else this.vz = 0; 
-        
-        let threatDetected = false;
-        asteroids.forEach(ast => { if (Math.abs(ast.z - this.z) < 150 && Math.sqrt((ast.x - this.x)**2 + (ast.y - this.y)**2) < 200) { threatDetected = true; } });
-        this.zJumpTimer--;
-        if (threatDetected && this.zJumpTimer <= 0) { this.z = (Math.random() - 0.5) * 600; this.zJumpTimer = 120; this.vx += (Math.random() - 0.5) * 10; }
+  x: number; y: number; z: number = 0; hp: number; maxHp: number; 
+  shieldLayers: ShieldLayer[] = [];
+  type: 'scout' | 'fighter' | 'heavy' | 'boss'; config: ExtendedShipConfig; lastShot: number = 0; 
+  vx: number = 0; vy: number = 0; shieldRegen: number = 0;
+  equippedWeapons: (EquippedWeapon | null)[] = [null, null, null]; // [Main, Left, Right]
+  vibration: number = 0;
 
-        if (this.sh < this.maxSh && this.sh > 0) this.sh += this.shieldRegenRate; const dx = px - this.x; const distToPlayer = Math.abs(dx); this.vx += dx * 0.003; const isTargeted = distToPlayer < 100; if (isTargeted) { const dodgeDir = dx > 0 ? -1 : 1; this.vx += dodgeDir * 0.4; } if (this.x < 150) this.vx += 0.3; if (this.x > window.innerWidth - 150) this.vx -= 0.3; this.vx *= 0.95; let targetY = 150 + Math.sin(Date.now() * 0.001) * 80; if (this.y > 350) targetY = 100; const dy = targetY - this.y; this.vy += dy * 0.01; this.vy *= 0.92; this.x += this.vx; this.y += this.vy; if (this.x < 0) { this.x = 0; this.vx *= -1; } if (this.x > window.innerWidth) { this.x = window.innerWidth; this.vx *= -1; } return; 
-    }
-    const distY = py - this.y; let baseSpeed = 4.2; if (distY < 300 && distY > 0) baseSpeed = 2.0; if (Math.random() < 0.01 && distY < 150) baseSpeed = -2.0;
-    let sepX = 0, sepY = 0; peers.forEach(peer => { if (peer === this) return; const dx = this.x - peer.x; const dy = this.y - peer.y; const d = Math.sqrt(dx*dx + dy*dy); if (d < 100 && d > 0) { sepX += (dx / d) * 2.5; sepY += (dy / d) * 1.0; } });
-    let avoidX = 0, avoidY = 0; asteroids.forEach(ast => { const zDist = Math.abs(ast.z - this.z); if (this.difficulty >= 4 && zDist < 120) { const dx = this.x - ast.x; const isBelow = ast.y > this.y && ast.y < this.y + 400; if (isBelow && Math.abs(dx) < 80) { const isFastLateral = Math.abs(ast.vx) > 3; const isFastVertical = Math.abs(ast.vy) > 6; if (!isFastLateral && !isFastVertical) { const dir = this.z < ast.z ? -1 : 1; this.vz += dir * 0.15; } } } if (zDist > 80) return; const dx = this.x - ast.x; const dy = this.y - ast.y; const d = Math.sqrt(dx*dx + dy*dy); if (d < (ast.size + 150)) { avoidX += (dx / d) * 4.0; avoidY += (dy / d) * 1.5; } });
-    this.vx += sepX + avoidX; this.vy += sepY + avoidY; this.vx += Math.sin(Date.now() * 0.005 + this.x) * 0.2; this.vx *= 0.92; this.vy *= 0.92; this.y += baseSpeed + this.vy; this.x += this.vx;
-    if (this.difficulty >= 4 && this.sh < this.maxSh) { this.shieldRegenTimer++; if (this.shieldRegenTimer > 120) { this.sh += 0.5; } }
-    if (this.config.canLayMines && distY > 100 && distY < 400 && Math.abs(this.x - px) < 100) { this.mineTimer++; if (this.mineTimer > 300 && Math.random() < 0.05) { this.mineTimer = 0; return true; } } return false;
-  }
-}
-class EnergyBolt { x: number; y: number; vx: number; vy: number; timer: number = Math.random() * 100; phaseX: number = Math.random() * Math.PI * 2; phaseY: number = Math.random() * Math.PI * 2; constructor(w: number, h: number) { this.x = Math.random() * w; this.y = -100; this.vx = (Math.random() - 0.5) * 2; this.vy = 1.0 + Math.random() * 1.5; } update() { this.timer += 0.04; this.x += this.vx + Math.sin(this.timer + this.phaseX) * 3.5; this.y += this.vy + Math.cos(this.timer * 0.8 + this.phaseY) * 2.5; } }
-class Missile { x: number; y: number; z: number = 0; vx: number; vy: number; vz: number = 0; target: Enemy | null = null; life: number = 600; damage: number = 350; isHeavy: boolean = false; isEmp: boolean = false; constructor(x: number, y: number, vx: number, vy: number, isHeavy: boolean = false, isEmp: boolean = false) { this.x = x; this.y = y; this.vx = vx; this.vy = vy; this.isHeavy = isHeavy; this.isEmp = isEmp; if (isHeavy || isEmp) { this.damage = 1800; this.life = 600; } } }
-class Mine { x: number; y: number; vx: number; vy: number; damage: number = 2500; target: Enemy | null = null; life: number = 600; isEMP: boolean = false; z: number = 0; constructor(x: number, y: number, isEMP: boolean = false, z: number = 0) { this.x = x; this.y = y; this.vx = 0; this.vy = -1.5; this.isEMP = isEMP; this.z = z; if (isEMP) { this.damage = 3500; } } update(enemies: Enemy[]) { this.life--; if (!this.target || this.target.hp <= 0) { let minDist = 2000; let candidate: Enemy | null = null; enemies.forEach(en => { const dx = this.x - en.x; const dy = this.y - en.y; const dz = this.z - en.z; const d = Math.sqrt(dx*dx + dy*dy + dz*dz); if (d < minDist) { minDist = d; candidate = en; } }); this.target = candidate; } if (this.target) { const dx = this.target.x - this.x; const dy = this.target.y - this.y; const dz = this.target.z - this.z; const d = Math.sqrt(dx*dx + dy*dy + dz*dz); if (d > 0) { const force = this.isEMP ? 0.8 : 0.4; this.vx += (dx/d) * force; this.vy += (dy/d) * force; this.z += (dz/d) * force * 2.0; } } this.x += this.vx; this.y += this.vy; this.vx *= 0.96; this.vy *= 0.96; } }
-type GiftType = 'missile' | 'mine' | 'energy' | 'fuel' | 'weapon' | 'gold' | 'platinum' | 'lithium' | 'repair' | 'shield';
-class Gift { x: number; y: number; z: number; vy: number = 1.8; type: GiftType; id?: string; name?: string; isPulled: boolean | 'collected' = false; rotation: number = 0; quantity?: number; constructor(x: number, y: number, type: GiftType, id?: string, name?: string, z: number = 0, quantity?: number) { this.x = x; this.y = y; this.z = z; this.type = type; this.id = id; this.name = name; this.rotation = Math.random() * Math.PI * 2; this.quantity = quantity; } }
-class Asteroid { x: number; y: number; z: number; hp: number; maxHp: number; vx: number; vy: number; vz: number; size: number; variant: string; color: string; gasLeak: boolean = false; loot: { type: GiftType, id?: string, name?: string } | null = null; vertices: Point3D[] = []; faces: Face3D[] = []; angleX: number; angleY: number; angleZ: number; velX: number; velY: number; velZ: number;
-  constructor(x: number, y: number, difficulty: number, isScavenge: boolean = false, startFromBottom: boolean = false) { this.x = x; this.z = (Math.random() - 0.5) * 600; this.vz = (Math.random() - 0.5) * 0.5; this.y = startFromBottom ? 1200 : -150; if (startFromBottom) { this.vy = -(6.0 + Math.random() * 4.0); this.vx = (Math.random() - 0.5) * 8.0; } else { if (Math.random() > 0.7) { this.vy = 1.0 + Math.random(); this.vx = (Math.random() > 0.5 ? 1 : -1) * (1.5 + Math.random() * 2.0); } else { this.vy = 2.0 + Math.random() * 3.0; this.vx = (Math.random() - 0.5) * 1.5; } } this.angleX = Math.random() * Math.PI * 2; this.angleY = Math.random() * Math.PI * 2; this.angleZ = Math.random() * Math.PI * 2; const sSpd = 0.03; this.velX = (Math.random() - 0.5) * sSpd; this.velY = (Math.random() - 0.5) * sSpd; this.velZ = (Math.random() - 0.5) * sSpd; const randType = Math.random(); let baseVariant = 'junk'; if (isScavenge) { if (randType < 0.4) baseVariant = 'gold'; else if (randType < 0.7) baseVariant = 'platinum'; else baseVariant = 'lithium'; } else { if (randType < 0.15) baseVariant = 'blue_fuel'; else if (randType < 0.45) baseVariant = 'brown_missile'; else if (randType < 0.65) baseVariant = 'gray_mine'; else baseVariant = 'junk'; } this.variant = baseVariant; const randSize = Math.random(); if (this.variant === 'blue_fuel') { this.color = '#3b82f6'; if (randSize < 0.5) { this.size = 7 + Math.random()*2; this.hp = 150; } else { this.size = 12 + Math.random()*2; this.hp = 300; } } else if (this.variant === 'brown_missile') { this.color = '#92400e'; if (randSize < 0.3) { this.size = 9 + Math.random()*2; this.hp = 200; } else { this.size = 17 + Math.random()*3; this.hp = 600; } } else if (this.variant === 'gray_mine') { this.color = '#71717a'; if (randSize < 0.2) { this.size = 7 + Math.random()*2; this.hp = 150; } else if (randSize < 0.6) { this.size = 20 + Math.random()*3; this.hp = 750; } else { this.size = 30 + Math.random()*8; this.hp = 1750; this.color = '#52525b'; } } else if (this.variant === 'junk') { this.color = '#57534e'; this.size = 14; this.hp = 300; } else { this.size = 11; if (this.variant === 'gold') { this.color = '#fbbf24'; this.hp = 1000; } else if (this.variant === 'platinum') { this.color = '#e2e8f0'; this.hp = 1500; } else { this.color = '#c084fc'; this.hp = 800; } } const r = Math.random(); if (this.variant === 'blue_fuel') { this.loot = r < 0.8 ? { type: 'energy' } : { type: 'fuel' }; } else if (this.variant === 'brown_missile') { if (r < 0.5) this.loot = { type: 'missile' }; else if (r < 0.6) this.loot = { type: 'gold', name: 'Gold' }; else if (r < 0.65) this.loot = { type: 'platinum', name: 'Chrome' }; else if (r < 0.70) this.loot = { type: 'lithium', name: 'Lithium' }; else this.loot = { type: 'mine' }; } else if (this.variant === 'gray_mine') { this.loot = r < 0.5 ? { type: 'mine' } : null; } else if (this.variant === 'gold') { this.loot = r < 0.5 ? { type: 'gold', name: 'Gold' } : null; } else if (this.variant === 'platinum') { this.loot = r < 0.5 ? { type: 'platinum', name: 'Platinum' } : null; } else if (this.variant === 'lithium') { this.loot = r < 0.5 ? { type: 'lithium', name: 'Lithium' } : null; } else { this.loot = r > 0.9 ? { type: 'energy' } : null; } this.maxHp = this.hp; this.generateFacetedMesh(); }
-  generateFacetedMesh() { const t = (1.0 + Math.sqrt(5.0)) / 2.0; const s = this.size; const baseVerts = [ {x: -1, y: t, z: 0}, {x: 1, y: t, z: 0}, {x: -1, y: -t, z: 0}, {x: 1, y: -t, z: 0}, {x: 0, y: -1, z: t}, {x: 0, y: 1, z: t}, {x: 0, y: -1, z: -t}, {x: 0, y: 1, z: -t}, {x: t, y: 0, z: -1}, {x: t, y: 0, z: 1}, {x: -t, y: 0, z: -1}, {x: -t, y: 0, z: 1} ]; this.vertices = baseVerts.map(v => ({ x: v.x * s * (0.8 + Math.random() * 0.4), y: v.y * s * (0.8 + Math.random() * 0.4), z: v.z * s * (0.8 + Math.random() * 0.4) })); const indices = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]]; indices.forEach(idx => { this.faces.push({ indices: idx, color: this.color, shadeOffset: 0.5 + Math.random() * 0.5 }); }); }
-}
-
-interface GameEngineProps {
-  ships: Array<{
-    config: ExtendedShipConfig;
-    fitting: ShipFitting;
-    color: string;
-    wingColor?: string;
-    cockpitColor?: string;
-    gunColor: string;
-    gunBodyColor?: string;
-    engineColor?: string;
-    nozzleColor?: string;
-  }>;
-  shield: Shield | null;
-  secondShield?: Shield | null;
-  difficulty: number;
-  currentPlanet: Planet;
-  quadrant: QuadrantType;
-  onGameOver: (success: boolean, finalScore: number, wasAborted?: boolean, payload?: { rockets: number, mines: number, weapons: EquippedWeapon[], fuel: number, bossDefeated?: boolean, health: number, hullPacks: number, cargo: CargoItem[] }) => void;
-  fontSize: 'small' | 'medium' | 'large';
-  mode?: 'combat' | 'drift';
-  planetRegistry?: Record<string, PlanetStatusData>; 
-}
-
-const LEDBar = ({ value, max, count = 10, type = 'vertical', label, color = 'green' }: { value: number, max: number, count?: number, type?: 'vertical' | 'horizontal', label?: string, color?: string }) => {
-    const percentage = Math.min(100, Math.max(0, (value / max) * 100));
-    const activeCount = Math.ceil((percentage / 100) * count);
+  constructor(x: number, y: number, type: 'scout' | 'fighter' | 'heavy' | 'boss', config: ExtendedShipConfig, diff: number, quadrant: QuadrantType) {
+    const hpMult = type === 'boss' ? 5000 : (type === 'heavy' ? 400 : 150);
+    this.x = x; this.y = y; this.z = type === 'boss' ? 0 : (Math.random() - 0.5) * 600;
+    this.hp = hpMult * (1 + diff * 0.3); this.maxHp = this.hp;
+    this.type = type; 
     
-    let activeColor = 'bg-emerald-500 shadow-[0_0_5px_#10b981]';
-    if (color === 'red') activeColor = 'bg-red-500 shadow-[0_0_5px_#ef4444]';
-    if (color === 'yellow') activeColor = 'bg-yellow-400 shadow-[0_0_5px_#facc15]';
-    if (color === 'orange') activeColor = 'bg-orange-500 shadow-[0_0_5px_#f97316]';
+    // Copy config to avoid mutating reference
+    this.config = { ...config };
 
-    return (
-        <div className={`flex ${type === 'vertical' ? 'flex-col-reverse gap-1' : 'flex-row gap-1'} items-center bg-black/60 p-1 rounded border border-zinc-800`}>
-            {Array.from({ length: count }).map((_, i) => {
-                const isActive = i < activeCount;
-                return (
-                    <div 
-                        key={i} 
-                        className={`
-                            ${type === 'vertical' ? 'w-4 h-2' : 'w-2 h-4'} 
-                            rounded-sm
-                            ${isActive ? activeColor : 'bg-zinc-900/50'}
-                            transition-colors duration-200
-                        `}
-                    />
-                );
-            })}
-            {label && <span className="text-[7px] font-black text-zinc-500 uppercase rotate-180 writing-vertical-lr">{label}</span>}
-        </div>
-    );
-};
+    if (type === 'boss') {
+        // Boss: Force isAlien to true to enable the "personal small shield" visual in ShipIcon if desired,
+        // though our new BOSS_SHIPS have isAlien: true by default.
+        this.config.isAlien = true;
 
-const RoundLEDBar = ({ value, max, count = 10, color = 'red' }: { value: number, max: number, count?: number, color?: string }) => {
-    const visualValue = Math.min(value, count);
-    
-    let activeColor = 'bg-emerald-500 shadow-[0_0_5px_#10b981]';
-    let inactiveColor = 'bg-emerald-900/20';
-    
-    if (color === 'red') {
-        activeColor = 'bg-red-500 shadow-[0_0_5px_#ef4444]';
-        inactiveColor = 'bg-red-900/20';
-    }
-    if (color === 'yellow') {
-        activeColor = 'bg-yellow-400 shadow-[0_0_5px_#facc15]';
-        inactiveColor = 'bg-yellow-900/20';
-    }
+        // Select ONE random exotic weapon for boss to ensure consistency (No mixing types)
+        const selectedExotic = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
 
-    return (
-        <div className="flex gap-1">
-            {Array.from({ length: count }).map((_, i) => {
-                const isActive = i < visualValue;
-                return (
-                    <div 
-                        key={i} 
-                        className={`
-                            w-2 h-2 rounded-full
-                            ${isActive ? activeColor : inactiveColor}
-                            transition-colors duration-200 border border-black/50
-                        `}
-                    />
-                );
-            })}
-        </div>
-    );
-};
+        // Main + 2 Wings all use the SAME Exotic weapon
+        this.equippedWeapons[0] = { id: selectedExotic.id, count: 1 };
+        this.equippedWeapons[1] = { id: selectedExotic.id, count: 1 };
+        this.equippedWeapons[2] = { id: selectedExotic.id, count: 1 };
 
-const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, onGameOver, difficulty, currentPlanet, quadrant, fontSize, mode = 'combat', planetRegistry }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  if (!ships || ships.length === 0) return <div className="p-20 text-center text-red-500 font-bold">SYSTEM ERROR</div>;
-  const activeShip = ships[0];
-  const maxEnergy = activeShip?.config?.maxEnergy || 1000;
-  const initialFuel = activeShip?.fitting?.fuel || 0;
-  const initialIntegrity = activeShip?.fitting?.health || 100;
-  const maxFuelCapacity = activeShip?.config?.maxFuel || 1.0;
-  const initialHullPacks = activeShip?.fitting?.hullPacks || 0;
-  
-  const fs = fontSize || 'medium';
-  const hudText = fs === 'small' ? 'text-[11px]' : (fs === 'large' ? 'text-[15px]' : 'text-[13px]');
-  const barText = fs === 'small' ? 'text-[9px]' : (fs === 'large' ? 'text-[13px]' : 'text-[11px]');
-  const gameEntityScale = fs === 'small' ? 0.5 : (fs === 'large' ? 0.8 : 0.65);
-  const projectileScale = fs === 'small' ? 1.0 : (fs === 'large' ? 1.5 : 1.25);
-  const gaugeH = fs === 'small' ? 'h-1' : (fs === 'large' ? 'h-2.5' : 'h-1.5');
-  const topBarW = fs === 'small' ? 'w-16' : (fs === 'large' ? 'w-32' : 'w-24'); 
-  const bottomBarHeight = fs === 'small' ? 'h-8' : (fs === 'large' ? 'h-14' : 'h-10');
-
-  const MISSION_DURATION = mode === 'drift' ? 60 : (120 + (difficulty - 1) * 20);
-
-  const [stats, setStats] = useState({ 
-    hp: initialIntegrity, sh1: shield?.capacity || 0, sh2: secondShield?.capacity || 0, energy: maxEnergy, score: 0, missiles: activeShip?.fitting?.rocketCount || 0, mines: activeShip?.fitting?.mineCount || 0, fuel: initialFuel, hullPacks: initialHullPacks, boss: null as any, 
-    alert: mode === 'drift' ? "DRIFTING - SECTOR SECURE" : "", 
-    alertType: 'info' as 'info' | 'warning' | 'alert',
-    scavengeTimer: 0, missionTimer: MISSION_DURATION, isPaused: false,
-    cargoMissiles: 0, cargoMines: 0, cargoFuel: 0, cargoEnergy: 0, energyDepleted: false, bossDead: mode === 'drift',
-    gamePhase: 'travel' as 'travel' | 'scavenge' | 'quiet' | 'approach',
-    approachProgress: 0,
-    selectedTargetId: currentPlanet.id,
-    systemZoom: 1.0,
-    systemPan: { x: 0, y: 0 }
-  });
-
-  const [displayedAlert, setDisplayedAlert] = useState<string[]>([]);
-  useEffect(() => {
-      const msg = stats.alert;
-      if (!msg) { setDisplayedAlert([]); return; }
-      if (msg.includes("||")) {
-          setDisplayedAlert(msg.split("||").map(s => s.trim()));
-          return;
-      }
-      if (msg.length <= 25) { setDisplayedAlert([msg]); return; }
-      
-      const words = msg.split(' ');
-      const parts: string[] = [];
-      let currentPart = "";
-      
-      words.forEach(word => {
-          if ((currentPart + word).length > 25) {
-              parts.push(currentPart.trim());
-              currentPart = word + " ";
-          } else {
-              currentPart += word + " ";
-          }
-      });
-      if (currentPart) parts.push(currentPart.trim());
-      
-      let i = 0;
-      setDisplayedAlert([parts[0]]);
-      
-      if (parts.length > 1) {
-          const interval = setInterval(() => {
-              i = (i + 1) % parts.length;
-              setDisplayedAlert([parts[i] + (parts.length > 1 ? "..." : "")]);
-          }, 2000);
-          return () => clearInterval(interval);
-      }
-  }, [stats.alert]);
-
-  const onGameOverRef = useRef(onGameOver);
-  useEffect(() => { onGameOverRef.current = onGameOver; }, [onGameOver]);
-
-  const stateRef = useRef({
-    px: 0, py: 0, integrity: initialIntegrity, fuel: initialFuel, energy: maxEnergy, sh1: shield?.capacity || 0, sh2: secondShield?.capacity || 0, score: 0, hullPacks: initialHullPacks, sh1ShatterTime: 0, sh2ShatterTime: 0, missionTime: 0, autoRepair: { active: false, timer: 0, lastTick: 0 },
-    bullets: [] as any[], enemyBullets: [] as any[], missiles: [] as Missile[], mines: [] as Mine[], enemies: [] as Enemy[], particles: [] as Particle[], stars: [] as any[], gifts: [] as Gift[], asteroids: [] as Asteroid[], energyBolts: [] as EnergyBolt[],
-    fireflies: Array.from({length: 12}).map(() => ({x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, vx: (Math.random()-0.5)*1.5, vy: (Math.random()-0.5)*1.5, size: 2.5 + Math.random()*2.5, color: '#00f2ff'})),
-    keys: new Set<string>(), lastFire: 0, lastSpawn: 0, lastAsteroidSpawn: 0, lastBoltSpawn: 0, sunSpawned: false, gameActive: true, frame: 0, missileStock: activeShip?.fitting?.rocketCount || 0, mineStock: activeShip?.fitting?.mineCount || 0, equippedWeapons: [...(activeShip?.fitting?.weapons || [])], 
-    bossSpawned: false, 
-    bossDead: mode === 'drift', 
-    lootPending: false, shake: 0, playerDead: false, playerExploded: false, deathSequenceTimer: 300, 
-    gamePhase: mode === 'drift' ? 'scavenge' : 'travel' as 'travel' | 'scavenge' | 'quiet' | 'approach',
-    scavengeTimeRemaining: mode === 'drift' ? 3600 : 0, 
-    quietTimer: 600, 
-    approachTimer: 0,
-    firstShotFired: false,
-    starDirection: { vx: 0, vy: 1 }, isMeltdown: false, meltdownTimer: 600,
-    missionCargo: [...(activeShip?.fitting?.cargo || [])] as CargoItem[], reloading: { missiles: false, mines: false, fuel: false, repair: false, fuelFilling: false, fuelTarget: 0, energy: false, energyTimer: 0, energyActive: false }, isPaused: false, pauseStartTime: 0, observationTimer: 0, isInitialized: false,
-    weaponCooldowns: {} as Record<string, number>,
-    charging: { active: false, startTime: 0, level: 0, discharged: false },
-    energyDepleted: false, lastHitTime: 0, gunHeat: 0, gunKick: 0, crystalExtension: 0, asteroidCycleStartTime: Date.now(), warpFactor: 1.0, missionDurationConsumed: 0, isOverdrive: false, cargoMissiles: 0, cargoMines: 0, hasOverheated: false,
-    selectedTargetId: currentPlanet.id,
-    mousePos: { x: 0, y: 0 }
-  });
-
-  const getHeatColor = (heat: number) => { if (heat < 0.2) return '#1c1917'; if (heat < 0.4) return '#78350f'; if (heat < 0.6) return '#dc2626'; if (heat < 0.8) return '#ea580c'; return '#facc15'; };
-  const getBarrelColor = (heat: number) => { if (heat < 0.2) return '#4b5563'; if (heat < 0.5) return '#b91c1c'; if (heat < 0.8) return '#ea580c'; return '#ffffff'; };
-  const getGunAngle = (side: number, time: number, isExotic: boolean) => { const swiveling = stateRef.current.keys.has('ControlLeft') || stateRef.current.keys.has('ControlRight'); if (!swiveling) return 0; const rad = Math.PI / 180; const oscillation = Math.sin(time / 1500 * Math.PI * 2) * 10 * rad; if (side === 0) return oscillation; if (side === -1) return oscillation; return -oscillation; };
-  const createImpactEffect = (x: number, y: number, type: 'asteroid' | 'vessel' | 'shield', color?: string) => { const s = stateRef.current; if (type === 'asteroid') { s.particles.push({ x, y, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3, life: 0.6, color: 'rgba(200,200,200,0.45)', size: 4 + Math.random()*10, type: 'smoke' }); for(let i=0; i<4; i++) s.particles.push({ x, y, vx: (Math.random()-0.5)*6, vy: (Math.random()-0.5)*6, life: 0.4 + Math.random()*0.3, color: '#4b5563', size: 1.5 + Math.random()*2, type: 'debris' }); } else if (type === 'vessel') { for(let i=0; i<6; i++) { s.particles.push({ x, y, vx: (Math.random()-0.5)*12, vy: (Math.random()-0.5)*12, life: 0.3, color: '#facc15', size: 1.2, type: 'spark' }); } s.particles.push({ x, y, vx: 0, vy: 0, life: 0.2, color: '#fff', size: 8, type: 'fire' }); } else if (type === 'shield') { for(let i=0; i<5; i++) { s.particles.push({ x, y, vx: (Math.random()-0.5)*15, vy: (Math.random()-0.5)*15, life: 0.35, color: color || '#38bdf8', size: 2.2, type: 'plasma' }); } } };
-  const spawnAsteroidLoot = (x: number, y: number, loot: { type: GiftType, id?: string, name?: string } | null, z: number = 0) => { if (!loot) return; const s = stateRef.current; s.gifts.push(new Gift(x, y, loot.type, loot.id, loot.name, z)); };
-  const triggerChainReaction = (x: number, y: number, sourceId: any) => { const s = stateRef.current; const radius = 180; const chainDmg = 150 * (1 + (difficulty * 0.25)); s.enemies.forEach(en => { if (en === sourceId) return; const dx = en.x - x, dy = en.y - y; if (Math.sqrt(dx*dx + dy*dy) < radius) applyDamageToEnemy(en, chainDmg, WeaponType.PROJECTILE, true); }); };
-  const createExplosion = (x: number, y: number, isBoss: boolean = false, isMine: boolean = false, isShieldOverload: boolean = false, customSmokeColor?: string) => { const s = stateRef.current; if (isMine) { for(let i=0; i<8; i++) { s.particles.push({ x: x + (Math.random()-0.5)*20, y: y + (Math.random()-0.5)*20, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 0.7, color: Math.random() > 0.5 ? '#facc15' : '#ef4444', size: 30 + Math.random()*20, type: 'fire' }); } for(let i=0; i<10; i++) { s.particles.push({ x, y, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3, life: 1.5, color: 'rgba(50,50,50,0.8)', size: 40 + Math.random()*30, type: 'smoke' }); } s.particles.push({ x, y, vx: 0, vy: 0, life: 0.3, color: '#ffffff', size: 90, type: 'shock' }); return; } const count = isBoss ? 150 : (isShieldOverload ? 100 : 50); const now = Date.now(); if (!s.playerDead && !s.playerExploded) { const dx = x - s.px, dy = y - s.py, d = Math.sqrt(dx*dx + dy*dy); if (d < 220) { let dmg = (isBoss ? 80 : (isMine ? 50 : 25)) * (1 - (d/280)); dmg *= 0.6; const activeRed = (shield?.id === 'sh_beta' && s.sh1 > 0) || (secondShield?.id === 'sh_beta' && s.sh2 > 0); if (activeRed) dmg *= 0.05; if (s.sh2 > 0) { s.sh2 -= dmg * 3; if (s.sh2 <= 0) { s.sh2 = 0; s.sh2ShatterTime = now; } } else if (s.sh1 > 0) { s.sh1 -= dmg * 3; if (s.sh1 <= 0) { s.sh1 = 0; s.sh1ShatterTime = now; } } else s.integrity -= dmg; if (dmg > 2) { s.shake = 30; audioService.playShieldHit(); } } } const vividColors = ['#ff0000', '#00ff00', '#3b82f6', '#facc15', '#f472b6', '#ffffff', '#00f2ff', '#a855f7']; const smokeCount = 20; for (let i = 0; i < smokeCount; i++) { const angle = Math.random() * Math.PI * 2, speed = Math.random() * 3; const color = customSmokeColor || 'rgba(80,80,80,0.35)'; s.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.2 + Math.random(), size: 8 + Math.random() * 18, color: color, type: 'smoke' }); } for (let i = 0; i < count; i++) { const angle = Math.random() * Math.PI * 2, speed = Math.random() * (isBoss ? 18 : 12); const type = Math.random() > 0.85 ? 'debris' : (Math.random() > 0.5 ? 'spark' : 'fire'); const pColor = vividColors[Math.floor(Math.random() * vividColors.length)]; s.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 0.6 + Math.random() * 1.0, size: Math.random() * (isBoss ? 4 : 2) + 1, color: pColor, type }); } };
-  const applyDamageToEnemy = (en: Enemy, dmg: number, wType?: WeaponType, fromChain: boolean = false, isMega: boolean = false) => { const s = stateRef.current; if (en.sh > 0 && !isMega) { if (en.shieldImmunity === 'kinetic' && (wType === WeaponType.MISSILE || wType === WeaponType.MINE || wType === WeaponType.ROCKET)) { for(let i=0; i<3; i++) s.particles.push({ x: en.x, y: en.y + 60, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 0.4, color: '#f97316', size: 2, type: 'spark' }); return; } if (en.shieldImmunity === 'energy' && (wType === WeaponType.LASER || wType === WeaponType.PROJECTILE)) { for(let i=0; i<3; i++) s.particles.push({ x: en.x, y: en.y + 60, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 0.4, color: '#3b82f6', size: 2, type: 'spark' }); return; } } let finalDmg = dmg; if (wType === WeaponType.LASER || wType === WeaponType.EMP) finalDmg *= 6.0; else if (wType === WeaponType.PROJECTILE) finalDmg *= 2.23; if (en.sh > 0) { const leftover = Math.max(0, finalDmg - en.sh); en.sh = Math.max(0, en.sh - finalDmg); if (leftover > 0) { en.hp -= leftover; en.burnLevel = 1; en.shieldRegenTimer = 0; } audioService.playShieldHit(); } else { en.hp -= finalDmg; en.burnLevel = 1; if (en.hp < en.maxHp * 0.6) en.burnLevel = 2; if (en.hp <= 0) { if (!fromChain) triggerChainReaction(en.x, en.y, en); const scaling = (1 + (difficulty - 1) * 0.1), baseVal = en.type === 'scout' ? 100 : (en.type === 'boss' ? 0 : 300); s.score += Math.floor(baseVal * scaling); if (en.type === 'boss' && !s.bossDead) { s.score += Math.floor(10000 * Math.pow(1.3, difficulty - 1)); } } } };
-  const spawnBossExplosions = (bx: number, by: number) => { const s = stateRef.current; s.shake = 100; setStats(p => ({...p, alert: "TARGET NEUTRALIZED - ORBIT SECURED"})); const iters = 15; for (let i = 0; i < iters; i++) { setTimeout(() => { const ex = bx + (Math.random() - 0.5) * 500, ey = by + (Math.random() - 0.5) * 500; createExplosion(ex, ey, true); audioService.playExplosion(0, 1.8); s.shake = 55; }, i * 100); } 
-    // BOSS DROP LOGIC
-    if (Math.random() > 0.5) { 
-        const randomEx1 = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)]; 
-        s.gifts.push(new Gift(bx, by, 'weapon', randomEx1.id, randomEx1.name)); 
-    } else { 
-        const randomShield = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)];
-        s.gifts.push(new Gift(bx, by, 'shield', randomShield.id, randomShield.name)); 
-    } 
-  };
-  const drawShip = (ctx: CanvasRenderingContext2D, sInst: any, x: number, y: number, thrust: number, side: number, isBreaking: boolean, rotation: number = 0, isPlayer: boolean = false, warpFactor: number = 1.0, isOverdrive: boolean = false, scale: number = 0.5) => { ctx.save(); ctx.translate(x, y); ctx.rotate(rotation); ctx.scale(scale, scale); ctx.translate(-50, -50); if (!isPlayer) ctx.globalAlpha = 1; const { engines: engineCount, hullShapeType, wingStyle } = sInst.config; const gunHeatLevel = isPlayer ? Math.max(stateRef.current.gunHeat, stateRef.current.charging.level) : 0; const isOverheated = isPlayer ? stateRef.current.hasOverheated : false; let gunBodyColor = sInst.gunBodyColor || '#1c1917'; if (isPlayer) { if (isOverheated) { gunBodyColor = '#3f2c22'; } else if (gunHeatLevel > 0.4) { gunBodyColor = '#7f1d1d'; } } const drawEngine = (ex: number, ey: number) => { if (isOverdrive && isPlayer) { const grad = ctx.createLinearGradient(ex, ey - 18, ex, ey + 8); grad.addColorStop(0, '#dc2626'); grad.addColorStop(1, '#facc15'); ctx.fillStyle = grad; ctx.shadowColor = '#f97316'; ctx.shadowBlur = 15; } else { ctx.fillStyle = sInst.engineColor || '#334155'; ctx.shadowBlur = 0; } ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(ex - 9.6, ey - 8, 19.2, 20, 3); else ctx.rect(ex - 9.6, ey - 8, 19.2, 20); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = sInst.nozzleColor || '#171717'; ctx.beginPath(); ctx.moveTo(ex-8, ey+8); ctx.lineTo(ex-9.6, ey+19.2); ctx.quadraticCurveTo(ex, ey+24, ex+9.6, ey+19.2); ctx.lineTo(ex+8, ey+8); ctx.fill(); if (thrust > 0) { if (isOverdrive && isPlayer) { ctx.fillStyle = '#00f2ff'; ctx.shadowColor = '#00f2ff'; ctx.shadowBlur = 20; } else { ctx.fillStyle = sInst.type === 'boss' ? '#a855f7' : '#f97316'; ctx.shadowBlur = 0; } ctx.globalAlpha = 0.4 + Math.random() * 0.4; ctx.beginPath(); const jetLen = (50 * thrust) * warpFactor; ctx.moveTo(ex-8, ey+15); ctx.lineTo(ex+8, ey+15); ctx.lineTo(ex, ey+15+jetLen+Math.random()*15); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; ctx.shadowBlur = 0; } }; 
-  if (engineCount === 1) { drawEngine(50, 82); } 
-  else if (engineCount === 2) { [25, 75].forEach(ex => drawEngine(ex, 75)); } 
-  else if (engineCount === 3) { [25, 50, 75].forEach(ex => drawEngine(ex, 75)); }
-  else { [20, 40, 60, 80].forEach(ex => drawEngine(ex, 75)); }
-  ctx.fillStyle = sInst.wingColor || '#64748b'; ctx.beginPath(); if (wingStyle === 'delta') { ctx.moveTo(35, 40); ctx.lineTo(4, 88); ctx.lineTo(50, 78); ctx.moveTo(65, 40); ctx.lineTo(96, 88); ctx.lineTo(50, 78); } else { ctx.ellipse(50, 60, 48, 18, 0, 0, Math.PI * 2); } ctx.fill(); if (isBreaking) { ctx.fillStyle = '#f87171'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.moveTo(30, 20); ctx.lineTo(30, -10); ctx.lineTo(35, 20); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(70, 20); ctx.lineTo(70, -10); ctx.lineTo(65, 20); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; } if (side !== 0) { ctx.fillStyle = '#38bdf8'; ctx.globalAlpha = 0.9; const wx = side < 0 ? 85 : 15, sDir = side < 0 ? 1 : -1; ctx.beginPath(); ctx.moveTo(wx, 55); ctx.lineTo(wx + (sDir * 35), 55); ctx.lineTo(wx, 60); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; } ctx.fillStyle = sInst.color || '#94a3b8'; ctx.beginPath(); if (hullShapeType === 'triangle') { ctx.moveTo(50, 10); ctx.lineTo(80, 85); ctx.lineTo(20, 85); } else { if (ctx.roundRect) ctx.roundRect(30, 15, 40, 75, 12); else ctx.rect(30, 15, 40, 75); } ctx.fill(); const renderGun = (gx: number, gy: number, sc: number, gunSide: number) => { const isExotic = EXOTIC_WEAPONS.some(ex => ex.id === sInst.fitting?.weapons[0]?.id); const gunAngle = isPlayer ? getGunAngle(gunSide, Date.now(), isExotic) : 0; const kick = isPlayer ? stateRef.current.gunKick : 0; const crystalExt = isPlayer ? stateRef.current.crystalExtension : 1.0; const recoil = kick * 10; const extension = crystalExt * 15; const netMovement = extension - recoil; ctx.save(); ctx.translate(gx, gy); ctx.scale(sc * 1.32, sc * 1.32); ctx.rotate(gunAngle); if (isPlayer) { ctx.fillStyle = getBarrelColor(gunHeatLevel); if (gunHeatLevel > 0.5) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = (gunHeatLevel - 0.5) * 10; } } else { ctx.fillStyle = sInst.gunColor || '#60a5fa'; } const barrelY = -18 - netMovement; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(-4, barrelY, 8, 22, 2); else ctx.rect(-4, barrelY, 8, 22); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = gunBodyColor; if (isPlayer && gunHeatLevel > 0.6 && !isOverheated) { ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 10; } ctx.fillRect(-9, -10, 18, 30); ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(-9, -6, 18, 2); ctx.fillRect(-9, -1, 18, 2); ctx.fillRect(-9, 4, 18, 2); ctx.fillRect(-9, 9, 18, 2); if (isPlayer && gunHeatLevel > 0.6 && !isOverheated && Math.random() > 0.85) { stateRef.current.particles.push({ x: gx + sInst.x + (Math.random()-0.5)*10, y: gy + sInst.y - 10, vx: (Math.random()-0.5), vy: -2 - Math.random(), life: 0.8, color: 'rgba(80, 80, 80, 0.4)', size: 2 + Math.random()*3, type: 'smoke' }); } ctx.restore(); }; if (sInst.config.defaultGuns === 1) { renderGun(50, 15, 0.35, 0); } else { renderGun(25, 45, 0.55, -1); renderGun(75, 45, 0.55, 1); } ctx.fillStyle = sInst.cockpitColor || '#38bdf8'; ctx.beginPath(); ctx.ellipse(50, (hullShapeType === 'triangle' ? 58 : 38), 9, 14, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); };
-  const togglePause = () => { const s = stateRef.current; s.isPaused = !s.isPaused; if (s.isPaused) { s.pauseStartTime = Date.now(); s.keys.clear(); } setStats(p => ({ ...p, isPaused: s.isPaused })); if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); };
-  const fireWeapons = (multiplier: number = 1.0, isRapidFire: boolean = false, bypassCooldown: boolean = false, variant: 'normal' | 'mega' | 'heavy_auto' = 'normal') => { const s = stateRef.current; if (s.energyDepleted || s.energy <= 0 || s.isMeltdown || s.playerDead) return; if (s.warpFactor > 1.5) return; if (s.gunHeat >= 1.0 && !bypassCooldown && variant !== 'mega') return; const now = Date.now(); const numGuns = activeShip.config.defaultGuns; let fired = false; let isKineticFire = false; for (let i = 0; i < numGuns; i++) { const w = s.equippedWeapons[i]; if (!w) continue; const weaponDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(wd => wd.id === w.id); if (!weaponDef) continue; let rateDivisor = 1.0; if (variant === 'heavy_auto') rateDivisor = 0.5; const cooldown = 1000 / (weaponDef.fireRate * rateDivisor); const cooldownKey = `slot_${i}`; if (!bypassCooldown && now - (s.weaponCooldowns[cooldownKey] || 0) < cooldown) continue; s.weaponCooldowns[cooldownKey] = now; const xOff = numGuns === 1 ? 0 : (i === 0 ? -12.5 : 12.5); let damageMult = multiplier; let sizeMult = 1.0; if (variant === 'mega') damageMult = 10.0; else if (variant === 'heavy_auto') damageMult = 3.0; else sizeMult = 1.0; const isExotic = EXOTIC_WEAPONS.some(ex => ex.id === weaponDef.id); const gunSide = numGuns === 1 ? 0 : (i === 0 ? -1 : 1); const angle = getGunAngle(gunSide, now, isExotic); const speed = 24; const vx = Math.sin(angle) * speed; const vy = -Math.cos(angle) * speed; const baseB: any = { x: s.px + xOff, y: s.py - 35, vx: vx, vy: vy, damage: weaponDef.damage * damageMult * (1 + (difficulty*0.18)), type: weaponDef.id, beamColor: weaponDef.beamColor || '#fff', timer: 0, target: null, size: 3.5 * sizeMult, isBeam: false, xOffset: xOff, wType: weaponDef.type, power: multiplier, variant: variant }; if (weaponDef.id === 'exotic_wave') baseB.visualType = 'ring'; else if (weaponDef.id === 'exotic_bolt' || weaponDef.id === 'exotic_mining_laser') baseB.visualType = 'thunder'; else if (weaponDef.id === 'exotic_bubbles' || weaponDef.id === 'exotic_nova' || weaponDef.id === 'exotic_gravity') baseB.visualType = 'solid_glow'; else if (weaponDef.id === 'exotic_fan' || weaponDef.id === 'exotic_arc' || weaponDef.id === 'exotic_venom') baseB.visualType = 'spindle'; else if (weaponDef.id === 'exotic_seeker' || weaponDef.id === 'exotic_plasma_ball' || weaponDef.id === 'exotic_flame') baseB.visualType = 'comet'; s.bullets.push(baseB); const pan = xOff < 0 ? -0.4 : 0.4; let sfxType: 'laser' | 'cannon' | 'rocket' | 'emp' | 'mega' | 'missile' | 'mine' = 'cannon'; if (variant === 'mega') sfxType = 'mega'; else if (weaponDef.type === WeaponType.LASER) sfxType = 'laser'; else if (weaponDef.type === WeaponType.ROCKET) sfxType = 'rocket'; else if (weaponDef.type === WeaponType.EMP) sfxType = 'emp'; else if (weaponDef.type === WeaponType.MISSILE) sfxType = 'missile'; audioService.playWeaponFire(sfxType, pan); const efficiency = isExotic ? 0.3 : 1.2; const powerFactor = (variant === 'mega' ? 10 : (variant === 'heavy_auto' ? 3 : 1)); s.energy -= (weaponDef.energyCost / 20) * multiplier * efficiency * powerFactor; fired = true; if (weaponDef.type === WeaponType.PROJECTILE || weaponDef.type === WeaponType.MISSILE) { isKineticFire = true; const muzzleX = s.px + xOff + (Math.sin(angle) * 40); const muzzleY = s.py - 35 - (Math.cos(angle) * 40); stateRef.current.particles.push({ x: muzzleX, y: muzzleY, vx: s.starDirection.vx * 0.5 + (Math.random()-0.5), vy: -2, life: 0.15, color: '#ffff00', size: 6 + Math.random() * 4, type: 'fire' }); stateRef.current.particles.push({ x: muzzleX, y: muzzleY, vx: (Math.random()-0.5)*0.5, vy: 1, life: 0.4, color: 'rgba(100,100,100,0.3)', size: 4, type: 'smoke' }); } } if (fired) { s.firstShotFired = true; s.gunKick = isKineticFire ? 1.8 : 1.0; if (variant === 'normal') s.gunHeat = Math.min(1.0, s.gunHeat + 0.005); else if (variant === 'mega') s.gunHeat = 1.0; else if (variant === 'heavy_auto') s.gunHeat = Math.min(1.0, s.gunHeat + 0.1); if (s.gunHeat >= 1.0) s.hasOverheated = true; } };
-
-  useEffect(() => {
-    const canvas = canvasRef.current; if (!canvas) return;
-    const ctx = canvas.getContext('2d'); if (!ctx) return;
-    if (stateRef.current.px === 0) { stateRef.current.px = window.innerWidth / 2; stateRef.current.py = window.innerHeight * 0.85; }
-    const starColors = ['#ffffff', '#fef08a']; 
-    const generateStars = (w: number, h: number) => { 
-        stateRef.current.stars = Array.from({ length: 300 }).map(() => ({ x: Math.random() * w, y: Math.random() * h, s: Math.random() * 2.8, v: 0.15 + Math.random() * 0.6, color: starColors[Math.floor(Math.random() * starColors.length)], shimmer: Math.random() > 0.8, shimmerPhase: Math.random() * Math.PI * 2 })); 
-    };
-    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; generateStars(canvas.width, canvas.height); const s = stateRef.current; s.px = Math.max(35, Math.min(canvas.width - 35, s.px)); s.py = Math.max(35, Math.min(canvas.height - 110, s.py)); s.bullets = []; s.enemyBullets = []; if (s.isInitialized && s.gameActive && !s.playerDead && !s.isPaused) { s.isPaused = true; s.pauseStartTime = Date.now(); s.keys.clear(); setStats(p => ({ ...p, isPaused: true })); } };
-    const handleBlur = () => { const s = stateRef.current; if (s.gameActive && !s.playerDead && !s.isPaused) { s.isPaused = true; s.pauseStartTime = Date.now(); s.keys.clear(); setStats(p => ({ ...p, isPaused: true })); } };
-    resize(); window.addEventListener('resize', resize); window.addEventListener('blur', handleBlur); stateRef.current.isInitialized = true;
-    
-    const handleKey = (e: KeyboardEvent, isDown: boolean) => { 
-        const s = stateRef.current; const now = Date.now(); if (['Tab', 'CapsLock', 'ShiftLeft', 'Space'].includes(e.code)) e.preventDefault(); if (e.code === 'Space') { if (isDown && !s.keys.has('Space')) { s.charging.active = true; s.charging.startTime = now; s.keys.add('Space'); audioService.startCharging(); } else if (!isDown) { audioService.stopCharging(); if (s.charging.active) { const dur = now - s.charging.startTime; if (dur < 1500) { const ratio = Math.min(1.0, dur / 1500); const power = 1.0 + (ratio * 9.0); fireWeapons(power, false, true, 'mega'); } } s.charging.active = false; s.keys.delete('Space'); } return; } if (isDown) s.keys.add(e.code); else s.keys.delete(e.code); if (isDown && s.isPaused && e.code === 'KeyP') { togglePause(); return; } if (isDown && e.code === 'KeyP') { togglePause(); return; } if (isDown && e.code === 'Escape') { s.gameActive = false; const finalHP = s.isMeltdown ? 25 : Math.max(0, s.integrity); onGameOverRef.current(false, s.score, true, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: 0, bossDefeated: s.bossDead, health: finalHP, hullPacks: s.hullPacks, cargo: s.missionCargo }); } 
-        if (isDown && (e.code === 'Backslash' || e.code === 'Tab') && !s.playerDead && !s.isPaused) { 
-            if (s.missileStock > 0) { 
-                s.missileStock--; 
-                const isEmp = ships[0].fitting.weapons.some(w => w && w.id === 'ord_missile_emp'); 
-                s.missiles.push(new Missile(s.px, s.py - 40, (Math.random() - 0.5) * 4, -7.0, false, isEmp)); 
-                audioService.playWeaponFire('missile'); 
-            } 
-        } 
-        if (isDown && (e.code === 'Enter' || e.code === 'CapsLock') && !s.playerDead && !s.isPaused) { 
-            if (s.mineStock > 0) { 
-                s.mineStock--; 
-                const hasEmpTech = ships[0].fitting.cargo.some(c => c.id === 'ord_mine_emp'); 
-                s.mines.push(new Mine(s.px, s.py, hasEmpTech)); 
-                audioService.playWeaponFire('mine'); 
-            } 
-        } 
-    };
-    const handleKeyDown = (e: KeyboardEvent) => handleKey(e, true);
-    const handleKeyUp = (e: KeyboardEvent) => handleKey(e, false);
-    window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp);
-    
-    let anim: number;
-    const loop = () => {
-      const s = stateRef.current; if (!s.gameActive) return; s.frame++; const pSpeed = 10.5, now = Date.now();
-      const isVertical = !s.playerDead && (s.keys.has('KeyW') || s.keys.has('ArrowUp') || s.keys.has('KeyS') || s.keys.has('ArrowDown'));
-      if (!s.isPaused) {
+        // BOSS SHIELDS: 2 Layers of Strongest Shields + Native Regen
+        // Layer 1: High Capacity Exotic
+        const shield1 = EXOTIC_SHIELDS[0];
+        this.shieldLayers.push({ 
+            color: shield1.color, 
+            max: shield1.capacity * (1 + diff * 0.1), 
+            current: shield1.capacity * (1 + diff * 0.1), 
+            rotation: 0 
+        });
         
-        // FUEL RESERVE LOGIC
-        const reserveLimit = maxFuelCapacity * 0.1;
-        const canConsumeFuel = s.fuel > reserveLimit;
-        
-        const isTryingToWarp = s.keys.has('KeyW') || s.keys.has('ArrowUp');
-        const topLimit = 135; 
-        const isInWarpZone = s.py < (canvas.height * 0.4); 
-        
-        let targetWarp = 1.0;
-        s.isOverdrive = false; 
-        
-        if (isTryingToWarp && isInWarpZone && canConsumeFuel) { 
-            targetWarp = 4.0; 
-            s.py = Math.max(topLimit, s.py - pSpeed); 
-            // HEAVY TURBO COST: 0.05 per frame (approx 3 units per second at 60fps)
-            // User requested "additional 2 unit... per level". We implement a high burn rate.
-            s.fuel = Math.max(0, s.fuel - 0.05); 
-            s.shake = 5; 
-            s.isOverdrive = true; 
-        } else { 
-            targetWarp = 1.0; 
-            if (isTryingToWarp && !canConsumeFuel && s.fuel > 0) {
-                 // Trying to turbo but hit reserve limit
-                 setStats(p => ({...p, alert: "FUEL RESERVE LOCKED - EMERGENCY JUMP ONLY", alertType: 'warning'}));
-            }
-        }
-        
-        if (s.py < topLimit) s.py = topLimit;
-        s.warpFactor += (targetWarp - s.warpFactor) * 0.1;
-        const deltaMs = 16.66;
+        // Layer 2: Another Strong Exotic
+        const shield2 = EXOTIC_SHIELDS[1];
+        this.shieldLayers.push({ 
+            color: shield2.color, 
+            max: shield2.capacity * (1 + diff * 0.1), 
+            current: shield2.capacity * (1 + diff * 0.1), 
+            rotation: Math.PI / 2 
+        });
 
-        if (mode === 'drift') {
-            s.missionDurationConsumed += (deltaMs * s.warpFactor) / 1000;
-            if (s.missionDurationConsumed >= MISSION_DURATION) {
-                onGameOverRef.current(true, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: s.fuel, bossDefeated: true, health: s.integrity, hullPacks: s.hullPacks, cargo: s.missionCargo });
-                return;
+        this.shieldRegen = 2.0 + (diff * 0.2);
+    } else {
+        this.equippedWeapons = [null, null, null];
+
+        // Standard Aliens (Spawned via difficulty)
+        if (this.config.isAlien) {
+            // Use the config's native weapon and slot setup
+            // 1 Slot = Spread (Center), 2 Slots = Focused (Wings)
+            const wId = this.config.weaponId || 'exotic_plasma_jet';
+            const slots = this.config.defaultGuns; // 1 or 2
+            
+            if (slots === 1) {
+                 this.equippedWeapons[0] = { id: wId, count: 1 };
+            } else {
+                 this.equippedWeapons[1] = { id: wId, count: 1 };
+                 this.equippedWeapons[2] = { id: wId, count: 1 };
             }
         } else {
-            if (s.gamePhase === 'travel') {
-                s.missionDurationConsumed += (deltaMs * s.warpFactor) / 1000;
-                if (s.missionDurationConsumed >= MISSION_DURATION) {
-                    s.gamePhase = 'scavenge';
-                    s.scavengeTimeRemaining = 1200; 
-                    setStats(p => ({...p, alert: "WARNING: BOSS SIGNATURE DETECTED", alertType: 'warning'}));
-                }
-            } else if (s.gamePhase === 'scavenge') {
-                // In Scavenge mode, we wait for Boss to be defeated.
-                s.scavengeTimeRemaining--;
-                
-                // Spawn boss on first shot if not already spawned
-                if (s.firstShotFired && !s.bossSpawned) {
-                    s.bossSpawned = true;
-                    s.enemies.push(new Enemy(canvas.width/2, -450, 'boss', BOSS_SHIPS[Math.floor(Math.random() * BOSS_SHIPS.length)], difficulty));
-                    setStats(p => ({ ...p, alert: "BOSS INTERCEPTION", alertType: 'alert' }));
-                }
-                
-                // Transition logic: Only go to approach if boss is dead.
-                if (s.bossSpawned && s.bossDead) {
-                    if (!s.sunSpawned) { s.sunSpawned = true; }
-                    s.gamePhase = 'approach';
-                    s.approachTimer = 0;
-                    setStats(p => ({...p, alert: "APPROACH VECTOR LOCKED", alertType: 'info'}));
-                }
-            } else if (s.gamePhase === 'approach') {
-                // Stop zooming and moving when centred
-                // Assume 400 frames is enough to zoom in and center
-                if (s.approachTimer < 400) {
-                    s.approachTimer++;
-                    // Lock player to forward flight
-                    if (s.px < canvas.width/2 - 10) s.px += 2;
-                    else if (s.px > canvas.width/2 + 10) s.px -= 2;
+            // Standard Human Ships behaving as Aliens (Quadrant-specific loadouts)
+            const standardEnergy = 'gun_pulse';
+            const standardProjectile = 'gun_bolt';
+
+            switch (quadrant) {
+                case QuadrantType.ALFA:
+                    // Alfa: One standard energy weapon in the nose
+                    this.equippedWeapons[0] = { id: standardEnergy, count: 1 };
+                    break;
+
+                case QuadrantType.BETA:
+                    // Beta: Some use two standard energy on wings
+                    if (Math.random() > 0.3) {
+                        this.equippedWeapons[1] = { id: standardEnergy, count: 1 };
+                        this.equippedWeapons[2] = { id: standardEnergy, count: 1 };
+                    } else {
+                        this.equippedWeapons[0] = { id: standardEnergy, count: 1 };
+                    }
+                    break;
+
+                case QuadrantType.GAMA:
+                    // Gamma: Mixed projectile/energy on wings
+                    const roll = Math.random();
+                    if (roll < 0.33) {
+                        const slot = Math.random() > 0.5 ? 1 : 2;
+                        this.equippedWeapons[slot] = { id: standardProjectile, count: 1 };
+                    } else if (roll < 0.66) {
+                        this.equippedWeapons[1] = { id: standardEnergy, count: 1 };
+                        this.equippedWeapons[2] = { id: standardProjectile, count: 1 };
+                    } else {
+                        this.equippedWeapons[1] = { id: standardProjectile, count: 1 };
+                        this.equippedWeapons[2] = { id: standardProjectile, count: 1 };
+                    }
+                    break;
+
+                case QuadrantType.DELTA:
+                    // Delta: Two or three weapons
+                    if (Math.random() > 0.5) {
+                        this.equippedWeapons[1] = { id: standardEnergy, count: 1 };
+                        this.equippedWeapons[2] = { id: standardEnergy, count: 1 };
+                    } else {
+                        this.equippedWeapons[0] = { id: standardProjectile, count: 1 };
+                        this.equippedWeapons[1] = { id: standardEnergy, count: 1 };
+                        this.equippedWeapons[2] = { id: standardEnergy, count: 1 };
+                    }
+                    break;
                     
-                    // Star Orbit Effect in Approach
-                    const cx = canvas.width / 2;
-                    const cy = canvas.height / 2;
-                    s.stars.forEach(st => {
-                        const dx = st.x - cx;
-                        const dy = st.y - cy;
-                        const r = Math.sqrt(dx*dx + dy*dy);
-                        let theta = Math.atan2(dy, dx);
-                        theta += 0.002; // Slow spin
-                        st.x = cx + Math.cos(theta) * r;
-                        st.y = cy + Math.sin(theta) * r;
-                    });
-                } else {
-                    // Arrived state
-                    const status = planetRegistry && planetRegistry[s.selectedTargetId] ? planetRegistry[s.selectedTargetId].status : 'occupied';
-                    const statusText = status === 'friendly' ? 'FRIENDLY' : (status === 'siege' ? 'UNDER SIEGE' : 'OCCUPIED');
-                    // Multi-line message using || splitter for ticker logic
-                    const destName = PLANETS.find(p => p.id === s.selectedTargetId)?.name || "DESTINATION";
-                    const alertMsg = `ARRIVED AT ${destName} || STATUS: ${statusText}`;
-                    
-                    // Only update state if message differs to avoid spam
-                    setStats(p => {
-                        if (p.alert !== alertMsg) {
-                            return {...p, alert: alertMsg, alertType: status === 'friendly' ? 'info' : 'alert'};
-                        }
-                        return p;
-                    });
+                default:
+                    this.equippedWeapons[0] = { id: standardEnergy, count: 1 };
+                    break;
+            }
+        }
+
+        // PROGRESSIVE SHIELD LOGIC
+        // Level 1: No Shields
+        // Level 2-3: 1 Shield Layer
+        // Level 4+: 2 Shield Layers
+        
+        let shieldCount = 0;
+        if (diff >= 4) shieldCount = 2;
+        else if (diff >= 2) shieldCount = 1;
+
+        if (shieldCount > 0) {
+            const baseShieldCap = 150 * diff;
+            
+            // Layer 1
+            const c1 = quadrant === QuadrantType.ALFA ? '#3b82f6' : (quadrant === QuadrantType.BETA ? '#f97316' : '#ef4444');
+            this.shieldLayers.push({ color: c1, max: baseShieldCap, current: baseShieldCap, rotation: Math.random() * Math.PI });
+
+            // Layer 2 (Stronger)
+            if (shieldCount > 1) {
+                const c2 = quadrant === QuadrantType.DELTA ? '#ffffff' : '#a855f7';
+                this.shieldLayers.push({ color: c2, max: baseShieldCap * 1.5, current: baseShieldCap * 1.5, rotation: Math.random() * Math.PI });
+            }
+        }
+    }
+  }
+
+  update(px: number, py: number, w: number, h: number, incomingFire: Projectile[]) {
+    // Decay vibration
+    if (this.vibration > 0) this.vibration = Math.max(0, this.vibration - 1);
+
+    if (this.type === 'boss') {
+        if (this.shieldLayers.length > 0 && this.shieldRegen > 0) {
+            // Regenerate the innermost (active) layer
+            const top = this.shieldLayers[0];
+            if (top.current < top.max) top.current = Math.min(top.max, top.current + this.shieldRegen);
+        }
+        this.vx = (this.vx + (px - this.x) * 0.002) * 0.96;
+        this.vy = (this.vy + (150 - this.y) * 0.01) * 0.92;
+    } else {
+        this.y += 3.5; 
+        this.vx = (this.vx + (Math.random() - 0.5) * 0.5) * 0.95; 
+        const dx = px - this.x;
+        
+        if (this.y > h * 0.5 && Math.abs(this.z) < 50) {
+            if (Math.abs(dx) < 100 && this.y < py) this.vx -= Math.sign(dx) * 0.8;
+            incomingFire.forEach(b => {
+                if (!b.isEnemy && Math.abs(b.y - this.y) < 150 && Math.abs(b.x - this.x) < 50) {
+                    this.vx += (this.x < b.x ? -1 : 1) * 0.5; 
+                }
+            });
+        }
+    }
+    this.x += this.vx; this.y += this.vy;
+    
+    this.shieldLayers.forEach((l, i) => {
+        l.rotation += 0.05 * (i % 2 === 0 ? 1 : -1);
+    });
+  }
+
+  takeDamage(amount: number, type: string, isMain: boolean, isOvercharge: boolean = false) {
+      if (this.shieldLayers.length > 0) {
+          let shieldDmg = amount;
+          
+          if (type.includes('missile') || type.includes('mine')) {
+              const isEmp = type.includes('emp');
+              // 1 EMP = 100% Shield (Instant disable), 2 Normal = 100% Shield (50% each)
+              const percentage = isEmp ? 1.0 : 0.5;
+              shieldDmg = this.shieldLayers[0].max * percentage;
+              
+              // Force vibration on heavy impact
+              this.vibration = isEmp ? 15 : 10;
+          }
+          else if (isMain) {
+              if (isOvercharge) {
+                  // EMP Effect: Massive damage to shields
+                  shieldDmg *= 5.0; 
+                  this.vibration = 15;
+              } else {
+                  shieldDmg *= 2.0; 
+              }
+          }
+          else if (type === 'laser' || type === 'trident') shieldDmg *= 1.5;
+          else if (type === 'projectile' || type === 'scatter' || type === 'flame') shieldDmg *= 0.3;
+          
+          if (amount > 50) this.vibration = Math.max(this.vibration, 5);
+
+          const layer = this.shieldLayers[0];
+          layer.current -= shieldDmg;
+          if (layer.current <= 0) {
+              this.shieldLayers.shift(); 
+              audioService.playShieldHit(); 
+          } else {
+              audioService.playShieldHit();
+          }
+      } else {
+          // HULL DAMAGE LOGIC
+          if (type.includes('missile') || type.includes('mine')) {
+              const isEmp = type.includes('emp');
+              // 1 Normal = 50% Hull, 1 EMP = 35% Hull
+              const percentage = isEmp ? 0.35 : 0.5;
+              this.hp -= this.maxHp * percentage;
+              this.vibration = 20;
+          } else {
+              let dmg = amount;
+              if (type === 'projectile' || type === 'scatter') dmg *= 2.0;
+              else if (type === 'flame') dmg *= 1.2; 
+              this.hp -= dmg;
+          }
+      }
+  }
+}
+
+class Asteroid {
+  x: number; y: number; z: number; hp: number; vx: number; vy: number; vz: number; size: number; color: string; 
+  loot: { type: string, id?: string, name?: string } | null = null;
+  vertices: {x:number, y:number, z:number}[]; faces: {indices: number[], color: string}[];
+  ax: number = 0; ay: number = 0; az: number = 0; vax: number; vay: number; vaz: number;
+  constructor(w: number, diff: number, isRich: boolean) {
+    this.x = Math.random() * w; this.y = -200; this.z = (Math.random() - 0.5) * 600;
+    this.vy = 2 + Math.random() * 2; 
+    this.vx = (Math.random() - 0.5) * 8; 
+    this.vz = (Math.random() - 0.5);
+    this.size = 12 + Math.random() * 25; 
+    this.hp = (this.size * 30) + (this.size * this.size);
+    this.vax = Math.random() * 0.05; this.vay = Math.random() * 0.05; this.vaz = Math.random() * 0.05;
+    const r = Math.random();
+    if (isRich && r > 0.6) { this.color = '#fbbf24'; this.loot = { type: 'gold', name: 'Gold' }; }
+    else if (r > 0.8) { this.color = '#ef4444'; this.loot = { type: 'missile' }; }
+    else if (r > 0.9) { this.color = '#3b82f6'; this.loot = { type: 'ammo', id: 'iron', name: 'Bullets' }; } 
+    else { this.color = '#78716c'; this.loot = null; }
+    const t = (1 + Math.sqrt(5)) / 2;
+    const verts = [[-1,t,0],[1,t,0],[-1,-t,0],[1,-t,0],[0,-1,t],[0,1,t],[0,-1,-t],[0,1,-t],[t,0,-1],[t,0,1],[-t,0,-1],[-t,0,1]];
+    this.vertices = verts.map(v => ({ x: v[0]*this.size, y: v[1]*this.size, z: v[2]*this.size }));
+    this.faces = [[0,11,5],[0,5,1],[0,1,7],[0,7,10],[0,10,11],[1,5,9],[5,11,4],[11,10,2],[10,7,6],[7,1,8],[3,9,4],[3,4,2],[3,2,6],[3,6,8],[3,8,9],[4,9,5],[2,4,11],[6,2,10],[8,6,7],[9,8,1]].map(i => ({ indices: i, color: this.color }));
+  }
+}
+
+interface Projectile { 
+    x: number; y: number; vx: number; vy: number; damage: number; color: string; type: string; life: number; 
+    isEnemy: boolean; width: number; height: number; glow?: boolean; glowIntensity?: number; isMain?: boolean; 
+    weaponId?: string; isTracer?: boolean; traceColor?: string; isOvercharge?: boolean;
+    // Smart Ordnance Props
+    target?: Enemy | null;
+    homingState?: 'searching' | 'tracking' | 'returning' | 'engaging';
+    z?: number; // Visual Z-level
+    headColor?: string;
+    finsColor?: string;
+    turnRate?: number;
+    maxSpeed?: number;
+}
+interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number; }
+interface Loot { x: number; y: number; z: number; type: string; id?: string; name?: string; isPulled: boolean; }
+
+// --- COLOR UTILS ---
+const hexToRgb = (hex: string) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : { r: 0, g: 0, b: 0 };
+};
+const mixColor = (c1: string, c2: string, weight: number) => {
+    const rgb1 = hexToRgb(c1);
+    const rgb2 = hexToRgb(c2);
+    const w = Math.min(1, Math.max(0, weight));
+    const r = Math.round(rgb1.r * (1 - w) + rgb2.r * w);
+    const g = Math.round(rgb1.g * (1 - w) + rgb2.g * w);
+    const b = Math.round(rgb1.b * (1 - w) + rgb2.b * w);
+    return `rgb(${r},${g},${b})`;
+};
+
+// Helper for alien colors
+const getAlienColors = (q: QuadrantType) => {
+    switch(q) {
+        case QuadrantType.ALFA: return { hull: '#f97316', wing: '#fdba74' }; // Orange, Light Orange
+        case QuadrantType.BETA: return { hull: '#7f1d1d', wing: '#fca5a5' }; // Dark Red, Light Red
+        case QuadrantType.GAMA: return { hull: '#1e3a8a', wing: '#93c5fd' }; // Dark Blue, Light Blue
+        case QuadrantType.DELTA: return { hull: '#334155', wing: '#cbd5e1' }; // Dark Gray, Silver
+        default: return { hull: '#f97316', wing: '#fdba74' };
+    }
+}
+
+// --- COMPONENT ---
+interface GameEngineProps {
+  ships: Array<{ config: ExtendedShipConfig; fitting: ShipFitting; color: string; wingColor?: string; cockpitColor?: string; gunColor: string; secondaryGunColor?: string; gunBodyColor?: string; engineColor?: string; nozzleColor?: string; }>;
+  shield: Shield | null; secondShield?: Shield | null; difficulty: number; currentPlanet: Planet; quadrant: QuadrantType; 
+  onGameOver: (success: boolean, finalScore: number, wasAborted?: boolean, payload?: any) => void;
+  fontSize: 'small' | 'medium' | 'large'; mode?: 'combat' | 'drift'; planetRegistry?: Record<string, PlanetStatusData>; 
+}
+
+const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, onGameOver, difficulty, currentPlanet, quadrant, fontSize, mode = 'combat' }) => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const activeShip = ships[0];
+  const maxEnergy = activeShip?.config?.maxEnergy || 1000;
+  const maxFuel = activeShip?.config?.maxFuel || 1.0;
+  
+  // UI & State
+  const [hud, setHud] = useState({ 
+    hp: 100, sh1: 0, sh2: 0, energy: maxEnergy, score: 0, missiles: 0, mines: 0, fuel: 0, 
+    alert: mode === 'drift' ? "DRIFTING" : "SYSTEMS READY", alertType: 'info', 
+    timer: mode === 'drift' ? 60 : 120, boss: null as any, cargoCount: 0, isPaused: false,
+    chargeLevel: 0,
+    swivelMode: false,
+    ammoCount: 0,
+    ammoType: 'iron',
+    isReloading: false
+  });
+  
+  const state = useRef({
+    px: window.innerWidth/2, py: window.innerHeight*0.8, hp: 100, fuel: 0, energy: maxEnergy, 
+    sh1: 0, sh2: 0, score: 0, time: mode === 'drift' ? 60 : 120, phase: 'travel', bossSpawned: false, bossDead: false,
+    enemies: [] as Enemy[], asteroids: [] as Asteroid[], bullets: [] as Projectile[], 
+    particles: [] as Particle[], loot: [] as Loot[], stars: [] as {x:number, y:number, s:number}[],
+    keys: new Set<string>(), lastFire: 0, lastSpawn: 0, frame: 0, 
+    missiles: activeShip.fitting.rocketCount, mines: activeShip.fitting.mineCount,
+    cargo: [...activeShip.fitting.cargo],
+    active: true, paused: false, meltdown: false, victoryTimer: 0,
+    chargeLevel: 0, isCharging: false, hasFiredOverload: false, lastRapidFire: 0,
+    swivelMode: false, swivelAngle: 0,
+    // Ammo & Reload
+    ammo: { ...activeShip.fitting.ammo }, // This is CARGO ammo
+    magazineCurrent: activeShip.fitting.magazineCurrent !== undefined ? activeShip.fitting.magazineCurrent : 200, // Gun ammo
+    reloadTimer: activeShip.fitting.reloadTimer || 0,
+    selectedAmmo: activeShip.fitting.selectedAmmo,
+    weaponFireTimes: {} as {[key: number]: number}, // Slot index -> Timestamp
+    weaponHeat: {} as {[key: number]: number}, // Slot index -> 0-100 Heat
+    lastMissileFire: 0,
+    lastMineFire: 0
+  });
+
+  // Helper to check if ship has ammo weapons
+  const hasAmmoWeapons = activeShip.fitting.weapons.some(w => {
+      if (!w) return false;
+      const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(wd => wd.id === w.id);
+      return def?.isAmmoBased;
+  });
+
+  // init state from props
+  useEffect(() => {
+      const s = state.current;
+      s.hp = activeShip.fitting.health;
+      s.fuel = activeShip.fitting.fuel;
+      s.sh1 = shield?.capacity || 0;
+      s.sh2 = secondShield?.capacity || 0;
+      s.missiles = activeShip.fitting.rocketCount;
+      s.mines = activeShip.fitting.mineCount;
+      s.stars = Array.from({length: 150}, () => ({x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, s: Math.random()*2}));
+      // Init heat
+      [0, 1, 2].forEach(i => s.weaponHeat[i] = 0);
+      return () => { audioService.stopCharging(); };
+  }, []);
+
+  // [Existing handleTabReload remains unchanged]
+  const handleTabReload = () => {
+      const s = state.current;
+      // Smart Reload: Check levels
+      const magPct = s.magazineCurrent / 200;
+      const fuelPct = s.fuel / maxFuel;
+      const missPct = s.missiles / 10;
+      const minePct = s.mines / 10;
+
+      const levels = [
+          { type: 'mag', pct: magPct },
+          { type: 'fuel', pct: fuelPct },
+          { type: 'missile', pct: missPct },
+          { type: 'mine', pct: minePct }
+      ].sort((a,b) => a.pct - b.pct);
+
+      for (const lvl of levels) {
+          if (lvl.pct >= 1.0) continue; // Already full
+
+          if (lvl.type === 'mag') {
+              // Reload from Cargo Ammo
+              if (s.ammo[s.selectedAmmo] > 0) {
+                  const needed = 1000 - s.magazineCurrent;
+                  const take = Math.min(needed, s.ammo[s.selectedAmmo]);
+                  s.magazineCurrent += take;
+                  s.ammo[s.selectedAmmo] -= take;
+                  s.reloadTimer = 0; // Bypass timer
+                  setHud(h => ({...h, isReloading: false, alert: 'INSTANT RELOAD'}));
+                  audioService.playSfx('buy');
+                  return; 
+              } else {
+                  // Try unpack from cargo immediately if TAB used
+                  const ammoIdx = s.cargo.findIndex(c => c.type === 'ammo' && c.id === s.selectedAmmo);
+                  if (ammoIdx >= 0) {
+                      s.cargo[ammoIdx].quantity--;
+                      if (s.cargo[ammoIdx].quantity <= 0) s.cargo.splice(ammoIdx, 1);
+                      s.ammo[s.selectedAmmo] += 1000;
+                      // Now reload
+                      const needed = 1000 - s.magazineCurrent;
+                      const take = Math.min(needed, s.ammo[s.selectedAmmo]);
+                      s.magazineCurrent += take;
+                      s.ammo[s.selectedAmmo] -= take;
+                      setHud(h => ({...h, isReloading: false, alert: 'UNPACK & RELOAD'}));
+                      audioService.playSfx('buy');
+                      return;
+                  }
+              }
+          } else if (lvl.type === 'fuel') {
+              const fuelItemIdx = s.cargo.findIndex(c => c.type === 'fuel');
+              if (fuelItemIdx >= 0) {
+                  s.cargo[fuelItemIdx].quantity--;
+                  if (s.cargo[fuelItemIdx].quantity <= 0) s.cargo.splice(fuelItemIdx, 1);
+                  s.fuel = Math.min(maxFuel, s.fuel + 5.0); 
+                  setHud(h => ({...h, alert: 'REFUELED'}));
+                  audioService.playSfx('buy');
+                  return;
+              }
+          } else if (lvl.type === 'missile') {
+              const mIdx = s.cargo.findIndex(c => c.type === 'missile');
+              if (mIdx >= 0) {
+                  s.cargo[mIdx].quantity--;
+                  if (s.cargo[mIdx].quantity <= 0) s.cargo.splice(mIdx, 1);
+                  s.missiles = Math.min(10, s.missiles + 10);
+                  setHud(h => ({...h, alert: 'MISSILES RESTOCKED'}));
+                  audioService.playSfx('buy');
+                  return;
+              }
+          } else if (lvl.type === 'mine') {
+              const mIdx = s.cargo.findIndex(c => c.type === 'mine');
+              if (mIdx >= 0) {
+                  s.cargo[mIdx].quantity--;
+                  if (s.cargo[mIdx].quantity <= 0) s.cargo.splice(mIdx, 1);
+                  s.mines = Math.min(10, s.mines + 10);
+                  setHud(h => ({...h, alert: 'MINES RESTOCKED'}));
+                  audioService.playSfx('buy');
+                  return;
+              }
+          }
+      }
+      // If nothing happened
+      audioService.playSfx('denied');
+  };
+
+  // Controls
+  useEffect(() => {
+    const k = state.current.keys;
+    const kd = (e: KeyboardEvent) => { 
+        if(e.repeat) return;
+        
+        if (e.code === 'Tab' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+            e.preventDefault();
+        }
+
+        k.add(e.code); 
+        
+        if(e.code === 'KeyP') state.current.paused = !state.current.paused;
+        if(e.code === 'Escape') {
+            onGameOver(false, state.current.score, true, { 
+                health: state.current.hp, 
+                fuel: state.current.fuel, 
+                rockets: state.current.missiles, 
+                mines: state.current.mines, 
+                cargo: state.current.cargo, 
+                ammo: state.current.ammo, 
+                magazineCurrent: state.current.magazineCurrent, 
+                reloadTimer: state.current.reloadTimer 
+            });
+        }
+        
+        if(!state.current.paused && state.current.active) {
+            if(e.code === 'KeyM' || e.code === 'NumpadAdd') fireMissile();
+            if(e.code === 'KeyN' || e.code === 'NumpadEnter') fireMine();
+            if (e.code === 'Tab') handleTabReload();
+            if (e.code === 'CapsLock') { state.current.swivelMode = !state.current.swivelMode; audioService.playSfx('click'); }
+            // NEW MAPPING: Shift is Overcharge (Charge)
+            if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { state.current.isCharging = true; audioService.startCharging(); }
+        }
+    };
+    const ku = (e: KeyboardEvent) => {
+        k.delete(e.code);
+        // NEW MAPPING: Release Shift to fire overload
+        if ((e.code === 'ShiftLeft' || e.code === 'ShiftRight') && state.current.isCharging) {
+            if (!state.current.hasFiredOverload) fireOverloadShot(false);
+            state.current.isCharging = false;
+            state.current.chargeLevel = 0;
+            state.current.hasFiredOverload = false;
+            audioService.stopCharging();
+        }
+    };
+    window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
+    return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); };
+  }, []);
+
+  const fireOverloadShot = (isMax: boolean = true) => {
+      const s = state.current;
+      const chargeMult = s.chargeLevel > 20 ? (s.chargeLevel > 90 ? 10 : 2) : 1;
+      
+      const mainWeapon = activeShip.fitting.weapons[0];
+      const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null;
+      const baseDamage = mainDef ? mainDef.damage : (activeShip.config.noseGunDamage || 45);
+      
+      const damage = baseDamage * chargeMult;
+      const width = 8; const height = 60;
+      const glowIntensity = isMax ? 30 : 10;
+      const crystalColor = (mainDef?.beamColor) || (activeShip.gunColor || activeShip.config.noseGunColor || '#60a5fa');
+      const color = isMax ? '#ffffff' : crystalColor;
+      
+      // Calculate precise position (Main gun at local 50, 10 relative to 0-100)
+      // Visual scaling in drawShip is 0.6. Offset from center (50,50) is (0,-40).
+      // Screen space offset = -40 * 0.6 = -24.
+      const spawnY = s.py - 24;
+
+      s.bullets.push({ 
+          x: s.px, y: spawnY, vx: 0, vy: -25, 
+          damage, color, type: 'laser', life: 60, isEnemy: false, 
+          width, height, glow: true, glowIntensity, isMain: true, 
+          weaponId: mainWeapon?.id || 'gun_pulse',
+          isOvercharge: true // Mark as EMP Overcharge
+      });
+      
+      // Slot 0 fired
+      s.weaponFireTimes[0] = Date.now();
+      // Heat generation logic for main gun
+      // If fully charged (100), set heat to 100.
+      s.weaponHeat[0] = Math.max(s.weaponHeat[0] || 0, s.chargeLevel);
+
+      if (isMax) audioService.playWeaponFire('mega', 0, activeShip.config.id);
+      else audioService.playWeaponFire('puff', 0, activeShip.config.id);
+      s.energy -= 10 * chargeMult;
+  };
+
+  const fireRapidShot = () => {
+      const s = state.current;
+      
+      const mainWeapon = activeShip.fitting.weapons[0];
+      const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null;
+      const baseDamage = mainDef ? mainDef.damage : (activeShip.config.noseGunDamage || 45);
+      
+      // Calculate delay based on equipped weapon fire rate
+      const fireRate = mainDef ? mainDef.fireRate : 4; 
+      const delay = 1000 / fireRate; 
+
+      if (Date.now() - s.lastRapidFire > delay) {
+          const damage = baseDamage; 
+          const crystalColor = (mainDef?.beamColor) || (activeShip.gunColor || activeShip.config.noseGunColor || '#f87171');
+          const spawnY = s.py - 24; // Precise alignment
+
+          s.bullets.push({ 
+              x: s.px, y: spawnY, vx: 0, vy: -30, 
+              damage: damage, color: crystalColor, type: 'laser', life: 50, 
+              isEnemy: false, width: 4, height: 25, glow: true, glowIntensity: 5, isMain: true, weaponId: mainWeapon?.id || 'gun_pulse'
+          });
+          
+          // Slot 0 fired
+          s.weaponFireTimes[0] = Date.now();
+          // Fast heating for rapid fire
+          s.weaponHeat[0] = Math.min(100, (s.weaponHeat[0] || 0) + 1.0); // Slow heat accumulation for red hot effect
+
+          audioService.playWeaponFire('cannon', 0, activeShip.config.id);
+          s.energy -= (mainDef?.energyCost || 2); 
+          s.lastRapidFire = Date.now();
+      }
+  };
+
+  const fireMissile = () => {
+      const s = state.current;
+      if (s.missiles > 0) {
+          // Alternating Logic: If count is even, use Normal. If odd, use EMP.
+          // This allows users to cycle through "2 of each" simply by firing twice.
+          // Example: 4 -> Normal, 3 -> EMP, 2 -> Normal, 1 -> EMP.
+          const isEmp = s.missiles % 2 !== 0; 
+          
+          s.missiles--;
+          s.lastMissileFire = Date.now();
+          
+          s.bullets.push({ 
+              x: s.px, y: s.py, 
+              vx: 0, vy: -5, 
+              damage: 0, // Damage handled by takeDamage type logic
+              color: isEmp ? '#22d3ee' : '#ef4444', 
+              type: isEmp ? 'missile_emp' : 'missile', 
+              life: 600, 
+              isEnemy: false, 
+              width: 8, height: 20,
+              homingState: 'searching',
+              headColor: isEmp ? '#22d3ee' : '#ef4444',
+              finsColor: isEmp ? '#0ea5e9' : '#ef4444',
+              turnRate: 0.15,
+              maxSpeed: 14,
+              z: 0 
+          });
+          audioService.playWeaponFire(isEmp ? 'emp' : 'missile');
+      }
+  };
+
+  const fireMine = () => {
+      const s = state.current;
+      if (s.mines > 0) {
+          // Alternating Logic for Mines as well
+          const isEmp = s.mines % 2 !== 0;
+
+          s.mines--;
+          s.lastMineFire = Date.now();
+          
+          s.bullets.push({ 
+              x: s.px, y: s.py + 20, 
+              vx: 0, vy: 2, 
+              damage: 0, // Damage handled by takeDamage type logic
+              color: isEmp ? '#22d3ee' : '#fbbf24', 
+              type: isEmp ? 'mine_emp' : 'mine', 
+              life: 1200, 
+              isEnemy: false, 
+              width: 14, height: 14,
+              homingState: 'searching',
+              turnRate: 0.08,
+              maxSpeed: 10,
+              z: 0
+          });
+          audioService.playWeaponFire(isEmp ? 'emp' : 'mine');
+      }
+  };
+
+  const spawnLoot = (x: number, y: number, z: number, type: string, id?: string, name?: string) => {
+      state.current.loot.push({ x, y, z, type, id, name, isPulled: false });
+  };
+
+  const createExplosion = (x: number, y: number, color: string, count: number) => {
+      for(let i=0; i<count; i++) state.current.particles.push({ x, y, vx: (Math.random()-0.5)*10, vy: (Math.random()-0.5)*10, life: 1.0, color, size: Math.random()*3+1 });
+  };
+
+  // Main Loop
+  useEffect(() => {
+    const cvs = canvasRef.current; if(!cvs) return;
+    const ctx = cvs.getContext('2d'); if(!ctx) return;
+    let raf: number;
+    const s = state.current;
+
+    const loop = () => {
+        if (!s.active) return;
+        if (s.paused) { setHud(h => ({...h, isPaused: true})); raf = requestAnimationFrame(loop); return; }
+
+        const width = cvs.width = window.innerWidth;
+        const height = cvs.height = window.innerHeight;
+        s.frame++;
+
+        // Heat Decay (Slow down decay to allow red-hot buildup over 30s)
+        [0, 1, 2].forEach(i => {
+            if (s.weaponHeat[i] > 0) {
+                // 30 seconds to overheat -> slow decay
+                s.weaponHeat[i] = Math.max(0, s.weaponHeat[i] - 0.05); 
+            }
+        });
+
+        // Reload Logic (10 seconds)
+        if (s.reloadTimer > 0) {
+            if (Date.now() - s.reloadTimer > 10000) {
+                // Check if loose ammo is empty but cargo has packs
+                if (s.ammo[s.selectedAmmo] <= 0) {
+                    const ammoIdx = s.cargo.findIndex(c => c.type === 'ammo' && c.id === s.selectedAmmo);
+                    if (ammoIdx >= 0) {
+                        s.cargo[ammoIdx].quantity--;
+                        if (s.cargo[ammoIdx].quantity <= 0) s.cargo.splice(ammoIdx, 1);
+                        s.ammo[s.selectedAmmo] += 1000;
+                    }
+                }
+
+                // Reload Complete
+                const reloadAmount = 1000; 
+                const needed = 1000 - s.magazineCurrent;
+                const canTake = Math.min(needed, s.ammo[s.selectedAmmo] || 0);
+                
+                s.magazineCurrent += canTake;
+                s.ammo[s.selectedAmmo] -= canTake;
+                s.reloadTimer = 0;
+                setHud(h => ({...h, isReloading: false}));
+            }
+        } else if (s.magazineCurrent <= 0 && ((s.ammo[s.selectedAmmo] || 0) > 0 || s.cargo.some(c => c.type === 'ammo' && c.id === s.selectedAmmo))) {
+            // Auto-start reload
+            s.reloadTimer = Date.now();
+            setHud(h => ({...h, isReloading: true}));
+        }
+
+        // Auto-Reload Mines/Missiles Logic (10s after last shot)
+        if (s.missiles < 10 && Date.now() - s.lastMissileFire > 10000) {
+            const mIdx = s.cargo.findIndex(c => c.type === 'missile');
+            if (mIdx >= 0) {
+                if (s.frame % 60 === 0) { 
+                    s.cargo[mIdx].quantity--;
+                    if (s.cargo[mIdx].quantity <= 0) s.cargo.splice(mIdx, 1);
+                    s.missiles++;
+                    setHud(h => ({...h, alert: 'RELOADING MISSILES'}));
+                }
+            }
+        }
+        if (s.mines < 10 && Date.now() - s.lastMineFire > 10000) {
+            const mIdx = s.cargo.findIndex(c => c.type === 'mine');
+            if (mIdx >= 0) {
+                if (s.frame % 60 === 0) {
+                    s.cargo[mIdx].quantity--;
+                    if (s.cargo[mIdx].quantity <= 0) s.cargo.splice(mIdx, 1);
+                    s.mines++;
+                    setHud(h => ({...h, alert: 'RELOADING MINES'}));
                 }
             }
         }
 
-        const isSpace = s.keys.has('Space'); const isControl = s.keys.has('ControlLeft') || s.keys.has('ControlRight'); const isShift = s.keys.has('ShiftLeft') || s.keys.has('ShiftRight'); const isWeaponActive = isControl || isShift || isSpace; if (isWeaponActive) s.crystalExtension = Math.min(1, s.crystalExtension + 0.1); else s.crystalExtension = Math.max(0, s.crystalExtension - 0.1); if (isSpace) { const chargeDur = now - s.charging.startTime; s.charging.level = Math.min(1.0, chargeDur / 1500); if (chargeDur >= 1500) { audioService.stopCharging(); fireWeapons(1.0, false, false, 'heavy_auto'); } } else { s.charging.level = 0; if (isControl || isShift) fireWeapons(1.0, true, false, 'normal'); } s.gunKick *= 0.85; if (!isWeaponActive && s.gunHeat > 0) { s.gunHeat = Math.max(0, s.gunHeat - 0.015); if (s.gunHeat <= 0) s.hasOverheated = false; }
-        if (!s.playerDead && !s.playerExploded) { if (s.fuel <= 0) { s.py += 0.8; } else if (isVertical) { if (s.keys.has('KeyW') || s.keys.has('ArrowUp')) { if (!s.isOverdrive) { if (canConsumeFuel) { s.py -= pSpeed; s.fuel = Math.max(0, s.fuel - 0.0015); } else { setStats(p => ({...p, alert: "FUEL RESERVE LOCKED", alertType: 'warning'})); } } } if (s.keys.has('KeyS') || s.keys.has('ArrowDown')) s.py += pSpeed; } if (s.keys.has('KeyA') || s.keys.has('ArrowLeft')) { if(canConsumeFuel) { s.px -= pSpeed; s.starDirection.vx = 2.4; s.fuel = Math.max(0, s.fuel - 0.0005); } else { s.px -= pSpeed * 0.1; } } else if (s.keys.has('KeyD') || s.keys.has('ArrowRight')) { if(canConsumeFuel) { s.px += pSpeed; s.starDirection.vx = -2.4; s.fuel = Math.max(0, s.fuel - 0.0005); } else { s.px += pSpeed * 0.1; } } else s.starDirection.vx *= 0.93; s.px = Math.max(35, Math.min(canvas.width - 35, s.px)); s.py = Math.max(35, Math.min(canvas.height - 110, s.py)); const isShooting = isWeaponActive; const wasHitRecently = (now - s.lastHitTime) < 500; if (s.energyDepleted) { if (s.energy >= maxEnergy) { s.energyDepleted = false; s.energy = maxEnergy; setStats(p => ({ ...p, alert: "REACTOR RESTARTED", alertType: 'info' })); setTimeout(() => setStats(p => ({ ...p, alert: "" })), 1500); } else { const regenRate = (isShooting || wasHitRecently) ? 0 : (maxEnergy / 120); s.energy += regenRate; } } else { if (s.energy <= 0) { s.energy = 0; s.energyDepleted = true; s.charging.active = false; setStats(p => ({ ...p, alert: "ENERGY DEPLETED - RECHARGING", alertType: 'warning' })); audioService.playSfx('denied'); } else { s.energy = Math.min(maxEnergy, s.energy + 4.0); } } if ((s.energy / maxEnergy) < 0.2 && !s.reloading.energy && !s.isMeltdown) { const battIdx = s.missionCargo.findIndex(i => i.type === 'energy'); if (battIdx !== -1) { s.reloading.energy = true; s.reloading.energyTimer = 300; setStats(p => ({ ...p, alert: "AUX POWER SEQUENCE INITIATED: 5s", alertType: 'warning' })); } } if (s.reloading.energy) { s.reloading.energyTimer--; if (s.reloading.energyTimer % 60 === 0 && s.reloading.energyTimer > 0) { setStats(p => ({ ...p, alert: `AUX POWER INJECTION IN: ${s.reloading.energyTimer / 60}s`, alertType: 'warning' })); } if (s.reloading.energyTimer <= 0) { const battIdx = s.missionCargo.findIndex(i => i.type === 'energy'); const item = s.missionCargo[battIdx]; if (battIdx !== -1 && item) { if (item.quantity > 1) item.quantity--; else s.missionCargo.splice(battIdx, 1); s.energyDepleted = false; s.reloading.energyActive = true; s.reloading.energy = false; audioService.playSfx('buy'); setStats(p => ({ ...p, alert: "AUX POWER ENGAGED - RECHARGING", alertType: 'info' })); } else s.reloading.energy = false; } } if (s.reloading.energyActive) { const rate = maxEnergy / 60; s.energy = Math.min(maxEnergy, s.energy + rate); if (s.energy >= maxEnergy) { s.reloading.energyActive = false; setStats(p => ({ ...p, alert: "ENERGY CELLS STABILIZED", alertType: 'info' })); setTimeout(() => setStats(p => ({ ...p, alert: "" })), 1500); } } if (!s.energyDepleted) { if (shield && s.sh1 > 0) { const isExotic = EXOTIC_SHIELDS.some(ex => ex.id === shield.id); s.energy -= (shield.energyCost * (isExotic ? 0.01 : 0.04)); } if (secondShield && s.sh2 > 0) { const isExotic = EXOTIC_SHIELDS.some(ex => ex.id === secondShield.id); s.energy -= (secondShield.energyCost * (isExotic ? 0.01 : 0.04)); } } if (s.fuel <= 0 && !s.reloading.fuel && !s.isMeltdown) { const cargoIdx = s.missionCargo.findIndex(i => i.type === 'fuel'); if (cargoIdx !== -1) { s.reloading.fuel = true; setStats(p => ({ ...p, alert: "TRANSFERRING AUXILIARY FUEL...", alertType: 'warning' })); } } if (s.reloading.fuel) { const chargeRate = 0.1 / 60; s.fuel = Math.min(maxFuelCapacity, s.fuel + chargeRate); if (!s.reloading.fuelFilling) { s.reloading.fuelFilling = true; const idx = s.missionCargo.findIndex(i => i.type === 'fuel'); const item = s.missionCargo[idx]; if (idx !== -1 && item) { if (item.quantity > 1) item.quantity--; else s.missionCargo.splice(idx, 1); setTimeout(() => { s.reloading.fuel = false; s.reloading.fuelFilling = false; }, 10000); } else s.reloading.fuel = false; } } if (s.missileStock <= 0 && !s.reloading.missiles && !s.isMeltdown) { const cargoIdx = s.missionCargo.findIndex(i => i.type === 'missile'); if (cargoIdx !== -1) { s.reloading.missiles = true; setStats(p => ({ ...p, alert: "RELOADING MISSILES (10s)...", alertType: 'info' })); setTimeout(() => { const idx = s.missionCargo.findIndex(i => i.type === 'missile'); const item = s.missionCargo[idx]; if (idx !== -1 && item) { s.missileStock = Math.min(50, s.missileStock + 10); if (item.quantity > 1) item.quantity--; else s.missionCargo.splice(idx, 1); setStats(p => ({ ...p, alert: "MISSILES LOADED", alertType: 'info' })); setTimeout(() => setStats(p => ({ ...p, alert: "" })), 1500); } s.reloading.missiles = false; }, 10000); } } if (s.mineStock <= 0 && !s.reloading.mines && !s.isMeltdown) { const cargoIdx = s.missionCargo.findIndex(i => i.type === 'mine'); if (cargoIdx !== -1) { s.reloading.mines = true; setStats(p => ({ ...p, alert: "RELOADING MINES (10s)...", alertType: 'info' })); setTimeout(() => { const idx = s.missionCargo.findIndex(i => i.type === 'mine'); const item = s.missionCargo[idx]; if (idx !== -1 && item) { s.mineStock = Math.min(50, s.mineStock + 10); if (item.quantity > 1) item.quantity--; else s.missionCargo.splice(idx, 1); setStats(p => ({ ...p, alert: "MINES LOADED", alertType: 'info' })); setTimeout(() => setStats(p => ({ ...p, alert: "" })), 1500); } s.reloading.mines = false; }, 10000); } } if (s.integrity < 20 && !s.reloading.repair && !s.autoRepair.active && !s.isMeltdown) { const cargoIdx = s.missionCargo.findIndex(i => i.type === 'repair'); if (cargoIdx !== -1) { s.reloading.repair = true; setStats(p => ({ ...p, alert: "REPAIRING...", alertType: 'info' })); setTimeout(() => { const idx = s.missionCargo.findIndex(i => i.type === 'repair'); const item = s.missionCargo[idx]; if (idx !== -1 && item) { s.integrity = Math.min(100, s.integrity + 20); if (item.quantity > 1) item.quantity--; else s.missionCargo.splice(idx, 1); setStats(p => ({ ...p, alert: "RESTORED", alertType: 'info' })); setTimeout(() => setStats(p => ({ ...p, alert: "" })), 1500); } s.reloading.repair = false; }, 3000); } } if (shield && s.sh1 < shield.capacity && !s.energyDepleted) { const isBroken = s.sh1 <= 0, t = now - s.sh1ShatterTime; if (!isBroken || t > 10000) { const rv = shield.regenRate * 0.16, rc = shield.energyCost * 0.032; if (s.energy >= rc) { s.sh1 = Math.min(shield.capacity, s.sh1 + rv); s.energy -= rc; if (isBroken && s.sh1 > 0) setStats(p => ({ ...p, alert: "PRIMARY SHIELD REBOOTED", alertType: 'info' })); } } } if (secondShield && s.sh2 < secondShield.capacity && !s.energyDepleted) { const isBroken = s.sh2 <= 0, t = now - s.sh2ShatterTime; if (!isBroken || t > 10000) { const rv = secondShield.regenRate * 0.16, rc = secondShield.energyCost * 0.032; if (s.energy >= rc) { s.sh2 = Math.min(secondShield.capacity, s.sh2 + rv); s.energy -= rc; if (isBroken && s.sh2 > 0) setStats(p => ({ ...p, alert: "SECONDARY SHIELD REBOOTED", alertType: 'info' })); } } } if (s.integrity < 10 && s.hullPacks > 0 && !s.autoRepair.active && !s.isMeltdown) { s.autoRepair.active = true; s.autoRepair.timer = 10; s.autoRepair.lastTick = now; s.hullPacks--; setStats(p => ({ ...p, alert: `CRITICAL HULL - AUTO-REPAIR IN: 10s`, alertType: 'alert' })); } if (s.autoRepair.active) { if (now - s.autoRepair.lastTick > 1000) { s.autoRepair.timer--; s.autoRepair.lastTick = now; if (s.autoRepair.timer > 0) setStats(p => ({ ...p, alert: `CRITICAL HULL - AUTO-REPAIR IN: ${s.autoRepair.timer}s`, alertType: 'alert' })); else { s.integrity = Math.min(100, s.integrity + 20); s.autoRepair.active = false; setStats(p => ({ ...p, alert: "RESTORED", alertType: 'info' })); setTimeout(() => setStats(p => ({ ...p, alert: "" })), 1500); } } } if (s.integrity <= 0 && !s.isMeltdown && !s.playerExploded) { s.isMeltdown = true; s.meltdownTimer = 600; setStats(p => ({ ...p, alert: "REACTOR MELTDOWN - ABORT NOW", alertType: 'alert' })); } if (s.isMeltdown) { s.meltdownTimer--; s.fuel = Math.max(0, s.fuel - (maxFuelCapacity / 600)); s.integrity = Math.max(0, s.integrity - 0.1); setStats(p => ({ ...p, alert: `MELTDOWN T-MINUS: ${Math.ceil(s.meltdownTimer/60)}s`, alertType: 'alert' })); if (s.meltdownTimer <= 0) { s.isMeltdown = false; s.playerExploded = true; s.deathSequenceTimer = 300; createExplosion(s.px, s.py, true, false, false, '#f97316'); audioService.playExplosion(0, 2.5); } if (s.frame % 2 === 0) { s.particles.push({ x: s.px + (Math.random()-0.5)*40, y: s.py + (Math.random()-0.5)*40, vx: (Math.random()-0.5)*4, vy: (Math.random()-0.5)*4, life: 0.8, color: '#f97316', size: 10, type: 'fire' }); s.particles.push({ x: s.px + (Math.random()-0.5)*30, y: s.py + (Math.random()-0.5)*30, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, life: 1.0, color: 'rgba(50,50,50,0.6)', size: 15, type: 'smoke' }); } } }
-        if (s.integrity < 100 && !s.playerExploded) { if (s.frame % 5 === 0) { s.particles.push({ x: s.px + (Math.random()-0.5)*15, y: s.py + 10, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2 + 3, life: 0.8, color: 'rgba(60,60,60,0.5)', size: 8 + Math.random()*8, type: 'smoke' }); if (s.integrity < 60) { s.particles.push({ x: s.px + (Math.random()-0.5)*10, y: s.py + 5, vx: (Math.random()-0.5)*3, vy: (Math.random()-0.5)*3 + 2, life: 0.5, color: '#ef4444', size: 4 + Math.random()*4, type: 'fire' }); } } } if (s.playerExploded) { s.deathSequenceTimer--; if (s.deathSequenceTimer <= 0) { s.playerDead = true; } }
-        
-        // Spawn Logic
-        const isTravel = s.gamePhase === 'travel';
-        const isScavenge = s.gamePhase === 'scavenge'; 
-        
-        const scavengeDuration = 30; 
-        const timeInScavenge = (1200 - s.scavengeTimeRemaining) / 60; 
-        
-        if ((isTravel || (isScavenge && timeInScavenge < scavengeDuration)) && s.asteroids.length < (isScavenge ? 10 : 8) && now - s.lastAsteroidSpawn > (isScavenge ? 800 : 2000)) { 
-            const fromBottom = Math.random() < 0.2; 
-            const isRich = mode === 'drift' || isScavenge; 
-            s.asteroids.push(new Asteroid(Math.random() * canvas.width, -180, difficulty, isRich, fromBottom)); 
-            s.lastAsteroidSpawn = now; 
-        }
-        
-        const maxAliens = difficulty < 5 ? 4 : 7;
-        if (mode !== 'drift' && isTravel && s.enemies.length < maxAliens && now - s.lastSpawn > (1800 / Math.sqrt(Math.max(1, difficulty)))) { 
-            const shipIdx = Math.min(SHIPS.length - 1, Math.floor(Math.random() * (difficulty + 1))); 
-            s.enemies.push(new Enemy(Math.random() * (canvas.width - 120) + 60, -150, 'fighter', SHIPS[shipIdx], difficulty)); 
-            s.lastSpawn = now; 
+        // ROBOT AUTO REPAIR LOGIC
+        const robotCount = s.cargo.reduce((acc, c) => c.type === 'robot' ? acc + c.quantity : acc, 0);
+        if (robotCount > 0 && s.hp < 100) {
+            const repairInterval = Math.max(5, Math.floor(120 / robotCount));
+            if (s.frame % repairInterval === 0) {
+                const repairResources = { iron: 2, copper: 4, chromium: 10, titanium: 16, gold: 20, repair: 25, platinum: 50, lithium: 80 };
+                const resIdx = s.cargo.findIndex(c => repairResources[c.type as keyof typeof repairResources]);
+                if (resIdx >= 0) {
+                    const item = s.cargo[resIdx];
+                    const heal = repairResources[item.type as keyof typeof repairResources] || 1;
+                    
+                    item.quantity--;
+                    if (item.quantity <= 0) s.cargo.splice(resIdx, 1);
+                    
+                    s.hp = Math.min(100, s.hp + heal);
+                }
+            }
         }
 
-        for (let i = s.mines.length - 1; i >= 0; i--) { const m = s.mines[i]; m.update(s.enemies); if (m.life <= 0) { createExplosion(m.x, m.y, false, true, false); s.mines.splice(i, 1); } else if (m.y < -200 || m.y > canvas.height + 200) s.mines.splice(i, 1); else { for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; if (Math.abs(en.z - m.z) < 120 && Math.sqrt((m.x - en.x)**2 + (m.y - en.y)**2) < 55) { applyDamageToEnemy(en, m.damage, WeaponType.MINE, false, false); createExplosion(m.x, m.y, false, true, false); s.mines.splice(i, 1); if (en.hp <= 0) { if (en.type === 'boss' && !s.bossDead) { s.bossDead = true; spawnBossExplosions(en.x, en.y); } s.enemies.splice(j, 1); } break; } } } }
-        for (let i = s.missiles.length - 1; i >= 0; i--) { const m = s.missiles[i]; if (!m.target || m.target.hp <= 0) { let close = 1000; s.enemies.forEach(e => { const d = Math.sqrt((e.x - m.x)**2 + (e.y - m.y)**2); if (d < close) { close = d; m.target = e; } }); } if (m.target) { const dx = m.target.x - m.x; const dy = m.target.y - m.y; const dz = m.target.z - m.z; const dist = Math.sqrt(dx*dx + dy*dy); if (dist > 0) { m.vx += (dx/dist) * 0.5; m.vy += (dy/dist) * 0.5; m.z += dz * 0.05; } } const speed = Math.sqrt(m.vx*m.vx + m.vy*m.vy); if (speed > 12) { m.vx *= 0.9; m.vy *= 0.9; } m.x += m.vx; m.y += m.vy; m.life--; if (s.frame % 3 === 0) s.particles.push({ x: m.x, y: m.y, vx: 0, vy: 0, life: 0.6, color: 'rgba(100,100,100,0.5)', size: 4, type: 'smoke' }); let hit = false; for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; if (Math.abs(m.z - en.z) < 100 && Math.sqrt((m.x - en.x)**2 + (m.y - en.y)**2) < 40) { applyDamageToEnemy(en, m.damage, WeaponType.MISSILE, false, false); createExplosion(m.x, m.y, false, false, false, '#fb923c'); hit = true; if (en.hp <= 0) { if (en.type === 'boss' && !s.bossDead) { s.bossDead = true; spawnBossExplosions(en.x, en.y); } s.enemies.splice(j, 1); } break; } } if (hit || m.life <= 0 || m.y < -100 || m.y > canvas.height + 100) { s.missiles.splice(i, 1); } }
-        for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; en.y += (s.warpFactor - 1) * 3; const droppedMine = en.updateAI(s.px, s.py, s.asteroids, s.enemies); if (droppedMine) { s.mines.push(new Mine(en.x, en.y + 40, false, en.z)); } const distToP = Math.sqrt((en.x - s.px)**2 + (en.y - s.py)**2); if (Math.abs(en.z) < 60 && distToP < 50 && !s.playerDead && !s.playerExploded) { createExplosion(en.x, en.y, en.type === 'boss'); en.hp = 0; const ramDmg = 50; if (s.sh2 > 0) { s.sh2 = Math.max(0, s.sh2 - ramDmg * 1.5); if (s.sh2 <= 0) s.sh2ShatterTime = now; } else if (s.sh1 > 0) { s.sh1 = Math.max(0, s.sh1 - ramDmg * 1.5); if (s.sh1 <= 0) s.sh1ShatterTime = now; } else { s.integrity -= ramDmg; s.shake = 20; } audioService.playShieldHit(); } for (let k = s.asteroids.length - 1; k >= 0; k--) { const ast = s.asteroids[k]; if (Math.abs(en.z - ast.z) > 60) continue; const dist = Math.sqrt((en.x - ast.x)**2 + (en.y - ast.y)**2); if (en.type === 'boss' && dist < (en.sh > 0 ? 80 : 60) + ast.size) { const angle = Math.atan2(ast.y - en.y, ast.x - en.x); ast.vx += Math.cos(angle) * 15; ast.vy += Math.sin(angle) * 15; ast.velX += (Math.random()-0.5)*0.5; if (en.sh > 0) en.sh -= 1; createExplosion(ast.x, ast.y, false, false, true, '#ffffff'); } else if (en.type !== 'boss' && dist < 30 + ast.size) { createExplosion(en.x, en.y); applyDamageToEnemy(en, 500, WeaponType.PROJECTILE, true); ast.hp -= 500; if (ast.hp <= 0) { createExplosion(ast.x, ast.y, false, false, false, '#888'); spawnAsteroidLoot(ast.x, ast.y, ast.loot, ast.z); s.asteroids.splice(k, 1); } else { const angle = Math.atan2(ast.y - en.y, ast.x - en.x); ast.vx += Math.cos(angle) * 3; ast.vy += Math.sin(angle) * 3; } } } if (en.hp <= 0 || en.y > canvas.height + 300) { if (en.hp <= 0) { createExplosion(en.x, en.y); if (en.type === 'boss' && !s.bossDead) { s.bossDead = true; spawnBossExplosions(en.x, en.y); } } s.enemies.splice(j, 1); continue; } if (now - en.lastShot > 1650 / Math.sqrt(Math.max(1, difficulty)) && en.y > 0 && Math.abs(en.z) < 60) { if (en.type === 'boss') { const wepId = en.config.weaponId; const wepDef = EXOTIC_WEAPONS.find(w => w.id === wepId); const bColor = wepDef?.beamColor || '#a855f7'; if (wepId === 'exotic_fan') { for(let a = -2; a <= 2; a++) s.enemyBullets.push({ x: en.x, y: en.y + 110, vy: 8 + difficulty, vx: a * 2.5, isExotic: true, bColor }); } else if (wepId === 'exotic_bubbles') { s.enemyBullets.push({ x: en.x, y: en.y + 110, vy: 6 + difficulty, vx: (Math.random()-0.5)*6, isExotic: true, bColor, isBubble: true }); } else if (wepId === 'exotic_arc') { const d = Math.sqrt((s.px-en.x)**2 + (s.py-en.y)**2); if (d < 900) s.enemyBullets.push({ x: en.x, y: en.y + 110, isArc: true, bColor }); } else { s.enemyBullets.push({ x: en.x - 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true, bColor }); s.enemyBullets.push({ x: en.x + 60, y: en.y + 110, vy: 11 + difficulty, isExotic: true, bColor }); if (difficulty >= 6) s.enemyBullets.push({ x: en.x, y: en.y + 130, vy: 14 + difficulty, isExotic: true, bColor }); } } else { s.enemyBullets.push({ x: en.x, y: en.y + 50, vy: 9.0 + difficulty }); } en.lastShot = now; } }
-        for (let i = s.bullets.length - 1; i >= 0; i--) { const b = s.bullets[i]; b.y += b.vy; b.x += b.vx; if (b.life !== undefined) b.life--; let hitB = false; if (b.visualType === 'comet' && s.frame % 2 === 0) { s.particles.push({ x: b.x, y: b.y, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2 + 2, life: 0.5, color: b.beamColor, size: 4, type: 'plasma' }); } for (let j = s.enemies.length - 1; j >= 0; j--) { const en = s.enemies[j]; const distSq = (b.x-en.x)**2 + (b.y-en.y)**2; const hitRadius = en.type === 'boss' ? 70 : 28; if (distSq < hitRadius*hitRadius) { createImpactEffect(b.x, b.y, en.sh > 0 ? 'shield' : 'vessel', en.sh > 0 ? (en.type === 'boss' ? '#a855f7' : '#38bdf8') : undefined); applyDamageToEnemy(en, b.damage, b.wType, false, b.variant === 'mega'); hitB = true; break; } } if (!hitB) { for (let j = s.asteroids.length - 1; j >= 0; j--) { const ast = s.asteroids[j]; if (ast.y > 0 && Math.sqrt((b.x - ast.x)**2 + (b.y - ast.y)**2) < ast.size + 30) { createImpactEffect(b.x, b.y, 'asteroid'); if (b.variant === 'mega') ast.hp = 0; else ast.hp -= b.damage; if (ast.hp < 200 && ast.hp > 0 && s.frame % 3 === 0 && ast.loot) { s.particles.push({ x: ast.x + (Math.random()-0.5)*10, y: ast.y, vx: (Math.random()-0.5)*1, vy: -1, life: 0.6, color: '#a1a1aa', size: 4, type: 'smoke' }); } if (ast.hp <= 0) { spawnAsteroidLoot(ast.x, ast.y, ast.loot, ast.z); s.asteroids.splice(j, 1); } hitB = true; break; } } } if (hitB || b.y < -250 || b.y > canvas.height + 250 || (b.life !== undefined && b.life <= 0)) s.bullets.splice(i, 1); }
-        for (let i = s.enemyBullets.length - 1; i >= 0; i--) { const eb = s.enemyBullets[i]; if (eb.isArc) { const dist = Math.sqrt((eb.x-s.px)**2 + (eb.y-s.py)**2); if (dist < 900) { let dmg = 0.5; if (s.sh2 > 0) s.sh2 -= dmg; else if (s.sh1 > 0) s.sh1 -= dmg; else s.integrity -= dmg; } s.enemyBullets.splice(i, 1); continue; } eb.y += eb.vy; eb.x += (eb.vx || 0); if (!s.playerDead && !s.playerExploded && Math.sqrt((eb.x - s.px)**2 + (eb.y - s.py)**2) < 60) { s.enemyBullets.splice(i, 1); let dmg = eb.isExotic ? 45 : 34; createImpactEffect(eb.x, eb.y, (s.sh1 > 0 || s.sh2 > 0) ? 'shield' : 'vessel', (s.sh2 > 0 ? secondShield?.color : (s.sh1 > 0 ? shield?.color : undefined))); s.lastHitTime = now; if (s.sh2 > 0) { s.sh2 -= dmg * 1.5; if (s.sh2 <= 0) { s.sh2 = 0; s.sh2ShatterTime = now; } } else if (s.sh1 > 0) { s.sh1 -= dmg * 1.5; if (s.sh1 <= 0) { s.sh1 = 0; s.sh1ShatterTime = now; } } else { s.integrity -= dmg; s.shake = 15; } audioService.playShieldHit(); continue; } for (let j = s.asteroids.length - 1; j >= 0; j--) { const ast = s.asteroids[j]; if (ast.y > 0 && Math.sqrt((eb.x - ast.x)**2 + (eb.y - ast.y)**2) < ast.size + 20) { createImpactEffect(eb.x, eb.y, 'asteroid'); ast.hp -= 40; s.enemyBullets.splice(i, 1); if (ast.hp <= 0) { spawnAsteroidLoot(ast.x, ast.y, ast.loot, ast.z); s.asteroids.splice(j, 1); } break; } } if (eb.y > canvas.height + 250) s.enemyBullets.splice(i, 1); }
-        s.stars.forEach(st => { st.y += st.v * s.warpFactor; st.x += s.starDirection.vx * st.v; if (st.y > canvas.height) { st.y = -10; st.x = Math.random() * canvas.width; } if (st.x < 0) st.x = canvas.width; if (st.x > canvas.width) st.x = 0; });
-        if (s.shake > 0) s.shake *= 0.93;
-        if (s.playerDead) { onGameOverRef.current(false, s.score, false, { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: 0, bossDefeated: s.bossDead, health: 0, hullPacks: s.hullPacks, cargo: s.missionCargo }); return; }
-        const bI = s.enemies.find(e => e.type === 'boss'), mR = Math.max(0, MISSION_DURATION - s.missionDurationConsumed); 
-        
-        const cMissiles = s.missionCargo.filter(i => i.type === 'missile').reduce((acc, i) => acc + i.quantity, 0); 
-        const cMines = s.missionCargo.filter(i => i.type === 'mine').reduce((acc, i) => acc + i.quantity, 0); 
-        const cFuel = s.missionCargo.filter(i => i.type === 'fuel').reduce((acc, i) => acc + i.quantity, 0);
-        const cEnergy = s.missionCargo.filter(i => i.type === 'energy').reduce((acc, i) => acc + i.quantity, 0);
+        // Movement & Fuel
+        const speed = 9;
+        const up = s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8');
+        const down = s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2');
+        const left = s.keys.has('ArrowLeft') || s.keys.has('KeyA') || s.keys.has('Numpad4');
+        const right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
+        if (up) { s.py -= speed; s.fuel = Math.max(0, s.fuel - 0.005); } 
+        if (down) s.py += speed;
+        if (left) { s.px -= speed; s.fuel = Math.max(0, s.fuel - 0.002); }
+        if (right) { s.px += speed; s.fuel = Math.max(0, s.fuel - 0.002); }
+        s.px = Math.max(30, Math.min(width-30, s.px));
+        // Restrict ship nozzle from hitting the bottom HUD text area (height - 100px)
+        s.py = Math.max(50, Math.min(height-100, s.py));
 
-        setStats(p => ({ ...p, hp: Math.max(0, s.integrity), sh1: Math.max(0, s.sh1), sh2: Math.max(0, s.sh2), energy: s.energy, score: s.score, missiles: s.missileStock, mines: s.mineStock, fuel: s.fuel, hullPacks: s.hullPacks, boss: bI ? { hp: bI.hp, maxHp: bI.maxHp, sh: bI.sh, maxSh: bI.maxSh } : null, scavengeTimer: Math.ceil(s.scavengeTimeRemaining/60), missionTimer: Math.ceil(mR), cargoMissiles: Math.floor(cMissiles/10), cargoMines: Math.floor(cMines/10), cargoFuel: Math.floor(cFuel/10), cargoEnergy: Math.floor(cEnergy/10), energyDepleted: s.energyDepleted, bossDead: mode === 'drift' || s.bossDead, gamePhase: s.gamePhase, approachProgress: Math.min(1, s.approachTimer / 300), selectedTargetId: s.selectedTargetId, mousePos: {x: s.px, y: s.py} }));
-        for (let i = s.particles.length - 1; i >= 0; i--) { const p = s.particles[i]; p.x += p.vx; p.y += p.vy + (s.warpFactor - 1) * 3; p.life -= 0.02; if (p.life <= 0) s.particles.splice(i, 1); } for (let j = s.asteroids.length - 1; j >= 0; j--) { const ast = s.asteroids[j]; ast.x += ast.vx; ast.y += ast.vy * s.warpFactor; ast.z += ast.vz; ast.angleX += ast.velX; ast.angleY += ast.velY; ast.angleZ += ast.velZ; for (let k = j - 1; k >= 0; k--) { const other = s.asteroids[k]; const dx = ast.x - other.x; const dy = ast.y - other.y; const dz = ast.z - other.z; const dist3d = Math.sqrt(dx*dx + dy*dy + dz*dz); if (dist3d < (ast.size + other.size) * 0.9) { createExplosion((ast.x + other.x)/2, (ast.y + other.y)/2, false, false, true, '#888'); if (ast.loot) spawnAsteroidLoot(ast.x, ast.y, ast.loot, ast.z); if (other.loot) spawnAsteroidLoot(other.x, other.y, other.loot, other.z); s.asteroids.splice(j, 1); s.asteroids.splice(k, 1); j--; break; } } if (j < 0) break; const shieldRadius = (s.sh2 > 0) ? 48 : (s.sh1 > 0 ? 40 : 0); if (shieldRadius > 0 && !s.playerDead && Math.abs(ast.z) < 50) { const dx = ast.x - s.px; const dy = ast.y - s.py; const dist = Math.sqrt(dx*dx + dy*dy); const minDist = shieldRadius + ast.size; if (dist < minDist) { const angle = Math.atan2(dy, dx); ast.vx += Math.cos(angle) * 0.8; ast.vy += Math.sin(angle) * 0.8; const pushOut = minDist - dist; ast.x += Math.cos(angle) * pushOut; ast.y += Math.sin(angle) * pushOut; ast.velX += (Math.random()-0.5)*0.2; ast.velY += (Math.random()-0.5)*0.2; const dmg = 40; if (s.sh2 > 0) { s.sh2 -= dmg; if (s.sh2 < 0) s.sh2 = 0; } else { s.sh1 -= dmg; if (s.sh1 < 0) s.sh1 = 0; } createExplosion(s.px + (dx/dist)*40, s.py + (dy/dist)*40, false, false, true); audioService.playShieldHit(); } } const bound = 300; if (ast.y > canvas.height + bound || ast.x < -bound || ast.x > canvas.width + bound || Math.abs(ast.z) > 1000) s.asteroids.splice(j, 1); }
-        const shieldR = (s.sh2 > 0 ? 48 : (s.sh1 > 0 ? 40 : 0)); const tractorRange = shieldR > 0 ? shieldR * 4.5 : 240; s.gifts.forEach(g => { if (s.playerDead) { g.y += g.vy; g.rotation += 0.05; g.isPulled = false; return; } const dx = s.px - g.x; const dy = s.py - g.y; const dz = 0 - g.z; const distXY = Math.sqrt(dx * dx + dy * dy); const dist3D = Math.sqrt(dx * dx + dy * dy + dz * dz); if (distXY < tractorRange && Math.abs(g.z) < 1000) { if (s.missionCargo.length >= activeShip.config.maxCargo && dist3D < 60) { if (!g.isPulled) { audioService.playSfx('denied'); setStats(p => ({...p, alert: "CARGO HOLD FULL - JETTISON ITEMS", alertType: 'warning'})); } g.isPulled = false; g.y += g.vy; g.rotation += 0.05; } else { g.isPulled = true; if (dist3D > 1) { const pullSpeed = 12.0; g.x += (dx / dist3D) * pullSpeed; g.y += (dy / dist3D) * pullSpeed; g.z += (dz / dist3D) * pullSpeed; } if (dist3D < 50) { if (s.missionCargo.length < activeShip.config.maxCargo) { const existing = s.missionCargo.find(i => i.type === g.type && i.id === g.id); if (existing) existing.quantity++; else s.missionCargo.push({ instanceId: `loot_${Date.now()}_${Math.random()}`, type: g.type, id: g.id, name: g.name || g.type.toUpperCase(), weight: 1, quantity: 1 }); audioService.playSfx('buy'); s.gifts = s.gifts.filter(gi => gi !== g); setStats(p => ({...p, alert: `ACQUIRED: ${g.name || g.type.toUpperCase()}`, alertType: 'info'})); } } } } else { g.isPulled = false; g.y += g.vy * s.warpFactor; g.rotation += 0.05; } });
-      }
-      
-      // RENDER LOOP
-      ctx.save(); if (s.shake > 0) ctx.translate((Math.random()-0.5)*s.shake, (Math.random()-0.5)*s.shake);
-      ctx.clearRect(0, 0, canvas.width, canvas.height); // CLEAR to Transparent for background system
-      
-      // Draw Stars (Game Warp Effect) only if not in approach phase to avoid clutter with bg stars
-      if (s.gamePhase !== 'approach') {
-          s.stars.forEach(st => { let alpha = 1.0; if (st.shimmer) { const now = Date.now(); alpha = 0.4 + (Math.sin((now * 0.005) + st.shimmerPhase) + 1) * 0.3; } ctx.globalAlpha = alpha; ctx.fillStyle = st.color; ctx.fillRect(st.x, st.y, st.s, st.s); ctx.globalAlpha = 1.0; });
-      }
+        const isAction = s.keys.has('Space') || s.keys.has('ControlLeft') || s.keys.has('ControlRight') || s.keys.has('ShiftLeft') || s.keys.has('ShiftRight');
+        s.energy = Math.min(maxEnergy, s.energy + (isAction ? 1 : 5));
 
-      const renderableItems: any[] = []; s.enemies.forEach(en => renderableItems.push({ type: 'enemy', z: en.z, obj: en })); s.asteroids.forEach(ast => renderableItems.push({ type: 'asteroid', z: ast.z, obj: ast })); s.gifts.forEach(g => renderableItems.push({ type: 'loot', z: g.z, obj: g })); if (activeShip && !s.playerExploded) renderableItems.push({ type: 'player', z: 0, obj: activeShip }); renderableItems.sort((a, b) => a.z - b.z);
-      
-      // LIGHT SOURCE: Distance Sun at Top Center
-      const sunBaseX = canvas.width / 2; 
-      const sunBaseY = -1200; 
-      const lightSource = { x: sunBaseX, y: sunBaseY, z: 600 };
+        // NEW MAPPING: Space is Rapid Fire
+        if (s.keys.has('Space') && s.energy > 5) {
+            // Updated rapid fire logic to use equipped weapon rate
+            fireRapidShot(); 
+        }
 
-      renderableItems.forEach(item => { const zScale = 1 + (item.z / 1000); if (zScale <= 0) return; ctx.save(); if (item.type === 'enemy') { const en = item.obj as Enemy; ctx.translate(en.x, en.y); ctx.scale(zScale, zScale); ctx.translate(-en.x, -en.y); drawShip(ctx, en, en.x, en.y, 0.5, 0, false, Math.PI, false, s.warpFactor, false, gameEntityScale); if (en.sh > 0) { const shieldColor = en.shieldVisual ? en.shieldVisual.color : (en.type === 'boss' ? '#a855f7' : '#c084fc'); const baseRadius = en.type === 'boss' ? 72 : 75; ctx.save(); ctx.strokeStyle = shieldColor; ctx.shadowColor = shieldColor; ctx.shadowBlur = 10; ctx.lineWidth = 2; ctx.setLineDash([5,5]); ctx.beginPath(); ctx.arc(en.x, en.y, baseRadius * (gameEntityScale/0.5), 0, Math.PI*2); ctx.stroke(); ctx.restore(); } } else if (item.type === 'player') { const cT = (s.fuel > 0) ? ((s.keys.has('KeyW') || s.keys.has('ArrowUp')) ? 1.3 : ((s.keys.has('KeyS') || s.keys.has('ArrowDown')) ? 0 : 0.5)) : 0; const bK = (s.keys.has('KeyS') || s.keys.has('ArrowDown')); const side = (s.keys.has('KeyA') || s.keys.has('ArrowLeft')) ? -1 : ((s.keys.has('KeyD') || s.keys.has('ArrowRight')) ? 1 : 0); drawShip(ctx, activeShip, s.px, s.py, cT, side, bK, 0, true, s.warpFactor, s.isOverdrive, gameEntityScale); const rS = (shV: number, shD: Shield, rad: number) => { if (shV <= 0 || s.playerDead || s.playerExploded) return; ctx.save(); ctx.globalAlpha = 0.6; ctx.shadowBlur = 10; ctx.shadowColor = shD.color; ctx.strokeStyle = shD.color; ctx.lineWidth = 3.0; ctx.beginPath(); if (shD.visualType === 'forward') { ctx.arc(s.px, s.py, rad * (gameEntityScale/0.5), Math.PI*1.2, Math.PI*1.8); } else { ctx.arc(s.px, s.py, rad * (gameEntityScale/0.5), 0, Math.PI*2); } ctx.stroke(); ctx.restore(); }; if (shield) rS(s.sh1, shield, 40); if (secondShield) rS(s.sh2, secondShield, 48); } else if (item.type === 'asteroid') { const a = item.obj as Asteroid; const cosX = Math.cos(a.angleX), sinX = Math.sin(a.angleX); const cosY = Math.cos(a.angleY), sinY = Math.sin(a.angleY); const cosZ = Math.cos(a.angleZ), sinZ = Math.sin(a.angleZ); const transformedVerts = a.vertices.map(v => { let y1 = v.y * cosX - v.z * sinX; let z1 = v.y * sinX + v.z * cosX; let x2 = v.x * cosY + z1 * sinY; let z2 = -v.x * sinY + z1 * cosY; let x3 = x2 * cosZ - y1 * sinZ; let y3 = x2 * sinZ + y1 * cosZ; return { x: x3, y: y3, z: z2 }; }); const facesToDraw: Face3D[] = []; const lx = lightSource.x - a.x, ly = lightSource.y - a.y, lz = lightSource.z - a.z; const lLen = Math.sqrt(lx*lx + ly*ly + lz*lz); const lightDir = { x: lx/lLen, y: ly/lLen, z: lz/lLen }; a.faces.forEach(f => { const p0 = transformedVerts[f.indices[0]], p1 = transformedVerts[f.indices[1]], p2 = transformedVerts[f.indices[2]]; const ax = p1.x - p0.x, ay = p1.y - p0.y, az = p1.z - p0.z; const bx = p2.x - p0.x, by = p2.y - p0.y, bz = p2.z - p0.z; const nx = ay * bz - az * by, ny = az * bx - ax * bz, nz = ax * by - ay * bx; const lenN = Math.sqrt(nx*nx + ny*ny + nz*nz); const normal = { x: nx/lenN, y: ny/lenN, z: nz/lenN }; if (normal.z < 0) { const zDepth = (p0.z + p1.z + p2.z) / 3; facesToDraw.push({ ...f, normal, zDepth }); } }); facesToDraw.sort((f1, f2) => (f1.zDepth || 0) - (f2.zDepth || 0)); ctx.save(); ctx.translate(a.x, a.y); ctx.scale(zScale, zScale); facesToDraw.forEach(f => { const normal = f.normal!; let intensity = Math.abs(normal.x * lightDir.x + normal.y * lightDir.y + normal.z * lightDir.z); const specular = Math.pow(intensity, 10) * 0.5; ctx.fillStyle = f.color; ctx.beginPath(); f.indices.forEach((idx, i) => { const v = transformedVerts[idx]; if (i===0) ctx.moveTo(v.x, v.y); else ctx.lineTo(v.x, v.y); }); ctx.closePath(); ctx.fill(); let finalLight = intensity * f.shadeOffset; finalLight = Math.max(0.15, finalLight); if (finalLight > 1.0) { ctx.fillStyle = `rgba(255,255,255,${(finalLight - 1.0) * 0.6 + specular})`; ctx.fill(); } else { ctx.fillStyle = `rgba(0,0,0,${(1.0 - finalLight) * 0.8})`; ctx.fill(); } ctx.strokeStyle = `rgba(255,255,255,${0.05 + intensity * 0.1})`; ctx.lineWidth = 0.5; ctx.stroke(); }); ctx.restore(); } else if (item.type === 'loot') { 
-          // Render Loot as Simple Color-Coded Boxes
-          const g = item.obj as Gift; 
-          ctx.save(); 
-          ctx.translate(g.x, g.y); 
-          ctx.scale(zScale, zScale); 
-          ctx.rotate(g.rotation); 
-          
-          const boxSize = 22; 
-          let boxColor = '#a855f7'; 
-          let textColor = '#ffffff';
-          
-          if (g.type === 'missile') { boxColor = '#ef4444'; textColor = '#ffffff'; } // Red
-          else if (g.type === 'mine') { boxColor = '#f97316'; textColor = '#ffffff'; } // Orange
-          else if (g.type === 'gold') { boxColor = '#eab308'; textColor = '#000000'; } // Yellow
-          else if (g.type === 'lithium') { boxColor = '#cbd5e1'; textColor = '#000000'; } // Silver
-          else if (g.type === 'platinum') { boxColor = '#94a3b8'; textColor = '#000000'; } // Chrome/Gray
-          else if (g.type === 'energy') { boxColor = '#06b6d4'; textColor = '#000000'; }
-          else if (g.type === 'fuel') { boxColor = '#6366f1'; textColor = '#ffffff'; }
-          else if (g.type === 'weapon') { boxColor = '#a855f7'; textColor = '#ffffff'; }
-          else if (g.type === 'shield') { boxColor = '#10b981'; textColor = '#000000'; }
-          
-          // Box Base
-          ctx.fillStyle = boxColor;
-          ctx.fillRect(-boxSize/2, -boxSize/2, boxSize, boxSize);
-          
-          // Border (Simple)
-          ctx.strokeStyle = 'rgba(255,255,255,0.6)'; 
-          ctx.lineWidth = 2; 
-          ctx.strokeRect(-boxSize/2, -boxSize/2, boxSize, boxSize); 
-          
-          // Letter Logic
-          ctx.fillStyle = textColor; 
-          ctx.font = '900 14px Arial'; 
-          ctx.textAlign = 'center'; 
-          ctx.textBaseline = 'middle'; 
-          let letter = 'L';
-          if (g.type === 'missile' || g.type === 'mine') letter = 'M';
-          else if (g.type === 'energy' || g.type === 'fuel') letter = 'E';
-          else if (g.type === 'weapon') letter = 'W';
-          else if (g.type === 'shield') letter = 'S';
-          else if (g.type === 'gold') letter = 'G';
-          else if (g.type === 'lithium') letter = 'Li';
-          else if (g.type === 'platinum') letter = 'Pt';
-          
-          // Shadow for contrast if needed
-          ctx.shadowColor = 'rgba(0,0,0,0.5)';
-          ctx.shadowBlur = 2;
-          ctx.fillText(letter, 0, 1); 
-          ctx.shadowBlur = 0;
-          
-          ctx.restore(); 
-          
-          if (g.isPulled) { 
-              ctx.save(); ctx.strokeStyle = '#00f2ff'; ctx.globalAlpha = 0.3; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(s.px, s.py); ctx.lineTo(g.x, g.y); ctx.stroke(); ctx.restore(); 
-          } 
-      } ctx.restore(); });
-      
-      s.energyBolts.forEach(eb => { ctx.save(); ctx.translate(eb.x, eb.y); const bg = ctx.createRadialGradient(0,0,0,0,0,30); bg.addColorStop(0,'#fff'); bg.addColorStop(0.2,'#00f2ff'); bg.addColorStop(1,'transparent'); ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(0,0,30,0,Math.PI*2); ctx.fill(); ctx.restore(); });
-      for (let i = s.particles.length - 1; i >= 0; i--) { const p = s.particles[i]; ctx.globalAlpha = p.life; ctx.fillStyle = p.color; if (p.type === 'smoke') { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.001, p.size * (1.5 - p.life)), 0, Math.PI*2); ctx.fill(); } else if (p.type === 'debris') { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(s.frame * 0.1); ctx.fillRect(-p.size/2, -p.size/2, p.size, p.size); ctx.restore(); } else if (p.type === 'shock') { ctx.lineWidth = 4 * p.life; ctx.strokeStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, p.size * (1 - p.life) + 10, 0, Math.PI*2); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0.001, p.size), 0, Math.PI*2); ctx.fill(); } ctx.globalAlpha = 1; }
-      s.bullets.forEach(b => { const chargeScale = b.chargeLevel || 1.0; if (b.variant === 'mega' || b.variant === 'heavy_auto') { const w = 3.5; const h = b.variant === 'mega' ? 42 : 28; const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(angle); ctx.shadowColor = b.beamColor; ctx.shadowBlur = b.variant === 'mega' ? 10 : 5; ctx.fillStyle = '#ffffff'; ctx.fillRect(-w/2, 0, w, h); ctx.restore(); } else if (b.visualType) { const sz = b.size || 3, clr = b.beamColor || '#fff'; ctx.save(); ctx.shadowBlur = 10 * chargeScale; ctx.shadowColor = clr; if (b.visualType === 'ring') { ctx.strokeStyle = clr; ctx.lineWidth = 2 * chargeScale; ctx.beginPath(); ctx.arc(b.x, b.y, sz + 2, 0, Math.PI * 2); ctx.stroke(); } else if (b.visualType === 'thunder') { ctx.strokeStyle = clr; ctx.lineWidth = (b.variant === 'mega' ? 3 : 1.5) * 1.2; ctx.shadowBlur = 10; ctx.beginPath(); ctx.moveTo(b.x, b.y); const len = b.variant === 'mega' ? 80 : 50; const zig = 8; let cx = b.x, cy = b.y; for(let k=0; k<5; k++) { cx += (Math.random()-0.5)*zig; cy -= len/5; ctx.lineTo(cx, cy); if (Math.random() > 0.6) { ctx.moveTo(cx, cy); ctx.lineTo(cx+(Math.random()-0.5)*20, cy-15); ctx.moveTo(cx, cy); } } ctx.stroke(); } else if (b.visualType === 'solid_glow' || b.visualType === 'comet') { const isOverload = b.variant === 'mega' || b.variant === 'heavy_auto'; const rad = sz * (isOverload ? 1.5 : 1); ctx.shadowBlur = isOverload ? 20 : 10; ctx.fillStyle = clr; ctx.beginPath(); ctx.arc(b.x, b.y, rad, 0, Math.PI * 2); ctx.fill(); } else { ctx.fillStyle = clr; ctx.beginPath(); ctx.arc(b.x, b.y, sz, 0, Math.PI * 2); ctx.fill(); } ctx.restore(); } else { if (chargeScale > 1.2) { ctx.save(); ctx.shadowBlur = 10 * chargeScale; ctx.shadowColor = b.beamColor; ctx.fillStyle = '#fff'; ctx.fillRect(b.x - (b.size * 1.5)/2, b.y - b.size * 3, b.size * 1.5, b.size * 6); ctx.restore(); } else { ctx.fillStyle = b.beamColor || '#fbbf24'; ctx.fillRect(b.x - b.size/2, b.y - b.size * 2, b.size, b.size * 4); } } });
-      s.enemyBullets.forEach(eb => { if (eb.isArc) { ctx.strokeStyle = eb.bColor || '#a855f7'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(eb.x, eb.y); ctx.lineTo(s.px, s.py); ctx.stroke(); } else if (eb.isBubble) { ctx.strokeStyle = eb.bColor || '#a855f7'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(eb.x, eb.y, 10, 0, Math.PI*2); ctx.stroke(); } else { ctx.fillStyle = eb.bColor || (eb.isExotic ? '#a855f7' : '#f87171'); ctx.fillRect(eb.x-2, eb.y, 4, 18); } });
-      
-      // Draw Missiles (Redesigned)
-      s.missiles.forEach(m => { 
-          ctx.save(); 
-          const mScale = (1 + (m.z / 1000)) * projectileScale; 
-          ctx.translate(m.x, m.y); 
-          ctx.scale(mScale, mScale); 
-          ctx.rotate(Math.atan2(m.vy, m.vx) + Math.PI/2); 
-          
-          // Cylindrical body with rounded head (Silver)
-          ctx.fillStyle = '#e2e8f0'; 
-          ctx.beginPath();
-          ctx.moveTo(-2.5, -5); 
-          ctx.arc(0, -5, 2.5, Math.PI, 0); // Head
-          ctx.lineTo(2.5, 8); 
-          ctx.lineTo(-2.5, 8); 
-          ctx.closePath();
-          ctx.fill();
-          
-          // Red Stripe near head
-          ctx.fillStyle = '#ef4444';
-          ctx.fillRect(-2.5, -3, 5, 2);
+        // NEW MAPPING: Shift is Charge (Overload)
+        if (s.isCharging && s.energy > 5) {
+            // Target ~2 shots per second continuous charge/fire cycle if held
+            // To fire every 0.5s (30 frames), charge must go 0->100 in 30 frames.
+            // 100 / 30 = 3.33 per frame.
+            s.chargeLevel = Math.min(100, s.chargeLevel + 3.5); 
+            
+            s.energy -= 0.5;
+            // No particles here anymore
+            
+            if (s.chargeLevel >= 100 && !s.hasFiredOverload) { 
+                fireOverloadShot(true); 
+                s.hasFiredOverload = true; 
+                s.lastFire = Date.now(); 
+                audioService.stopCharging(); 
+                // Reset immediately to allow rapid charge firing
+                s.chargeLevel = 0;
+                s.hasFiredOverload = false;
+            }
+        }
 
-          // Red Fins close to tail
-          ctx.fillStyle = '#ef4444';
-          ctx.beginPath();
-          ctx.moveTo(-2.5, 3); ctx.lineTo(-6, 8); ctx.lineTo(-2.5, 8); ctx.fill(); // Left
-          ctx.beginPath();
-          ctx.moveTo(2.5, 3); ctx.lineTo(6, 8); ctx.lineTo(2.5, 8); ctx.fill(); // Right
+        // Secondary Fire
+        if ((s.keys.has('ControlLeft') || s.keys.has('ControlRight'))) {
+            const mounts = getWingMounts(activeShip.config);
+            const wings = [activeShip.fitting.weapons[1], activeShip.fitting.weapons[2]];
+            let fired = false;
+            const speed = 18; 
+            const exoticSpeed = 12;
 
-          // Thruster Flame
-          if (s.frame % 4 < 2) { 
-              ctx.fillStyle = '#fbbf24'; 
-              ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 14 + Math.random()*6); ctx.lineTo(2, 8); ctx.fill(); 
-          } 
-          ctx.restore(); 
-      });
-      s.mines.forEach(m => { const mScale = (1 + (m.z / 1000)) * projectileScale; ctx.save(); ctx.translate(m.x, m.y); ctx.scale(mScale, mScale); ctx.beginPath(); ctx.fillStyle = m.isEMP ? '#3b82f6' : '#fbbf24'; ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill(); if (m.isEMP) { ctx.strokeStyle = '#60a5fa'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 8 + Math.sin(s.frame * 0.2) * 2, 0, Math.PI*2); ctx.stroke(); } else { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(0, 0, 7, 0, Math.PI*2); ctx.stroke(); } ctx.restore(); });
-      if (s.isPaused) { ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(0,0,canvas.width,canvas.height); }
-      ctx.restore(); anim = requestAnimationFrame(loop);
-    };
-    anim = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(anim); window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); window.removeEventListener('resize', resize); window.removeEventListener('blur', handleBlur); };
-  }, [ships, shield, secondShield, difficulty, currentPlanet, quadrant, onGameOver, mode, planetRegistry]);
-
-  const ep = (stats.energy / maxEnergy) * 100, fp = (stats.fuel / maxFuelCapacity) * 100, nl = 15, ael = Math.ceil((ep/100)*nl), afl = Math.ceil((fp/100)*nl);
-  
-  const renderBackgroundSystem = () => {
-      const stars = <StarField />;
-      if (stateRef.current.gamePhase === 'approach' || stateRef.current.gamePhase === 'quiet' || stats.bossDead) {
-          // Dynamic Zoom for Approach - capped to prevent excessive zoom
-          const maxZoom = 2.5; 
-          const zoomLevel = stateRef.current.gamePhase === 'approach' 
-              ? Math.min(maxZoom, 0.8 + (stateRef.current.approachTimer * 0.005)) 
-              : 0.8;
-          
-          // Apply user zoom and pan during interactive approach
-          const finalZoom = zoomLevel * stats.systemZoom;
-          const userPan = stats.systemPan;
-
-          // For the HUD visual, we use a temporarily selected ID if hovered, otherwise fallback to the ship's target
-          // But actually, we don't have a hover state for ID in game engine directly exposed from SolarSystems easily without callback.
-          // We'll rely on onPlanetSelect updating the main state, but we only show the label on hover in SolarSystems.
-          const tId = stats.selectedTargetId; 
-          
-          const props = { 
-              selectedPlanetId: tId, 
-              scale: finalZoom, 
-              onPlanetSelect: (id: string) => { 
-                  // Update HUD Selection without changing ship course unless explicitly handled elsewhere
-                  // Actually, let's allow changing the "Selected Target ID" for information purposes
-                  setStats(p => ({...p, selectedTargetId: id})); 
-              }, 
-              className: `opacity-100 transition-transform duration-100 pointer-events-auto`, 
-          };
-          
-          let SystemComponent;
-          switch(quadrant) {
-              case QuadrantType.ALFA: SystemComponent = AlfaSystem; break;
-              case QuadrantType.BETA: SystemComponent = BetaSystem; break;
-              case QuadrantType.GAMA: SystemComponent = GamaSystem; break;
-              case QuadrantType.DELTA: SystemComponent = DeltaSystem; break;
-              default: SystemComponent = AlfaSystem;
-          }
-          return (
-              <>
-                  <div className="absolute inset-0 z-0 pointer-events-none">{stars}</div>
-                  <div 
-                    className="absolute inset-0 z-10 flex items-center justify-center overflow-hidden" 
-                    onMouseMove={(e) => {
-                        if (stats.gamePhase === 'approach') {
-                            const dx = (e.clientX - window.innerWidth/2) * 0.1;
-                            const dy = (e.clientY - window.innerHeight/2) * 0.1;
-                            // Only update if change is significant to avoid spam
-                            if (Math.abs(dx - userPan.x) > 2 || Math.abs(dy - userPan.y) > 2) {
-                                setStats(p => ({...p, systemPan: {x: -dx, y: -dy}}));
+            wings.forEach((w, i) => {
+                if (w && w.id) {
+                    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id);
+                    if (wDef) {
+                        const interval = Math.max(1, Math.floor(60 / wDef.fireRate));
+                        if (s.frame % interval === 0) {
+                            
+                            // Ammo Check
+                            if (wDef.isAmmoBased) {
+                                if (s.magazineCurrent <= 0) return; 
+                                s.magazineCurrent--;
+                            } else if (s.energy < wDef.energyCost) {
+                                return; 
                             }
+
+                            // Record fire time
+                            s.weaponFireTimes[i+1] = Date.now();
+                            // Standard guns heat up slower than energy? No, standard gets red hot after 50 shots.
+                            // 50 shots * 2 heat = 100.
+                            const heatInc = wDef.isAmmoBased ? 0.5 : 1.0; 
+                            s.weaponHeat[i+1] = Math.min(100, (s.weaponHeat[i+1] || 0) + heatInc);
+
+                            const baseAngle = (s.swivelMode && wDef.isAmmoBased) ? Math.sin(s.frame * 0.1) * 13 : 0;
+                            const currentAngleDeg = i === 0 ? baseAngle : -baseAngle;
+                            const angleRad = (currentAngleDeg * Math.PI) / 180;
+                            
+                            // Visual Scaling
+                            const scale = 0.6;
+                            // Mount position from 0-100 coord space
+                            const mx = mounts[i].x; 
+                            const my = mounts[i].y;
+                            // Calculate Muzzle Offset (Approx 15 units up in local space)
+                            const muzzleY = my - 15;
+                            
+                            const startX = s.px + (mx - 50) * scale;
+                            const startY = s.py + (muzzleY - 50) * scale;
+
+                            const isExotic = w.id.includes('exotic');
+                            const bulletSpeed = isExotic ? exoticSpeed : speed;
+                            
+                            let damage = wDef.damage;
+                            let color = wDef.beamColor || '#fff';
+                            let traceColor = undefined;
+                            let isTracer = false;
+
+                            if (wDef.isAmmoBased) {
+                                const ammoConfig = AMMO_CONFIG[s.selectedAmmo];
+                                damage *= ammoConfig.damageMult;
+                                color = ammoConfig.color;
+                                traceColor = ammoConfig.traceColor;
+                                isTracer = true;
+                                
+                                // Smoke & Fire Particles for Projectiles ONLY
+                                s.particles.push({ 
+                                    x: startX, y: startY, 
+                                    vx: (Math.random()-0.5)*2 - Math.sin(angleRad)*5, 
+                                    vy: (Math.random()-0.5)*2 + Math.cos(angleRad)*5, 
+                                    life: 0.4, color: '#a1a1aa', size: 3 
+                                });
+                                s.particles.push({ 
+                                    x: startX, y: startY, 
+                                    vx: (Math.random()-0.5)*4, 
+                                    vy: (Math.random()-0.5)*4, 
+                                    life: 0.15, color: '#fca5a5', size: 2 
+                                });
+                            }
+
+                            if (w.id === 'exotic_trident') {
+                                for (let k = -1; k <= 1; k++) {
+                                    s.bullets.push({ x: startX + (k * 10), y: startY, vx: Math.sin(angleRad) * bulletSpeed, vy: -Math.cos(angleRad) * bulletSpeed, damage, color, type: 'trident', life: 60, isEnemy: false, width: 4, height: 20, weaponId: w.id });
+                                }
+                            } else if (w.id === 'exotic_scatter') {
+                                const spread = (Math.random() - 0.5) * 1.5; 
+                                const finalAngle = angleRad + spread;
+                                s.bullets.push({ x: startX, y: startY, vx: Math.sin(finalAngle) * bulletSpeed, vy: -Math.cos(finalAngle) * bulletSpeed, damage, color, type: 'scatter', life: 40, isEnemy: false, width: 6, height: 12, weaponId: w.id });
+                            } else if (w.id === 'exotic_flamer') {
+                                const spread = (Math.random() - 0.5) * 0.5;
+                                s.bullets.push({ x: startX, y: startY, vx: Math.sin(angleRad + spread) * (bulletSpeed * 0.5), vy: -Math.cos(angleRad + spread) * (bulletSpeed * 0.5), damage, color, type: 'flame', life: 30, isEnemy: false, width: 10, height: 10, weaponId: w.id });
+                            } else if (w.id === 'exotic_electric') {
+                                s.bullets.push({ x: startX, y: startY, vx: Math.sin(angleRad) * (bulletSpeed * 1.5), vy: -Math.cos(angleRad) * (bulletSpeed * 1.5), damage, color, type: 'laser', life: 30, isEnemy: false, width: 6, height: 100, weaponId: w.id });
+                            } else if (w.id === 'exotic_rainbow_cloud') {
+                                const angles = [-45, -27, -9, 9, 27, 45];
+                                const colors = ['#facc15', '#ef4444', '#3b82f6', '#3b82f6', '#ef4444', '#facc15']; // Yellow, Red, Blue, Blue, Red, Yellow
+                                const damages = [damage*0.5, damage*0.8, damage*1.2, damage*1.2, damage*0.8, damage*0.5]; // Weak sides, strong center
+                                
+                                angles.forEach((deg, idx) => {
+                                    const rad = (deg * Math.PI) / 180;
+                                    // Add base angle rotation if swivel
+                                    const finalAngle = angleRad + rad;
+                                    
+                                    s.bullets.push({ 
+                                        x: startX, y: startY, 
+                                        vx: Math.sin(finalAngle) * bulletSpeed * 0.8, // Slightly slower clouds
+                                        vy: -Math.cos(finalAngle) * bulletSpeed * 0.8, 
+                                        damage: damages[idx], 
+                                        color: colors[idx], 
+                                        type: 'flame', // Reusing flame type for cloud look
+                                        life: 40, 
+                                        isEnemy: false, 
+                                        width: 8, height: 8, 
+                                        weaponId: w.id 
+                                    });
+                                });
+                            } else {
+                                s.bullets.push({ 
+                                    x: startX, y: startY, 
+                                    vx: Math.sin(angleRad) * bulletSpeed, vy: -Math.cos(angleRad) * bulletSpeed, 
+                                    damage, color, 
+                                    type: wDef.type === WeaponType.LASER ? 'laser' : 'projectile', 
+                                    life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id,
+                                    isTracer, traceColor
+                                });
+                            }
+                            fired = true;
+                            if (!wDef.isAmmoBased) s.energy -= wDef.energyCost;
                         }
-                    }}
-                  >
-                      <div style={{ transform: `translate(${userPan.x}px, ${userPan.y}px)`, transition: 'transform 0.1s linear' }}>
-                        <SystemComponent {...props} planetRegistry={planetRegistry} />
-                      </div>
-                  </div>
-              </>
-          );
-      }
-      return <div className="absolute inset-0 z-0">{stars}</div>;
-  };
+                    }
+                }
+            });
+            if (fired) { audioService.playWeaponFire('cannon', 0, activeShip.config.id); }
+        }
 
-  const getTargetStatus = () => {
-      if (!planetRegistry || !stats.selectedTargetId) return 'occupied';
-      return planetRegistry[stats.selectedTargetId]?.status || 'occupied';
-  };
+        // Spawning
+        if (s.phase === 'travel') {
+            if (s.enemies.length < 3 + difficulty/2 && Date.now() - s.lastSpawn > 1500) { 
+                
+                // --- ENEMY SPAWN POOL LOGIC ---
+                // Base: Standard Human Ships
+                let spawnPool = SHIPS.filter(s => !s.isAlien);
+                
+                // Difficulty 4+: Add Alien H (Tanky)
+                if (difficulty >= 4) {
+                    spawnPool = [...spawnPool, ...SHIPS.filter(s => s.id === 'alien_h')];
+                }
+                
+                // Difficulty 7+: Add Alien W (Assault)
+                if (difficulty >= 7) {
+                    spawnPool = [...spawnPool, ...SHIPS.filter(s => s.id === 'alien_w')];
+                }
+                
+                // Difficulty 9+: Add Alien A (Fast) and Alien M (Heavy Bomber)
+                if (difficulty >= 9) {
+                    spawnPool = [...spawnPool, ...SHIPS.filter(s => s.id === 'alien_a' || s.id === 'alien_m')];
+                }
+                
+                // Select a random ship config from the difficulty-adjusted pool
+                const selectedShip = spawnPool.length > 0 
+                    ? spawnPool[Math.floor(Math.random() * spawnPool.length)]
+                    : SHIPS[0]; 
 
-  const getActionButtonLabel = () => {
-      if (stats.gamePhase === 'approach') {
-          return stateRef.current.approachTimer > 300 && getTargetStatus() === 'friendly' ? 'LAND' : 'ABORT';
-      }
-      return 'RETREAT';
-  };
+                s.enemies.push(new Enemy(Math.random()*width, -50, 'fighter', selectedShip, difficulty, quadrant)); 
+                s.lastSpawn = Date.now(); 
+            }
+            if (s.asteroids.length < 3 && Math.random() > 0.985) { s.asteroids.push(new Asteroid(width, difficulty, Math.random() > 0.7)); }
+            if (s.time <= 0) { 
+                s.phase = 'boss'; 
+                s.enemies = []; 
+                // Select random BOSS ship from updated BOSS_SHIPS
+                const bossConfig = BOSS_SHIPS[Math.floor(Math.random() * BOSS_SHIPS.length)];
+                s.enemies.push(new Enemy(width/2, -200, 'boss', bossConfig, difficulty, quadrant)); 
+                setHud(h => ({...h, alert: "BOSS DETECTED", alertType: 'alert'})); 
+            } 
+            else if (s.frame % 60 === 0) s.time--;
+        } else if (s.phase === 'boss') {
+            if (s.bossDead) { s.victoryTimer++; if (s.victoryTimer > 180) { onGameOver(true, s.score, false, { health: s.hp, fuel: s.fuel, rockets: s.missiles, mines: s.mines, cargo: s.cargo, ammo: s.ammo, magazineCurrent: s.magazineCurrent, reloadTimer: s.reloadTimer }); s.active = false; } }
+        }
 
-  const handleActionButtonClick = (e: React.MouseEvent) => {
-      const label = getActionButtonLabel();
-      const s = stateRef.current;
+        // Update Entities
+        s.asteroids.forEach(a => {
+            a.x += a.vx; a.y += a.vy; a.z += a.vz; a.ax += a.vax; a.ay += a.vay; a.az += a.vaz;
+            if (Math.abs(a.z) < 50 && Math.hypot(a.x-s.px, a.y-s.py) < a.size + 30) { takeDamage(20, 'collision'); a.hp = 0; createExplosion(a.x, a.y, '#aaa', 5); }
+        });
+        s.asteroids = s.asteroids.filter(a => a.y < height + 100 && a.hp > 0);
+
+        s.enemies.forEach(e => {
+            e.update(s.px, s.py, width, height, s.bullets);
+            
+            // Firing Logic for Enemy Weapons
+            if (Date.now() - e.lastShot > (e.type === 'boss' ? 800 : 1500)) {
+                const mounts = getWingMounts(e.config);
+                const scale = 0.5; // Scale for enemy ships is 0.5 in drawShip
+                
+                // Determine active slots based on enemy type
+                let slotsToFire = [0, 1, 2];
+                if (e.type === 'boss') {
+                    // Boss logic: Middle (0) OR Wings (1 & 2), never mixed in a single volley
+                    // 50% chance for each mode
+                    if (Math.random() < 0.5) slotsToFire = [0];
+                    else slotsToFire = [1, 2];
+                }
+
+                // Fire all active slots
+                slotsToFire.forEach(i => {
+                    const w = e.equippedWeapons[i];
+                    if (!w) return;
+                    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id);
+                    if (!wDef) return;
+
+                    // Calculate spawn position
+                    let sx = e.x;
+                    let sy = e.y + 20; // Default nose-ish
+
+                    if (i === 0) {
+                        // Slot 0 (Nose)
+                        sy = e.y + 30; // Roughly nose tip downwards
+                    } else {
+                        // Slot 1 & 2 (Wings)
+                        const m = mounts[i-1];
+                        if (m) {
+                            const ox = (m.x - 50) * scale;
+                            const oy = (m.y - 50) * scale;
+                            sx = e.x - ox; 
+                            sy = e.y - oy;
+                        }
+                    }
+
+                    // Bullets travel DOWN (positive VY)
+                    let damage = e.type === 'boss' ? 30 : 10;
+                    damage = wDef.damage * 0.3;
+                    const color = wDef.beamColor || '#ef4444';
+                    
+                    // Add Muzzle Flash particle for Ammo Weapons
+                    if (wDef.isAmmoBased) {
+                        s.particles.push({ 
+                            x: sx, y: sy, 
+                            vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, 
+                            life: 0.2, color: '#fca5a5', size: 3 
+                        });
+                    }
+
+                    if (wDef.id === 'exotic_rainbow_cloud') {
+                        // Special handling for enemy rainbow cloud
+                        const bulletSpeed = 8;
+                        const angles = [-45, -27, -9, 9, 27, 45];
+                        const colors = ['#facc15', '#ef4444', '#3b82f6', '#3b82f6', '#ef4444', '#facc15']; 
+                        
+                        angles.forEach((deg, idx) => {
+                            const rad = (deg * Math.PI) / 180;
+                            // Angle 0 is straight down (PI/2)
+                            const baseAngle = Math.PI / 2;
+                            const finalAngle = baseAngle + rad;
+                            
+                            s.bullets.push({ 
+                                x: sx, y: sy, 
+                                vx: Math.cos(finalAngle) * bulletSpeed * 0.8, 
+                                vy: Math.sin(finalAngle) * bulletSpeed * 0.8, 
+                                damage: damage, 
+                                color: colors[idx], 
+                                type: 'flame', 
+                                life: 40, 
+                                isEnemy: true, 
+                                width: 8, height: 8, 
+                                weaponId: wDef.id 
+                            });
+                        });
+                    } else {
+                        s.bullets.push({ 
+                            x: sx, y: sy, 
+                            vx: 0, vy: 8, 
+                            damage, color, 
+                            type: wDef.type === WeaponType.LASER ? 'laser' : 'projectile', 
+                            life: 100, isEnemy: true, width: 6, height: 12, 
+                            weaponId: wDef.id 
+                        });
+                    }
+                });
+                
+                e.lastShot = Date.now();
+            }
+
+            if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < 60) { takeDamage(30, 'collision'); if(e.type !== 'boss') e.hp = 0; createExplosion(e.x, e.y, '#f00', 10); }
+        });
+        const deadEnemies = s.enemies.filter(e => e.hp <= 0);
+        deadEnemies.forEach(e => {
+            createExplosion(e.x, e.y, '#fbbf24', 20);
+            if (e.type === 'boss') { 
+                s.bossDead = true; 
+                s.score += 5000; 
+                const exotic = EXOTIC_WEAPONS[Math.floor(Math.random()*EXOTIC_WEAPONS.length)];
+                spawnLoot(e.x, e.y, 0, 'weapon', exotic.id, exotic.name); 
+            }
+            else { 
+                s.score += 100; 
+                if(Math.random()>0.7) spawnLoot(e.x, e.y, e.z, 'ammo', s.selectedAmmo, 'Ammo'); 
+            } 
+        });
+        s.enemies = s.enemies.filter(e => e.hp > 0 && e.y < height + 200);
+
+        s.bullets.forEach(b => {
+            // Intelligent Projectile Logic
+            if (b.type === 'missile' || b.type === 'missile_emp') {
+                if (!b.target || b.target.hp <= 0) {
+                    b.homingState = 'searching';
+                    let bestT = null; let minD = Infinity;
+                    s.enemies.forEach(e => {
+                        const dist = Math.hypot(e.x - b.x, e.y - b.y);
+                        // Forward is Up (-PI/2)
+                        const angleToEnemy = Math.atan2(e.y - b.y, e.x - b.x);
+                        let dAngle = Math.abs(angleToEnemy - (-Math.PI/2));
+                        if (dAngle > Math.PI) dAngle = 2*Math.PI - dAngle;
+                        // 120 degree cone (PI/3 either side)
+                        if (dAngle < Math.PI/3 && dist < minD && e.hp > 0) { minD = dist; bestT = e; }
+                    });
+                    if (bestT) { b.target = bestT; b.homingState = 'tracking'; }
+                }
+                
+                if (b.target && b.homingState === 'tracking') {
+                    const t = b.target;
+                    const dx = t.x - b.x; const dy = t.y - b.y;
+                    const dist = Math.hypot(dx, dy);
+                    const speed = b.maxSpeed || 14;
+                    const turnRate = b.turnRate || 0.15;
+                    
+                    const desiredVx = (dx / dist) * speed;
+                    const desiredVy = (dy / dist) * speed;
+                    
+                    b.vx += (desiredVx - b.vx) * turnRate;
+                    b.vy += (desiredVy - b.vy) * turnRate;
+                    
+                    // Z-Level Jumping
+                    b.z = (b.z || 0) + (t.z - (b.z || 0)) * 0.1;
+                }
+                
+                // Asteroid Avoidance
+                s.asteroids.forEach(a => {
+                    const dx = b.x - a.x; const dy = b.y - a.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d < a.size + 80) {
+                        const force = (a.size + 80 - d) / 15;
+                        b.vx += (dx/d) * force;
+                        b.vy += (dy/d) * force;
+                    }
+                });
+            } 
+            else if (b.type === 'mine' || b.type === 'mine_emp') {
+                if (b.homingState === 'searching') {
+                    let bestT = null; let minD = Infinity;
+                    s.enemies.forEach(e => {
+                        const dist = Math.hypot(e.x - b.x, e.y - b.y);
+                        const angleToEnemy = Math.atan2(e.y - b.y, e.x - b.x);
+                        let dAngle = Math.abs(angleToEnemy - (-Math.PI/2));
+                        if (dAngle > Math.PI) dAngle = 2*Math.PI - dAngle;
+                        // PREFER OUTSIDE 120 degree cone
+                        if (dAngle > Math.PI/3 && dist < minD && e.hp > 0) { minD = dist; bestT = e; }
+                    });
+                    if (bestT) { b.target = bestT; b.homingState = 'engaging'; }
+                }
+                
+                if (b.target && b.homingState === 'engaging') {
+                    if (b.target.hp <= 0) { b.target = null; b.homingState = 'returning'; }
+                    else {
+                        const t = b.target;
+                        const dx = t.x - b.x; const dy = t.y - b.y;
+                        const dist = Math.hypot(dx, dy);
+                        const speed = b.maxSpeed || 10;
+                        const turnRate = b.turnRate || 0.08;
+                        b.vx += ((dx/dist)*speed - b.vx) * turnRate;
+                        b.vy += ((dy/dist)*speed - b.vy) * turnRate;
+                    }
+                } else if (b.homingState === 'returning') {
+                    // Return to player vicinity to find new targets
+                    const dx = s.px - b.x; const dy = s.py - b.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < 100) b.homingState = 'searching';
+                    else {
+                        const speed = 8;
+                        b.vx += ((dx/dist)*speed - b.vx) * 0.05;
+                        b.vy += ((dy/dist)*speed - b.vy) * 0.05;
+                    }
+                }
+                
+                // Mine Avoidance
+                s.asteroids.forEach(a => {
+                    const dx = b.x - a.x; const dy = b.y - a.y;
+                    const d = Math.hypot(dx, dy);
+                    if (d < a.size + 100) {
+                        const force = (a.size + 100 - d) / 10;
+                        b.vx += (dx/d) * force;
+                        b.vy += (dy/d) * force;
+                    }
+                });
+            }
+
+            b.x += b.vx; b.y += b.vy; b.life--;
+            
+            // Standard non-intelligent collision for non-smart types
+            if (!b.isEnemy && !['missile', 'mine', 'missile_emp', 'mine_emp'].includes(b.type)) {
+                if (b.type.includes('missile') || b.type.includes('mine')) { // Keep simple physics if dumb fire
+                    s.asteroids.forEach(ast => {
+                        const dx = ast.x - b.x;
+                        const dy = ast.y - b.y;
+                        const dist = Math.hypot(dx, dy);
+                        if (dist < ast.size + 50) {
+                            b.vx -= Math.sign(dx) * 0.5;
+                        }
+                    });
+                }
+            }
+
+            if (b.isEnemy) {
+                if (Math.hypot(b.x-s.px, b.y-s.py) < 30) { takeDamage(b.damage, b.type); b.life = 0; createExplosion(b.x, b.y, b.color, 3); }
+            } else {
+                let hit = false;
+                // Collision Logic
+                s.enemies.forEach(e => {
+                    // For missiles/mines, allow Z-level jumping (ignore Z dist check visually)
+                    const hitDist = (b.type.includes('missile') || b.type.includes('mine')) 
+                        ? (e.type === 'boss' ? 100 : 60) // Larger hit radius for smart weapons
+                        : (e.type === 'boss' ? 80 : 40);
+
+                    // Check distance 
+                    if (Math.hypot(b.x-e.x, b.y-e.y) < hitDist) {
+                        // Standard bullets check Z alignment in Enemy class, but we can bypass or assume hit here
+                        e.takeDamage(b.damage, b.type as any, !!b.isMain, !!b.isOvercharge);
+                        hit = true;
+                        createExplosion(b.x, b.y, b.color, 2);
+                    }
+                });
+                
+                if (hit) {
+                    b.life = 0;
+                } else if (b.type.includes('mine') && b.target && (b.target.x < -100 || b.target.x > width+100 || b.target.y < -100)) {
+                    // Mine chased target off screen - Kill both
+                    b.target.takeDamage(9999, 'mine', false); // Kill enemy
+                    b.life = 0; // Explode mine
+                    s.score += 500; // Bonus points for off-screen kill
+                    setHud(h => ({...h, alert: "OFF-SCREEN KILL +500"}));
+                }
+
+                s.asteroids.forEach(a => {
+                    if (Math.hypot(b.x-a.x, b.y-a.y) < a.size + 10) {
+                        let dmg = b.damage;
+                        if (b.isMain) dmg *= 5.0; 
+                        
+                        a.hp -= dmg; 
+                        b.life = 0; 
+                        createExplosion(b.x, b.y, '#888', 3);
+                        if (a.hp <= 0 && a.loot) spawnLoot(a.x, a.y, a.z, a.loot.type, a.loot.id, a.loot.name);
+                    }
+                });
+            }
+        });
+        // Filter out dead bullets, but allow mines to go off-screen if engaging
+        s.bullets = s.bullets.filter(b => {
+            if (b.life <= 0) return false;
+            if (b.type.includes('mine') && b.homingState === 'engaging') return true; // Keep alive off screen
+            return b.y > -200 && b.y < height + 200;
+        });
+
+        s.loot.forEach(l => {
+            const d = Math.hypot(l.x - s.px, l.y - s.py);
+            if (d < 200) { l.x += (s.px - l.x) * 0.05; l.y += (s.py - l.y) * 0.05; if (d < 40) { 
+                l.isPulled = true; 
+                if (l.type === 'ammo') {
+                    s.magazineCurrent = Math.min(1000, s.magazineCurrent + 50);
+                    s.ammo[s.selectedAmmo] += 50; 
+                    audioService.playSfx('buy'); 
+                    setHud(h => ({...h, alert: `+50 ${l.name?.toUpperCase()}`}));
+                } else {
+                    const existing = s.cargo.find(c => c.type === l.type && c.id === l.id); 
+                    if (existing) existing.quantity++; 
+                    else s.cargo.push({ instanceId: Date.now().toString(), type: l.type as any, id: l.id, name: l.name || l.type, quantity: 1, weight: 1 }); 
+                    audioService.playSfx('buy'); 
+                    setHud(h => ({...h, alert: `GOT ${l.name || l.type.toUpperCase()}`})); 
+                }
+            } } else l.y += 2;
+        });
+        s.loot = s.loot.filter(l => !l.isPulled && l.y < height + 100);
+
+        // Render
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = '#fff'; s.stars.forEach(st => { st.y += st.s * 0.5; if(st.y > height) st.y = 0; ctx.globalAlpha = Math.random() * 0.5 + 0.3; ctx.beginPath(); ctx.arc(st.x, st.y, st.s, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1;
+
+        const entities = [...s.asteroids.map(a => ({type: 'ast', z: a.z, obj: a})), ...s.enemies.map(e => ({type: 'enemy', z: e.z, obj: e})), ...s.loot.map(l => ({type: 'loot', z: l.z, obj: l})), {type: 'player', z: 0, obj: null}].sort((a,b) => a.z - b.z);
+        entities.forEach(item => {
+            const scale = 1 + (item.type === 'ast' ? (item.obj as Asteroid).z / 1000 : (item.type === 'enemy' ? (item.obj as Enemy).z / 1000 : 0));
+            if (scale <= 0) return;
+            ctx.save();
+            if (item.type === 'ast') {
+                const a = item.obj as Asteroid; ctx.translate(a.x, a.y); ctx.scale(scale, scale); ctx.rotate(a.ax);
+                a.faces.forEach(f => { const shade = 0.5 + (f.indices[0] % 5) * 0.1; ctx.fillStyle = shade > 0.8 ? '#fff' : a.color; ctx.globalAlpha = shade; ctx.beginPath(); f.indices.forEach((idx, i) => { const v = a.vertices[idx]; if (i===0) ctx.moveTo(v.x, v.y); else ctx.lineTo(v.x, v.y); }); ctx.fill(); });
+            } else if (item.type === 'enemy') {
+                const e = item.obj as Enemy; 
+                // Apply vibration if hit
+                const vibX = e.vibration > 0 ? (Math.random() - 0.5) * e.vibration : 0;
+                const vibY = e.vibration > 0 ? (Math.random() - 0.5) * e.vibration : 0;
+                
+                ctx.translate(e.x + vibX, e.y + vibY); 
+                ctx.scale(scale, scale); 
+                ctx.rotate(Math.PI);
+                
+                // Determine Enemy Color based on Quadrant
+                let enemyColor = '#ef4444'; // Default Red
+                let wingColor = '#ef4444';
+                
+                if (e.type !== 'boss') {
+                    const alienCols = getAlienColors(quadrant);
+                    enemyColor = alienCols.hull;
+                    wingColor = alienCols.wing;
+                } else {
+                    enemyColor = '#a855f7'; // Boss Purple default
+                    wingColor = '#d8b4fe';
+                }
+
+                drawShip(ctx, { 
+                    config: e.config, 
+                    fitting: null, 
+                    color: enemyColor,
+                    wingColor: wingColor,
+                    gunColor: '#ef4444',
+                    equippedWeapons: e.equippedWeapons // Pass actual weapons
+                }, false);
+                
+                e.shieldLayers.forEach((layer, idx) => {
+                    if (layer.current <= 0) return;
+                    const radius = 60 + (idx * 8); 
+                    const opacity = Math.min(1, layer.current / layer.max);
+                    
+                    ctx.strokeStyle = layer.color;
+                    ctx.lineWidth = 3;
+                    ctx.shadowColor = layer.color;
+                    ctx.shadowBlur = 10;
+                    ctx.globalAlpha = opacity;
+                    
+                    const segments = 3;
+                    const arcLen = (Math.PI * 2) / segments * 0.7; 
+                    const rotation = layer.rotation;
+                    
+                    ctx.beginPath();
+                    for(let k=0; k<segments; k++) {
+                        const startAngle = rotation + (k * (Math.PI*2)/segments);
+                        ctx.moveTo(Math.cos(startAngle)*radius, Math.sin(startAngle)*radius);
+                        ctx.arc(0, 0, radius, startAngle, startAngle + arcLen);
+                    }
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+                    ctx.globalAlpha = 1;
+                });
+
+            } else if (item.type === 'player') {
+                ctx.translate(s.px, s.py); 
+                drawShip(ctx, { 
+                    config: activeShip.config,
+                    fitting: activeShip.fitting,
+                    color: activeShip.color,
+                    wingColor: activeShip.wingColor,
+                    cockpitColor: activeShip.cockpitColor,
+                    gunColor: activeShip.gunColor,
+                    secondaryGunColor: activeShip.secondaryGunColor,
+                    gunBodyColor: activeShip.gunBodyColor,
+                    engineColor: activeShip.engineColor,
+                    nozzleColor: activeShip.nozzleColor
+                }, true);
+            } else if (item.type === 'loot') {
+                const l = item.obj as Loot; ctx.translate(l.x, l.y); ctx.scale(scale, scale); 
+                if (l.type === 'ammo') {
+                    ctx.fillStyle = '#facc15';
+                    ctx.beginPath(); ctx.rect(-6, -8, 12, 16); ctx.fill();
+                    ctx.fillStyle = '#000'; ctx.font = '10px monospace'; ctx.fillText('B', -3, 3);
+                } else if (l.type === 'robot') {
+                    ctx.fillStyle = '#10b981';
+                    ctx.beginPath(); ctx.rect(-7, -7, 14, 14); ctx.fill();
+                    ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText('R', -3, 3);
+                } else {
+                    ctx.fillStyle = l.type === 'gold' ? '#fbbf24' : '#a855f7'; ctx.fillRect(-8, -8, 16, 16); ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText(l.type.substring(0,1).toUpperCase(), -3, 3);
+                }
+            }
+            ctx.restore();
+        });
+
+        s.bullets.forEach(b => {
+            ctx.save();
+            ctx.translate(b.x, b.y);
+            
+            if (b.type.includes('missile')) {
+                // CYLINDRICAL MISSILE RENDERING
+                const rotation = Math.atan2(b.vy, b.vx) + Math.PI/2;
+                ctx.rotate(rotation);
+                const scale = 1.0 + ((b.z || 0)/1000); 
+                ctx.scale(scale, scale);
+
+                const isEmp = b.type.includes('emp');
+
+                // Body (Cylinder)
+                const grad = ctx.createLinearGradient(-3, 0, 3, 0);
+                grad.addColorStop(0, '#cbd5e1'); 
+                grad.addColorStop(0.5, '#ffffff');
+                grad.addColorStop(1, '#94a3b8'); 
+                ctx.fillStyle = grad;
+                ctx.fillRect(-3, -10, 6, 16);
+
+                // Head
+                ctx.fillStyle = b.headColor || (isEmp ? '#22d3ee' : '#ef4444');
+                ctx.beginPath();
+                ctx.moveTo(-3, -10);
+                ctx.lineTo(3, -10);
+                ctx.lineTo(0, -16);
+                ctx.fill();
+
+                // Fins
+                ctx.fillStyle = b.finsColor || (isEmp ? '#0ea5e9' : '#ef4444');
+                ctx.beginPath();
+                ctx.moveTo(-3, 6); ctx.lineTo(-6, 10); ctx.lineTo(-3, 4); 
+                ctx.moveTo(3, 6); ctx.lineTo(6, 10); ctx.lineTo(3, 4);
+                ctx.fill();
+
+                // Thruster
+                ctx.fillStyle = isEmp ? '#3b82f6' : '#facc15';
+                ctx.beginPath(); ctx.arc(0, 6, 2, 0, Math.PI*2); ctx.fill();
+            }
+            else if (b.type.includes('mine')) {
+                // MINE RENDERING
+                const scale = 1.0 + ((b.z || 0)/1000);
+                ctx.scale(scale, scale);
+                const rotation = s.frame * 0.1;
+                ctx.rotate(rotation);
+
+                // Core
+                ctx.fillStyle = b.color; 
+                ctx.shadowBlur = 10; ctx.shadowColor = b.color;
+                ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
+                
+                // Spikes
+                ctx.fillStyle = '#3f3f46'; 
+                for(let i=0; i<8; i++) {
+                    const ang = (i * Math.PI * 2) / 8;
+                    ctx.save();
+                    ctx.rotate(ang);
+                    ctx.fillRect(-1, -10, 2, 6);
+                    ctx.restore();
+                }
+                
+                // Blink light
+                if (s.frame % 20 < 10) {
+                    ctx.fillStyle = '#fff';
+                    ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fill();
+                }
+                ctx.shadowBlur = 0;
+            }
+            else if (b.weaponId === 'exotic_fireball') {
+                ctx.fillStyle = b.color;
+                ctx.shadowBlur = 10; ctx.shadowColor = b.color;
+                ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
+            } 
+            else if (b.weaponId === 'exotic_plasma_jet') {
+                if (b.vx !== 0 || b.vy !== 0) ctx.rotate(Math.atan2(b.vy, b.vx) + Math.PI/2);
+                ctx.fillStyle = b.color;
+                ctx.shadowBlur = 8; ctx.shadowColor = b.color;
+                ctx.beginPath(); ctx.ellipse(0, 0, 6, 25, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#fca5a5'; ctx.beginPath(); ctx.ellipse(0, 0, 3, 18, 0, 0, Math.PI*2); ctx.fill();
+            }
+            else if (b.weaponId === 'exotic_electric') {
+                if (b.vx !== 0 || b.vy !== 0) ctx.rotate(Math.atan2(b.vy, b.vx) + Math.PI/2);
+                ctx.strokeStyle = b.color;
+                ctx.shadowBlur = 15; ctx.shadowColor = b.color;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                const boltLen = 100;
+                ctx.moveTo(0, -boltLen/2);
+                const segments = 8;
+                const segLen = boltLen / segments;
+                for(let i=1; i<=segments; i++) {
+                    ctx.lineTo((Math.random()-0.5)*15, (-boltLen/2) + i*segLen);
+                }
+                ctx.stroke();
+                ctx.strokeStyle = '#fff'; ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+            else if (b.weaponId === 'exotic_wave') {
+                ctx.strokeStyle = b.color;
+                ctx.lineWidth = 3;
+                ctx.shadowBlur = 10; ctx.shadowColor = b.color;
+                ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI*2); ctx.stroke();
+            }
+            else if (b.weaponId === 'exotic_comet') {
+                ctx.fillStyle = 'rgba(168, 85, 247, 0.4)'; 
+                ctx.beginPath(); ctx.ellipse(0, 20, 6, 25, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = b.color;
+                ctx.shadowBlur = 20; ctx.shadowColor = b.color;
+                ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI*2); ctx.fill();
+            }
+            else if (b.weaponId === 'exotic_flamer' || b.type === 'flame') {
+                const lifePct = b.life / 30.0;
+                const size = 5 + (1-lifePct) * 20;
+                ctx.fillStyle = b.color;
+                ctx.globalAlpha = lifePct;
+                ctx.beginPath(); ctx.arc(0, 0, Math.max(0, size), 0, Math.PI*2); ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+            else if (b.weaponId === 'exotic_scatter' || b.type === 'scatter') {
+                ctx.save();
+                ctx.rotate(b.life * 0.5); 
+                ctx.fillStyle = b.color;
+                ctx.shadowBlur = 10; ctx.shadowColor = b.color;
+                ctx.beginPath();
+                for(let i=0; i<12; i++) {
+                    const r = i % 2 === 0 ? 10 : 4; 
+                    const a = (i * Math.PI) / 6;
+                    ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0,3,0,Math.PI*2); ctx.fill();
+                ctx.restore();
+            }
+            else if (b.weaponId === 'exotic_rainbow_cloud') {
+                const lifePct = b.life / 40.0;
+                const size = b.width * (1 + (1 - lifePct) * 0.5); // Grow slightly
+                ctx.fillStyle = b.color;
+                ctx.globalAlpha = lifePct * 0.7; // Transparent clouds
+                ctx.shadowBlur = 5; ctx.shadowColor = b.color;
+                ctx.beginPath(); ctx.arc(0, 0, Math.max(0, size), 0, Math.PI*2); ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.shadowBlur = 0;
+            }
+            else {
+                if (!b.isEnemy && (b.vx !== 0 || b.vy !== 0)) ctx.rotate(Math.atan2(b.vy, b.vx) + Math.PI/2);
+                
+                if (b.isTracer) {
+                    ctx.fillStyle = b.traceColor || 'rgba(255,255,255,0.5)';
+                    ctx.beginPath();
+                    ctx.moveTo(-b.width/2, b.height/2);
+                    ctx.lineTo(0, b.height * 2.5); 
+                    ctx.lineTo(b.width/2, b.height/2);
+                    ctx.fill();
+                }
+
+                if (b.glow) { ctx.shadowBlur = b.glowIntensity || 15; ctx.shadowColor = b.color; }
+                ctx.fillStyle = b.color;
+                ctx.fillRect(-b.width/2, -b.height/2, b.width, b.height);
+            }
+            ctx.shadowBlur = 0;
+            ctx.restore();
+        });
+
+        s.particles.forEach(p => {
+            p.x += p.vx; p.y += p.vy; p.life -= 0.05;
+            ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+            ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0, p.size), 0, Math.PI*2); ctx.fill();
+        });
+        s.particles = s.particles.filter(p => p.life > 0);
+        ctx.globalAlpha = 1;
+
+        if (s.frame % 10 === 0) {
+            let alertText = hud.alert;
+            let alertType = hud.alertType;
+            
+            // Fuel Warning Check
+            if (s.fuel <= 1.0) {
+                alertText = "CRITICAL: FUEL DEPLETED - RETURN TO BASE";
+                alertType = "warning";
+            }
+
+            setHud(prev => ({
+                ...prev, hp: s.hp, sh1: s.sh1, fuel: s.fuel, energy: s.energy, 
+                score: s.score, missiles: s.missiles, mines: s.mines,
+                timer: s.time, cargoCount: s.cargo.length, chargeLevel: s.chargeLevel,
+                boss: s.enemies.find(e => e.type === 'boss'), swivelMode: s.swivelMode,
+                ammoCount: s.magazineCurrent, ammoType: s.selectedAmmo, isReloading: s.reloadTimer > 0,
+                alert: alertText, alertType: alertType as any
+            }));
+        }
+        raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const takeDamage = (amt: number, type: string = 'generic') => {
+      const s = state.current;
       
-      // If retreating, consume remaining fuel to simulate emergency jump
-      if (label === 'RETREAT' || label === 'ABORT') {
-          s.fuel = 0;
+      // Robot Sacrifice Logic
+      if (s.hp < 90) { // If hull integrity drops below 90%, robots sacrifice themselves
+          const robotIdx = s.cargo.findIndex(c => c.type === 'robot');
+          if (robotIdx >= 0) {
+              s.cargo[robotIdx].quantity--;
+              if (s.cargo[robotIdx].quantity <= 0) s.cargo.splice(robotIdx, 1);
+              audioService.playSfx('denied'); // Using denied sound as a "clank" shield
+              setHud(h => ({...h, alert: "ROBOT SACRIFICED", alertType: 'warning'}));
+              return; // Damage fully negated
+          }
       }
 
-      const fHP = s.isMeltdown ? 25 : Math.max(0, s.integrity);
-      const payload = { rockets: s.missileStock, mines: s.mineStock, weapons: s.equippedWeapons, fuel: s.fuel, bossDefeated: s.bossDead, health: fHP, hullPacks: s.hullPacks, cargo: s.missionCargo };
+      let shieldDmg = amt;
+      let hullDmg = amt;
+
+      if (type.includes('missile') || type.includes('mine')) {
+          const isEmp = type.includes('emp');
+          // Hull Damage: Normal = 50% maxHp, EMP = 35% maxHp
+          // Player Max HP is always 100% in UI terms
+          hullDmg = 100 * (isEmp ? 0.35 : 0.5);
+          
+          // Shield Damage: 1 EMP = 100% Capacity, 1 Normal = 50% Capacity
+          const pct = isEmp ? 1.0 : 0.5;
+          const maxS1 = shield?.capacity || 0;
+          const maxS2 = secondShield?.capacity || 0;
+          
+          // Apply to the active shield layer max capacity
+          if (s.sh2 > 0) shieldDmg = maxS2 * pct;
+          else if (s.sh1 > 0) shieldDmg = maxS1 * pct;
+      }
+
+      if (s.sh2 > 0) s.sh2 = Math.max(0, s.sh2 - shieldDmg); 
+      else if (s.sh1 > 0) s.sh1 = Math.max(0, s.sh1 - shieldDmg); 
+      else s.hp = Math.max(0, s.hp - hullDmg);
       
-      if (label === 'LAND') {
-          onGameOverRef.current(true, s.score, false, payload);
+      if (s.hp <= 0) onGameOver(false, s.score, false);
+  };
+
+  const drawShip = (ctx: CanvasRenderingContext2D, shipData: any, isPlayer = false) => {
+      // [drawShip implementation remains unchanged]
+      const { config, color, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, fitting, equippedWeapons } = shipData;
+      const scale = isPlayer ? 0.6 : 0.5;
+      
+      ctx.save();
+      ctx.scale(scale, scale);
+      ctx.translate(-50, -50); 
+
+      const { wingStyle, hullShapeType } = config;
+      const engineLocs = getEngineCoordinates(config);
+
+      if (config.isAlien) {
+          ctx.save();
+          ctx.fillStyle = 'rgba(0,0,0,0.3)';
+          ctx.beginPath();
+          const ovalY = wingStyle === 'alien-a' ? 55 : 45;
+          ctx.ellipse(50, ovalY, 12, 35, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+      }
+
+      const baseColor = wingColor || config.defaultColor || '#64748b';
+      ctx.fillStyle = baseColor;
+      ctx.strokeStyle = baseColor;
+      if (wingStyle === 'cylon') ctx.filter = 'brightness(0.7)';
+      else if (!wingColor || wingColor === color) ctx.filter = 'brightness(0.85)';
+
+      ctx.beginPath();
+      if (config.isAlien) {
+          ctx.lineWidth = 14; 
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          if (wingStyle === 'alien-h') { ctx.moveTo(25, 20); ctx.lineTo(25, 75); ctx.moveTo(75, 20); ctx.lineTo(75, 75); ctx.moveTo(25, 48); ctx.lineTo(75, 48); ctx.stroke(); } 
+          else if (wingStyle === 'alien-w') { ctx.moveTo(10, 20); ctx.lineTo(35, 75); ctx.lineTo(50, 45); ctx.lineTo(65, 75); ctx.lineTo(90, 20); ctx.stroke(); } 
+          else if (wingStyle === 'alien-a') { ctx.moveTo(20, 75); ctx.bezierCurveTo(20, 10, 80, 10, 80, 75); ctx.moveTo(28, 55); ctx.lineTo(72, 55); ctx.stroke(); } 
+          else if (wingStyle === 'alien-m') { ctx.moveTo(20, 75); ctx.lineTo(20, 25); ctx.lineTo(50, 55); ctx.lineTo(80, 25); ctx.lineTo(80, 75); ctx.stroke(); }
       } else {
-          // ABORT or RETREAT
-          onGameOverRef.current(false, s.score, true, payload);
+          if (wingStyle === 'delta') { ctx.moveTo(50, 25); ctx.lineTo(10, 80); ctx.lineTo(50, 70); ctx.lineTo(90, 80); ctx.fill(); } 
+          else if (wingStyle === 'x-wing') { ctx.beginPath(); ctx.moveTo(50, 48); ctx.quadraticCurveTo(20, 48, 5, 10); ctx.lineTo(25, 10); ctx.quadraticCurveTo(30, 40, 50, 38); ctx.fill(); ctx.beginPath(); ctx.moveTo(50, 48); ctx.quadraticCurveTo(80, 48, 95, 10); ctx.lineTo(75, 10); ctx.quadraticCurveTo(70, 40, 50, 38); ctx.fill(); ctx.beginPath(); ctx.moveTo(50, 48); ctx.lineTo(5, 90); ctx.lineTo(25, 90); ctx.lineTo(50, 55); ctx.fill(); ctx.beginPath(); ctx.moveTo(50, 48); ctx.lineTo(95, 90); ctx.lineTo(75, 90); ctx.lineTo(50, 55); ctx.fill(); } 
+          else if (wingStyle === 'pincer') { ctx.ellipse(50, 60, 45, 25, 0, 0, Math.PI * 2); ctx.moveTo(85, 60); ctx.ellipse(50, 60, 30, 15, 0, 0, Math.PI * 2, true); ctx.fill(); } 
+          else if (wingStyle === 'curved') { ctx.moveTo(50, 45); ctx.lineTo(10, 50); ctx.arc(10, 56, 6, -Math.PI/2, Math.PI/2, true); ctx.lineTo(50, 65); ctx.moveTo(50, 45); ctx.lineTo(90, 50); ctx.arc(90, 56, 6, -Math.PI/2, Math.PI/2, false); ctx.lineTo(50, 65); ctx.fill(); } 
+          else if (wingStyle === 'cylon') { ctx.moveTo(45, 80); ctx.bezierCurveTo(10, 80, 5, 60, 5, 10); ctx.arcTo(15, 10, 20, 40, 6); ctx.quadraticCurveTo(25, 40, 45, 50); ctx.lineTo(45, 80); ctx.moveTo(55, 80); ctx.bezierCurveTo(90, 80, 95, 60, 95, 10); ctx.arcTo(85, 10, 80, 40, 6); ctx.quadraticCurveTo(75, 40, 55, 50); ctx.lineTo(55, 80); ctx.fill(); } 
+          else { ctx.moveTo(50, 30); ctx.lineTo(10, 70); ctx.lineTo(50, 60); ctx.lineTo(90, 70); ctx.fill(); }
       }
-      (e.currentTarget as HTMLElement).blur();
-  };
+      ctx.filter = 'none';
 
-  const getAlertColor = () => {
-      switch(stats.alertType) {
-          case 'warning': return 'text-amber-400';
-          case 'alert': return 'text-red-500';
-          default: return 'text-zinc-400';
+      ctx.fillStyle = color || config.defaultColor || '#94a3b8';
+      ctx.beginPath();
+      if (wingStyle === 'x-wing') { ctx.ellipse(50, 50, 18, 45, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#64748b'; ctx.fillRect(36, 40, 4, 20); ctx.fillRect(60, 40, 4, 20); }
+      else if (hullShapeType === 'none') { }
+      else if (hullShapeType === 'triangle') { ctx.moveTo(50, 5); ctx.quadraticCurveTo(80, 80, 50, 90); ctx.quadraticCurveTo(20, 80, 50, 5); }
+      else if (hullShapeType === 'block') { ctx.moveTo(40, 10); ctx.lineTo(60, 10); ctx.quadraticCurveTo(70, 10, 75, 30); ctx.lineTo(60, 75); ctx.quadraticCurveTo(50, 80, 40, 75); ctx.lineTo(25, 30); ctx.quadraticCurveTo(30, 10, 40, 10); }
+      else if (hullShapeType === 'rounded') { if (ctx.roundRect) ctx.roundRect(30, 10, 40, 80, 20); else { ctx.moveTo(50, 10); ctx.arc(50, 30, 20, Math.PI, 0); ctx.lineTo(70, 70); ctx.arc(50, 70, 20, 0, Math.PI); ctx.lineTo(30, 30); } }
+      else if (hullShapeType === 'saucer') ctx.ellipse(50, 50, 30, 30, 0, 0, Math.PI * 2);
+      else if (hullShapeType === 'finger') ctx.ellipse(50, 50, 20, 40, 0, 0, Math.PI * 2);
+      else if (hullShapeType === 'needle') { ctx.moveTo(50, 0); ctx.quadraticCurveTo(70, 50, 50, 95); ctx.quadraticCurveTo(30, 50, 50, 0); }
+      else ctx.ellipse(50, 50, 20, 45, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (isPlayer) {
+          ctx.save();
+          engineLocs.forEach(eng => {
+              const nozzleH = config.isAlien ? 6 : 5;
+              const jetY = eng.y + eng.h + nozzleH;
+              const jetW = eng.w * 0.8;
+              const jetX = eng.x - (jetW / 2);
+              const length = 40;
+              
+              ctx.beginPath();
+              ctx.moveTo(jetX, jetY);
+              ctx.lineTo(jetX + jetW/2, jetY + length);
+              ctx.lineTo(jetX + jetW, jetY);
+              
+              const grad = ctx.createLinearGradient(jetX, jetY, jetX, jetY + length);
+              grad.addColorStop(0, '#ffffff'); 
+              grad.addColorStop(0.2, '#60a5fa'); 
+              grad.addColorStop(0.6, '#3b82f6'); 
+              grad.addColorStop(1, 'rgba(59, 130, 246, 0)');
+              
+              ctx.fillStyle = grad;
+              ctx.globalAlpha = 0.9;
+              ctx.fill();
+          });
+          ctx.restore();
       }
-  };
 
-  // Persistent HUD Class
-  const hudClass = `absolute top-0 left-0 right-0 p-3 flex justify-between items-start pointer-events-none z-30 transition-opacity duration-500`;
+      const drawEngineRect = (x: number, y: number, w: number, h: number) => {
+          const isAlien = config.isAlien;
+          const eColor = isAlien ? '#172554' : (engineColor || '#334155');
+          const nColor = isAlien ? '#9ca3af' : (nozzleColor || '#475569');
+          const ew = w + 2; const eh = h + 2;
+          const drawX = x - ew/2;
+          
+          ctx.fillStyle = eColor;
+          ctx.beginPath();
+          if (isAlien) { ctx.ellipse(x, y + eh/2, ew/2, eh/2, 0, 0, Math.PI * 2); }
+          else { const r = 3; if (ctx.roundRect) ctx.roundRect(drawX, y, ew, eh, r); else ctx.rect(drawX, y, ew, eh); }
+          ctx.fill();
+
+          ctx.fillStyle = nColor;
+          const nozzleH = isAlien ? 6 : 5; const flare = isAlien ? 4 : 3; const inset = isAlien ? 1 : 0;
+          ctx.beginPath();
+          if (isAlien) {
+              const nozzleStart = y + eh - 2;
+              ctx.moveTo(drawX + inset, nozzleStart); ctx.lineTo(drawX + ew - inset, nozzleStart); ctx.lineTo(drawX + ew + flare, nozzleStart + nozzleH); ctx.lineTo(drawX - flare, nozzleStart + nozzleH); 
+          } else {
+              ctx.moveTo(drawX + inset, y + eh); ctx.lineTo(drawX + ew - inset, y + eh); ctx.lineTo(drawX + ew + flare, y + eh + nozzleH); ctx.lineTo(drawX - flare, y + eh + nozzleH); 
+          }
+          ctx.fill();
+      };
+      engineLocs.forEach(eng => drawEngineRect(eng.x, eng.y, eng.w, eng.h));
+
+      ctx.fillStyle = cockpitColor || '#0ea5e9';
+      ctx.beginPath();
+      if (config.isAlien) { const cy = wingStyle === 'alien-a' ? 65 : 45; ctx.ellipse(50, cy, 8, 20, 0, 0, Math.PI * 2); } 
+      else if (wingStyle === 'x-wing') { ctx.ellipse(50, 55, 8, 12, 0, 0, Math.PI * 2); } 
+      else { ctx.ellipse(50, 40, 8, 12, 0, 0, Math.PI * 2); }
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath(); 
+      if (wingStyle === 'x-wing') { ctx.ellipse(48, 52, 3, 5, -0.2, 0, Math.PI * 2); } 
+      else { const cy = (config.isAlien && wingStyle === 'alien-a') ? 65 : (config.isAlien ? 45 : 38); ctx.ellipse(48, cy - 2, 3, 5, -0.2, 0, Math.PI * 2); }
+      ctx.fill();
+
+      if (config.isAlien) {
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)'; ctx.lineWidth = 3; ctx.setLineDash([5, 5]); ctx.lineCap = 'round'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 8;
+          const cy = wingStyle === 'alien-a' ? 65 : 45;
+          const gap = 8;
+          ctx.beginPath(); ctx.ellipse(50, cy, 8 + gap, 20 + gap, 0, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
+          ctx.setLineDash([]);
+      }
+
+      const drawWeapon = (x: number, y: number, id: string | undefined, type: 'primary' | 'secondary', slotIndex: number) => {
+          ctx.save();
+          const def = id ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === id) : null;
+          
+          let recoilY = 0;
+          let heatFactor = 0;
+          let showFlash = false;
+          let isFiring = false;
+          
+          if (isPlayer) {
+              const lastFire = state.current.weaponFireTimes[slotIndex] || 0;
+              const timeSinceFire = Date.now() - lastFire;
+              if (def?.isAmmoBased) {
+                  // Removed recoil animation for standard ammo weapons
+                  if (timeSinceFire < 80) showFlash = true;
+                  if (timeSinceFire < 200) isFiring = true;
+                  const heatVal = state.current.weaponHeat[slotIndex] || 0;
+                  heatFactor = Math.min(1, heatVal / 50); 
+              } else {
+                  if (timeSinceFire < 200) isFiring = true;
+              }
+          }
+
+          ctx.translate(x, y + recoilY);
+          
+          // Apply Swivel Rotation for Player Secondary Guns if Active
+          if (isPlayer && state.current.swivelMode && def?.isAmmoBased) {
+              // Calculate current swivel angle matching the firing logic (approx +/- 13 deg)
+              // Logic uses: Math.sin(s.frame * 0.1) * 13
+              // Left Wing (Slot 1) = +Angle
+              // Right Wing (Slot 2) = -Angle
+              const baseAngle = Math.sin(state.current.frame * 0.1) * 13;
+              const rotDeg = slotIndex === 1 ? baseAngle : (slotIndex === 2 ? -baseAngle : 0);
+              const rotRad = (rotDeg * Math.PI) / 180;
+              ctx.rotate(rotRad);
+          }
+          
+          const isSecondary = type === 'secondary';
+          const isAlien = config.isAlien;
+          const isExotic = id?.includes('exotic');
+          const isStandardProjectile = def && def.type === 'PROJECTILE' && !isExotic;
+
+          const scale = isAlien && isExotic ? 1.4 : (isExotic ? 1.0 : 1.45); 
+          ctx.scale(scale, scale);
+
+          if (isStandardProjectile && def) {
+              const stdBodyColor = (gunBodyColor && gunBodyColor !== '#334155') ? gunBodyColor : '#451a03'; 
+              let barrelColor = '#52525b';
+              if (heatFactor > 0.2) {
+                  barrelColor = mixColor('#52525b', '#ef4444', (heatFactor - 0.2) * 1.2);
+              }
+
+              const barrelCount = def.barrelCount || 1;
+              const isRotary = barrelCount > 1;
+
+              ctx.fillStyle = stdBodyColor;
+              if (id?.includes('vulcan')) { if(ctx.roundRect) {ctx.beginPath(); ctx.roundRect(-4.25, 0, 8.5, 12, 3); ctx.fill();} else ctx.fillRect(-4.25, 0, 8.5, 12); } 
+              else if (id?.includes('heavy')) { if(ctx.roundRect) {ctx.beginPath(); ctx.roundRect(-6, 0, 12, 10, 3); ctx.fill();} else ctx.fillRect(-6, 0, 12, 10); } 
+              else { if(ctx.roundRect) {ctx.beginPath(); ctx.roundRect(-4.25, 0, 8.5, 10, 3); ctx.fill();} else ctx.fillRect(-4.25, 0, 8.5, 10); }
+
+              if (isRotary) {
+                  const rotOffset = isFiring ? (Date.now() / 50) % 3 : 0;
+                  const bw = 2; const bl = 24; const bx = [-3, -1, 1];
+                  bx.forEach((offX, i) => {
+                      const brightness = Math.abs(Math.sin((i + rotOffset) * (Math.PI/1.5))); 
+                      const cVal = Math.floor(82 + (brightness * 100));
+                      const baseBar = `rgb(${cVal},${cVal},${cVal})`;
+                      const finalBar = heatFactor > 0.2 ? mixColor(baseBar, '#ef4444', (heatFactor - 0.2)) : baseBar;
+                      ctx.fillStyle = finalBar;
+                      ctx.fillRect(offX, -bl, bw, bl); 
+                  });
+                  ctx.fillStyle = '#18181b'; ctx.fillRect(-3.5, -bl-1, 7, 2);
+              } else {
+                  ctx.fillStyle = barrelColor;
+                  ctx.fillRect(-1.5, -16, 3, 16);
+                  ctx.fillStyle = '#27272a'; 
+                  ctx.fillRect(-2, -16, 4, 2);
+                  const holeCount = 4;
+                  const holeStart = -12;
+                  const holeSpacing = 3;
+                  for(let i=0; i<holeCount; i++) {
+                      const hy = holeStart + (i * holeSpacing);
+                      ctx.fillStyle = '#000';
+                      ctx.beginPath(); ctx.arc(0, hy, 0.8, 0, Math.PI*2); ctx.fill();
+                      if (isFiring && isPlayer) {
+                          const ventScale = Math.random() * 0.5 + 0.5;
+                          ctx.fillStyle = i % 2 === 0 ? '#facc15' : '#ef4444';
+                          ctx.beginPath(); ctx.arc(-2, hy, 1 * ventScale, 0, Math.PI*2); ctx.fill();
+                          ctx.beginPath(); ctx.arc(2, hy, 1 * ventScale, 0, Math.PI*2); ctx.fill();
+                      }
+                  }
+              }
+
+              if (showFlash) {
+                  ctx.save(); 
+                  const flashY = isRotary ? -26 : -18;
+                  ctx.translate(0, flashY); 
+                  ctx.fillStyle = Math.random() > 0.5 ? '#facc15' : '#ef4444'; 
+                  ctx.beginPath(); ctx.moveTo(0, -8); ctx.lineTo(4, 2); ctx.lineTo(0, 0); ctx.lineTo(-4, 2); ctx.fill(); 
+                  ctx.restore();
+              }
+
+          } else {
+              let baseGunColor = isSecondary ? (secondaryGunColor || '#38bdf8') : (gunColor || config.noseGunColor || '#ef4444');
+              const gunBody = config.isAlien ? '#374151' : (gunBodyColor || '#334155');
+
+              ctx.fillStyle = gunBody;
+              if (id?.includes('plasma') || isExotic) { 
+                  if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-3.6, -14, 7.2, 12, [5, 5, 0, 0]); ctx.fill(); } else { ctx.fillRect(-3.6, -14, 7.2, 12); } 
+                  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, -8, 3, 0, Math.PI*2); ctx.fill(); 
+                  if (isFiring) { ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0, -8, 2, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; }
+              } else { 
+                  ctx.fillRect(-4.25, 0, 8.5, 10); 
+                  ctx.fillStyle = baseGunColor; 
+                  ctx.fillRect(-2.5, -12, 5, 12); 
+                  if (isFiring) {
+                      ctx.save();
+                      ctx.shadowColor = baseGunColor;
+                      ctx.shadowBlur = 15;
+                      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                      ctx.fillRect(-1.5, -11, 3, 10); 
+                      ctx.restore();
+                  }
+              }
+          }
+          ctx.restore();
+      };
+
+      const weaponsList = equippedWeapons || (fitting ? fitting.weapons : null);
+      const mainId = weaponsList && weaponsList[0] ? weaponsList[0].id : (config.weaponId || 'gun_bolt');
+      if (mainId) {
+          if (wingStyle === 'alien-h') { drawWeapon(25, 20, mainId, 'primary', 0); drawWeapon(75, 20, mainId, 'primary', 0); } 
+          else if (wingStyle === 'alien-w') { drawWeapon(10, 20, mainId, 'primary', 0); drawWeapon(90, 20, mainId, 'primary', 0); } 
+          else if (wingStyle === 'alien-m') { drawWeapon(20, 25, mainId, 'primary', 0); drawWeapon(80, 25, mainId, 'primary', 0); } 
+          else if (wingStyle === 'alien-a') { drawWeapon(50, 22, mainId, 'primary', 0); } 
+          else if (wingStyle === 'x-wing') { drawWeapon(50, 20, mainId, 'primary', 0); } 
+          else { drawWeapon(50, 10, mainId, 'primary', 0); }
+      }
+
+      if (weaponsList) {
+          const mounts = getWingMounts(config);
+          if (weaponsList[1]) drawWeapon(mounts[0].x, mounts[0].y, weaponsList[1]?.id, 'secondary', 1);
+          if (weaponsList[2]) drawWeapon(mounts[1].x, mounts[1].y, weaponsList[2]?.id, 'secondary', 2);
+      }
+
+      if (isPlayer && (shield || secondShield)) {
+          const drawShieldRing = (s: Shield | null, radius: number) => {
+              if (!s) return;
+              const vType = s.visualType;
+              
+              ctx.save();
+              ctx.strokeStyle = s.color; 
+              ctx.lineWidth = 4; // Thicker
+              ctx.shadowColor = s.color; 
+              ctx.shadowBlur = 10; 
+              ctx.globalAlpha = 0.5; // Semitransparent
+              
+              ctx.beginPath(); 
+              if (vType === 'forward') {
+                  // Forward arc centered at -PI/2 (Up)
+                  ctx.arc(50, 50, radius, -Math.PI * 0.8, -Math.PI * 0.2);
+              } else {
+                  ctx.arc(50, 50, radius, 0, Math.PI * 2); 
+              }
+              ctx.stroke();
+              ctx.restore();
+          };
+          // Increased radius by 10%
+          if (shield) drawShieldRing(shield, 66);
+          if (secondShield) drawShieldRing(secondShield, 77);
+      }
+
+      ctx.restore();
+  };
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden cursor-crosshair">
-        {/* Background Layer */}
-        <div className="absolute inset-0 flex items-center justify-center overflow-hidden z-0">
-            {renderBackgroundSystem()}
-        </div>
-
-        {/* Game Canvas - Fades out during approach */}
-        <canvas ref={canvasRef} className={`absolute inset-0 w-full h-full block z-20 transition-opacity duration-1000 ${stats.gamePhase === 'approach' ? 'opacity-0 pointer-events-none' : 'opacity-100'}`} />
+        <canvas ref={canvasRef} className="absolute inset-0 z-10" />
         
-        {/* HUD OVERLAY */}
-        <div className={hudClass}>
-            
-            {/* Left Status Block (Vitals - Reduced Width) */}
+        {/* HUD Elements */}
+        <div className="absolute top-4 left-4 flex flex-col gap-2 z-20 pointer-events-none w-48">
             <div className="flex flex-col gap-1">
-                <div className="bg-zinc-900/80 border border-zinc-700 p-1 rounded">
-                    <div className={`flex justify-between ${hudText} font-black text-emerald-400 uppercase`}><span>HULL</span><span>{Math.ceil(stats.hp)}%</span></div>
-                    <div className={`${topBarW} ${gaugeH} bg-zinc-800 mt-1`}><div className={`h-full ${stats.hp < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'} transition-all`} style={{ width: `${Math.max(0, stats.hp)}%` }}/></div>
-                </div>
-                {shield && stats.sh1 > 0 && (
-                    <div className="bg-zinc-900/80 border border-zinc-700 p-1 rounded">
-                        <div className={`flex justify-between ${barText} font-black text-blue-400 uppercase`}><span>SH1</span><span>{Math.ceil(stats.sh1)}</span></div>
-                        <div className={`${topBarW} ${gaugeH} bg-zinc-800 mt-1`}><div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, (stats.sh1 / (shield?.capacity || 1))*100)}%` }}/></div>
-                    </div>
-                )}
-                {secondShield && stats.sh2 > 0 && (
-                    <div className="bg-zinc-900/80 border border-zinc-700 p-1 rounded">
-                        <div className={`flex justify-between ${barText} font-black text-indigo-400 uppercase`}><span>SH2</span><span>{Math.ceil(stats.sh2)}</span></div>
-                        <div className={`${topBarW} ${gaugeH} bg-zinc-800 mt-1`}><div className="h-full bg-indigo-500 transition-all" style={{ width: `${Math.min(100, (stats.sh2 / (secondShield?.capacity || 1))*100)}%` }}/></div>
-                    </div>
-                )}
+                <div className="flex justify-between text-[10px] font-black text-zinc-400"><span>HULL</span><span>{Math.ceil(hud.hp)}%</span></div>
+                <div className="h-2 bg-zinc-900 border border-zinc-700"><div className="h-full bg-emerald-500 transition-all duration-300" style={{width: `${hud.hp}%`}}/></div>
             </div>
-
-            {/* Center Status (Timer) */}
-            <div className="flex flex-col items-center">
-                <div className="bg-zinc-900/80 border-x border-b border-zinc-700 px-4 py-2 rounded-b-lg backdrop-blur-sm shadow-lg">
-                    <div className="text-[9px] text-zinc-500 font-black uppercase tracking-widest text-center">MISSION TIMER</div>
-                    <div className={`font-mono font-black text-2xl ${stats.missionTimer < 30 ? 'text-red-500 animate-pulse' : 'text-emerald-400'}`}>
-                        {Math.floor(stats.missionTimer / 60)}:{(stats.missionTimer % 60).toString().padStart(2, '0')}
-                    </div>
-                </div>
-                {stats.boss && !stats.bossDead && (
-                    <div className="mt-2 w-48 h-3 bg-zinc-800 border border-red-900 relative rounded overflow-hidden">
-                        <div className="absolute top-0 left-0 h-full bg-red-600 transition-all" style={{ width: `${(stats.boss.hp / stats.boss.maxHp) * 100}%` }} />
-                        <div className="absolute top-0 w-full text-center text-[7px] font-black text-white uppercase tracking-widest leading-[10px]">BOSS INTEGRITY</div>
-                    </div>
-                )}
+            <div className="flex flex-col gap-1">
+                <div className="flex justify-between text-[10px] font-black text-zinc-400"><span>FUEL</span><span>{Math.floor((hud.fuel/maxFuel)*100)}%</span></div>
+                <div className={`h-2 bg-zinc-900 border border-zinc-700 ${hud.fuel <= 1.0 ? 'animate-pulse' : ''}`}><div className={`h-full transition-all duration-300 ${hud.fuel <= 1.0 ? 'bg-red-600' : 'bg-amber-500'}`} style={{width: `${(hud.fuel/maxFuel)*100}%`}}/></div>
             </div>
-
-            {/* Right Status Block (Score) */}
-            <div className="flex flex-col items-end">
-                <div className="bg-black/60 border border-zinc-700/50 px-3 py-1 rounded backdrop-blur-sm">
-                    <span className="text-[9px] text-zinc-500 uppercase font-black mr-2">SCORE</span>
-                    <span className="text-white font-black text-lg drop-shadow-md">{stats.score.toLocaleString()}</span>
+            {shield && (
+                <div className="flex flex-col gap-1">
+                    <div className="flex justify-between text-[10px] font-black text-zinc-400"><span>SHIELD</span><span>{Math.floor((hud.sh1/(shield?.capacity||1))*100)}%</span></div>
+                    <div className="h-2 bg-zinc-900 border border-zinc-700"><div className="h-full bg-blue-500 transition-all duration-300" style={{width: `${Math.min(100, (hud.sh1/(shield?.capacity||1))*100)}%`}}/></div>
                 </div>
-            </div>
+            )}
         </div>
 
-        {/* RIGHT SIDE VUMETERS (Parallel) WITH NUMBERS */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-row gap-4 pointer-events-none z-30">
+        <div className="absolute top-1/2 right-4 transform -translate-y-1/2 flex gap-3 z-20 pointer-events-none h-64">
             <div className="flex flex-col items-center gap-1">
-                <LEDBar value={stats.energy} max={maxEnergy} type="vertical" label="ENERGY" color="yellow" />
-                <span className={`${barText} font-black text-yellow-400 tabular-nums`}>{Math.floor(stats.energy)}</span>
+                <span className="text-[9px] font-black text-blue-400 -rotate-90 mb-2">PWR</span>
+                <div className="flex-grow w-4 bg-zinc-900 border border-zinc-700 relative flex flex-col-reverse p-0.5 gap-[2px]">
+                    {Array.from({length: 20}).map((_, i) => (
+                        <div key={i} className={`w-full h-[4.5%] ${i < (hud.energy/maxEnergy)*20 ? 'bg-blue-500 shadow-[0_0_5px_#3b82f6]' : 'bg-zinc-800'}`} />
+                    ))}
+                </div>
             </div>
-            <div className="flex flex-col items-center gap-1">
-                <LEDBar value={stats.fuel} max={maxFuelCapacity} type="vertical" label="FUEL" color="orange" />
-                <span className={`${barText} font-black text-orange-400 tabular-nums`}>{Math.floor(stats.fuel)}</span>
+            {hasAmmoWeapons && (
+                <div className="flex flex-col items-center gap-1">
+                    <span className="text-[9px] font-black text-yellow-400 -rotate-90 mb-2">MAG</span>
+                    <div className="flex-grow w-4 bg-zinc-900 border border-zinc-700 relative flex flex-col-reverse p-0.5 gap-[2px]">
+                        {Array.from({length: 20}).map((_, i) => (
+                            <div key={i} className={`w-full h-[4.5%] ${i < (hud.ammoCount/1000)*20 ? 'bg-yellow-500 shadow-[0_0_5px_#eab308]' : 'bg-zinc-800'} ${hud.isReloading ? 'animate-pulse bg-red-500' : ''}`} />
+                        ))}
+                    </div>
+                    {hud.isReloading && <span className="absolute bottom-[-20px] text-[8px] font-black text-red-500 animate-pulse">RELOAD</span>}
+                </div>
+            )}
+        </div>
+
+        <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-20 pointer-events-none">
+            <div className="pointer-events-auto flex gap-2">
+                <button onClick={() => state.current.paused = !state.current.paused} className="px-4 py-2 bg-zinc-800 border border-zinc-600 text-white text-xs font-bold hover:bg-zinc-700">PAUSE</button>
+                <button onClick={() => onGameOver(false, hud.score, true, { 
+                    health: state.current.hp, 
+                    fuel: state.current.fuel, 
+                    rockets: state.current.missiles, 
+                    mines: state.current.mines, 
+                    cargo: state.current.cargo, 
+                    ammo: state.current.ammo, 
+                    magazineCurrent: state.current.magazineCurrent, 
+                    reloadTimer: state.current.reloadTimer 
+                })} className="px-4 py-2 bg-red-900/50 border border-red-600 text-white text-xs font-bold hover:bg-red-800">RETREAT</button>
             </div>
         </div>
 
-        {/* APPROACH PHASE UI - Messages & Zoom Controls */}
-        {stats.gamePhase === 'approach' && (
-            <>
-                <div className="absolute bottom-20 left-0 right-0 flex flex-col items-center gap-4 z-50 pointer-events-auto">
-                    <div className="bg-black/60 backdrop-blur px-6 py-2 rounded border border-zinc-700 text-center">
-                        <div className="text-[10px] text-zinc-400 font-black uppercase tracking-widest mb-1">APPROACHING VECTOR</div>
-                        <div className="text-xl font-black text-white uppercase">{PLANETS.find(p => p.id === stats.selectedTargetId)?.name || "UNKNOWN"}</div>
-                        <div className={`text-[10px] font-black uppercase tracking-widest ${getTargetStatus() === 'friendly' ? 'text-emerald-500' : 'text-red-500'}`}>{getTargetStatus()}</div>
-                    </div>
-                    <div className="text-[9px] text-zinc-500 font-mono bg-black/40 px-2 py-1 rounded">CLICK PLANETS TO CHANGE VECTOR</div>
-                </div>
-                
-                {/* APPROACH ZOOM CONTROLS - Eye resets pan/zoom */}
-                <div className="absolute bottom-24 right-8 flex flex-col gap-2 z-50 pointer-events-auto">
-                    <button onClick={() => setStats(p => ({...p, systemZoom: Math.min(3, p.systemZoom + 0.1)}))} className="w-8 h-8 bg-zinc-900 border border-zinc-700 rounded text-zinc-300 hover:text-white hover:border-emerald-500 flex items-center justify-center font-black">+</button>
-                    <button onClick={() => setStats(p => ({...p, systemZoom: 1.0, systemPan: {x:0, y:0}}))} className="w-8 h-8 bg-zinc-900 border border-zinc-700 rounded text-zinc-300 hover:text-white hover:border-emerald-500 flex items-center justify-center font-black">⌖</button>
-                    <button onClick={() => setStats(p => ({...p, systemZoom: Math.max(0.5, p.systemZoom - 0.1)}))} className="w-8 h-8 bg-zinc-900 border border-zinc-700 rounded text-zinc-300 hover:text-white hover:border-emerald-500 flex items-center justify-center font-black">-</button>
-                </div>
-            </>
-        )}
-
-        {/* BOTTOM CONTROL BAR */}
-        <div className={`absolute bottom-5 left-5 right-5 ${bottomBarHeight} flex items-center justify-between pointer-events-auto bg-zinc-900/90 rounded-md z-[35] border border-zinc-700 shadow-2xl`}>
-            
-            {/* Left: AMMO & RESERVES (Round LEDs) */}
-            <div className="flex items-center h-full px-2 gap-4 border-r border-zinc-800/50">
-                <div className="flex flex-col justify-center h-full gap-0.5">
-                    <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-orange-400 w-3">M {stats.missiles}</span>
-                        <RoundLEDBar value={stats.missiles} max={50} color="red" count={10} />
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className="text-[8px] font-black text-yellow-400 w-3">m {stats.mines}</span>
-                        <RoundLEDBar value={stats.mines} max={50} color="yellow" count={10} />
-                    </div>
-                </div>
-                {/* Reserves Text */}
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[7px] font-mono text-zinc-400 border-l border-zinc-800 pl-2">
-                    <span>M {stats.cargoMissiles}</span>
-                    <span>F {stats.cargoFuel}</span>
-                    <span>N {stats.cargoMines}</span>
-                    <span>E {stats.cargoEnergy}</span>
-                </div>
+        <div className="absolute bottom-4 left-4 flex gap-4 z-20 pointer-events-none">
+            <div className="bg-zinc-900/80 border border-zinc-700 p-2 rounded flex flex-col items-center min-w-[60px]">
+                <span className="text-[9px] font-black text-zinc-500">MISSILES</span>
+                <span className="text-xl font-black text-white">{hud.missiles}</span>
             </div>
-
-            {/* Center: Message Bar */}
-            <div className="flex-grow flex items-center justify-center h-full overflow-hidden px-4 mx-4 bg-black/40">
-                <span className={`retro-font ${barText} uppercase tracking-widest truncate ${getAlertColor()} ${stats.alert ? 'animate-pulse' : ''}`}>
-                    {stats.isPaused ? "SYSTEMS PAUSED" : (displayedAlert[0] || (stateRef.current.isMeltdown ? "CRITICAL FAILURE" : "SYSTEMS NOMINAL"))}
-                </span>
-            </div>
-
-            {/* Right: Action Button */}
-            <div className="flex items-center gap-2 pr-2 h-[80%] shrink-0">
-                <button onClick={togglePause} className={`h-full px-4 bg-zinc-800 border border-zinc-600 text-zinc-300 retro-font text-[9px] uppercase hover:bg-zinc-700 transition-all rounded-sm`}>{stats.isPaused ? 'RESUME' : 'PAUSE'}</button>
-                <button 
-                    onClick={handleActionButtonClick}
-                    className={`h-full px-6 retro-font text-[10px] uppercase font-black transition-all rounded-sm shadow-lg
-                        ${getActionButtonLabel() === 'LAND' ? 'bg-emerald-600 border border-emerald-500 text-white hover:bg-emerald-500' : 
-                          getActionButtonLabel() === 'ABORT' ? 'bg-red-600 border border-red-500 text-white hover:bg-red-500' :
-                          'bg-red-900/20 border border-red-800/50 text-red-500 hover:bg-red-900 hover:text-white'
-                        }`}
-                >
-                    {getActionButtonLabel()}
-                </button>
+            <div className="bg-zinc-900/80 border border-zinc-700 p-2 rounded flex flex-col items-center min-w-[60px]">
+                <span className="text-[9px] font-black text-zinc-500">MINES</span>
+                <span className="text-xl font-black text-white">{hud.mines}</span>
             </div>
         </div>
 
-        {/* PAUSE */}
-        {stats.isPaused && (
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex flex-col items-center justify-center text-white z-50">
-                <h2 className="text-4xl font-black mb-6 tracking-widest text-emerald-500">PAUSED</h2>
-                <button onClick={togglePause} className="px-8 py-3 bg-emerald-600 rounded font-black hover:bg-emerald-500 border border-emerald-400 transition-all shadow-lg hover:scale-105">RESUME MISSION</button>
-                <div className="mt-4 text-xs text-zinc-400 font-mono">PRESS 'P' TO RESUME</div>
+        <div className="absolute top-4 right-4 text-right z-20 pointer-events-none flex flex-col items-end">
+            <div className="text-2xl font-black text-white drop-shadow-md">{hud.score.toLocaleString()}</div>
+            <div className="mt-2">
+                {hud.boss ? (<div className="w-48 h-3 bg-red-900 border border-red-500"><div className="h-full bg-red-500" style={{width: `${(hud.boss.hp/hud.boss.maxHp)*100}%`}}/></div>) : (<div className="text-xl font-black text-emerald-500 drop-shadow-md">{Math.ceil(hud.timer)}s</div>)}
+            </div>
+        </div>
+
+        {hud.alert && (
+            <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-30 pointer-events-none text-center w-full max-w-lg px-4 flex items-end justify-center min-h-[4rem]">
+                <div className={`text-sm md:text-base font-black uppercase tracking-widest drop-shadow-[0_0_15px_rgba(0,0,0,1)] leading-tight whitespace-pre-line ${hud.alertType === 'warning' || hud.alertType === 'error' ? 'text-red-500 animate-pulse' : (hud.alertType === 'alert' ? 'text-orange-500 animate-pulse' : 'text-emerald-400')}`}>{hud.alert}</div>
             </div>
         )}
     </div>

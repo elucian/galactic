@@ -21,6 +21,7 @@ interface CommandCenterProps {
   setIsCargoOpen: (v: boolean) => void;
   activeSlotIndex: number;
   setActiveSlotIndex: (i: number) => void;
+  systemMessage: { text: string, type: 'neutral' | 'success' | 'error' | 'warning' };
 }
 
 export const CommandCenter: React.FC<CommandCenterProps> = ({
@@ -39,7 +40,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   setIsMarketOpen,
   setIsCargoOpen,
   activeSlotIndex,
-  setActiveSlotIndex
+  setActiveSlotIndex,
+  systemMessage
 }) => {
   const touchStart = useRef<number | null>(null);
   
@@ -60,16 +62,22 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   // Footer Button Padding
   const btnPad = fs === 'small' ? 'px-6 py-2' : (fs === 'large' ? 'px-8 py-4' : 'px-7 py-3');
 
+  // Check if all ships are compromised (health <= 0)
+  const allShipsCompromised = gameState.ownedShips.every(ship => {
+      const fitting = gameState.shipFittings[ship.instanceId];
+      return (fitting?.health || 0) <= 0;
+  });
+
   return (
-    <div className="flex-grow flex flex-col p-4 md:p-6 z-10 overflow-hidden relative w-full h-full">
+    <div className="flex-grow flex flex-col p-4 md:p-6 z-10 overflow-hidden relative w-full h-full bg-black">
       {/* HEADER TITLE - Hidden on mobile portrait */}
       <div className="w-full text-center py-2 shrink-0 hidden md:block"><h1 className={`retro-font ${fs === 'small' ? 'text-[12px]' : (fs === 'large' ? 'text-[18px]' : 'text-[15px]')} text-emerald-500 uppercase tracking-[0.3em] opacity-80`}>COMMAND CENTER</h1></div>
       
       {/* HEADER */}
-      <div className="w-full h-16 bg-zinc-950/60 border-y border-zinc-800/50 flex items-center justify-between px-4 md:px-6 shrink-0 backdrop-blur-sm">
+      <div className="w-full h-16 bg-black border-y border-zinc-800 flex items-center justify-between px-4 md:px-6 shrink-0 shadow-sm">
         <div className="flex flex-col gap-1 min-w-[80px]">
           <div className="flex items-center gap-2">
-             <button onClick={() => setIsOptionsOpen(true)} className={`${pilotIconSize} flex items-center justify-center bg-zinc-900 border border-zinc-700 rounded hover:border-emerald-500 transition-colors`}>{gameState.pilotAvatar}</button>
+             <button onClick={() => setIsOptionsOpen(true)} className={`${pilotIconSize} flex items-center justify-center bg-zinc-900 border border-zinc-800 rounded hover:border-emerald-500 transition-colors`}>{gameState.pilotAvatar}</button>
              <div className="flex flex-col">
                 <span className={`${lblSize} font-black uppercase text-zinc-500`}>PILOT</span>
                 <span className={`${titleSize} font-black text-white uppercase truncate max-w-[100px]`}>{gameState.pilotName}</span>
@@ -112,34 +120,38 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           // Resolve shields for visualization
           const s1 = f.shieldId ? (f.shieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.shieldId) || null) : null;
           const s2 = f.secondShieldId ? (f.secondShieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.secondShieldId) || null) : null;
+          const hasShields = !!s1 || !!s2;
 
           return (
             <div key={idx} onClick={() => { setGameState(p => ({ ...p, selectedShipInstanceId: inst.instanceId })); setActiveSlotIndex(idx); }} 
                  className={`flex-1 border-2 p-4 flex flex-col items-center rounded-xl transition-all cursor-pointer relative h-full
                  ${isSelected 
-                    ? 'border-emerald-500 bg-emerald-950/20 shadow-lg z-10' 
-                    : 'border-emerald-900/30 bg-zinc-950/40 opacity-70 hover:opacity-100'}`}>
+                    ? 'border-emerald-500 bg-zinc-900 shadow-[0_0_20px_rgba(16,185,129,0.1)] z-10' 
+                    : 'border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900'}`}>
               <div className="w-full flex justify-between items-center mb-2 shrink-0">
                   <span className={`retro-font ${fs === 'small' ? 'text-[10px]' : (fs === 'large' ? 'text-[14px]' : 'text-[12px]')} text-emerald-500 uppercase`}>{config.name}</span>
                   <span className={`${lblSize} uppercase text-zinc-500`}>UNIT 0{idx + 1}</span>
               </div>
               
-              {/* RESPONSIVE SHIP DISPLAY - FLUID HEIGHT */}
-              <div className="flex-grow w-full flex items-center justify-center relative p-1 min-h-0">
-                <div className="w-full h-full flex items-center justify-center">
+              {/* RESPONSIVE SHIP DISPLAY - FLUID HEIGHT BUT ASPECT PRESERVED */}
+              <div className="flex-grow w-full flex items-center justify-center relative min-h-0 p-2">
+                <div className="h-full aspect-square flex items-center justify-center">
                     <ShipIcon 
                         config={config as any} 
                         hullColor={gameState.shipColors[inst.instanceId]} 
                         wingColor={gameState.shipWingColors[inst.instanceId]} 
                         cockpitColor={gameState.shipCockpitColors[inst.instanceId]} 
                         gunColor={gameState.shipGunColors[inst.instanceId]} 
+                        secondaryGunColor={gameState.shipSecondaryGunColors[inst.instanceId]}
                         gunBodyColor={gameState.shipGunBodyColors[inst.instanceId]} 
                         engineColor={gameState.shipEngineColors[inst.instanceId]} 
                         nozzleColor={gameState.shipNozzleColors[inst.instanceId]} 
-                        className="w-full h-full" 
+                        className="w-full h-full object-contain" 
                         shield={s1}
                         secondShield={s2}
                         fullShields={true}
+                        equippedWeapons={f.weapons}
+                        forceShieldScale={true}
                     />
                 </div>
               </div>
@@ -147,16 +159,16 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
               <div className="w-full mt-auto space-y-3 shrink-0">
                 <div className="space-y-1">
                     <div className={`flex justify-between ${lblSize} uppercase font-black`}><span>Integrity</span><span>{Math.floor(f.health)}%</span></div>
-                    <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden"><div className={`h-full transition-all duration-500 ${f.health < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} style={{ width: `${f.health}%` }} /></div>
+                    <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-800"><div className={`h-full transition-all duration-500 ${f.health < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} style={{ width: `${f.health}%` }} /></div>
                 </div>
                 <div className="space-y-1">
                     <div className={`flex justify-between ${lblSize} uppercase font-black`}><span>Fuel Level</span><span>{f.fuel.toFixed(1)} / {config.maxFuel}</span></div>
-                    <div className="h-1.5 bg-zinc-900 rounded-full overflow-hidden"><div className={`h-full transition-all duration-500 ${f.fuel < (config.maxFuel*0.2) ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${(f.fuel/config.maxFuel)*100}%` }} /></div>
+                    <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-800"><div className={`h-full transition-all duration-500 ${f.fuel < (config.maxFuel*0.2) ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${(f.fuel/config.maxFuel)*100}%` }} /></div>
                 </div>
                 <div className="grid grid-cols-3 gap-1 pt-2">
-                    <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>REPLACE</button>
-                    <button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>EQUIP</button>
-                    <button onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-zinc-900 ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800`}>PAINT</button>
+                    <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-black ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white`}>REPLACE</button>
+                    <button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-black ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white`}>EQUIP</button>
+                    <button onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-black ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white`}>PAINT</button>
                 </div>
               </div>
             </div>
@@ -166,7 +178,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
 
       {/* FOOTER */}
       <div className="flex flex-col gap-3 shrink-0 mb-2">
-        <footer className="bg-zinc-950/90 p-2 md:p-3 rounded-xl border border-zinc-800 flex justify-between items-center backdrop-blur-md">
+        <footer className="bg-black p-2 md:p-3 rounded-xl border border-zinc-800 flex justify-between items-center shadow-lg">
           <div className="flex items-center gap-2">
             <button onClick={() => setIsMessagesOpen(true)} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-800 rounded hover:border-emerald-500 relative`}><span className={footerIconText}>📡</span>{gameState.messages.length > 0 && <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-zinc-950" />}</button>
             <button onClick={() => { setIsMarketOpen(true); }} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-800 rounded hover:border-amber-500`}><span className={footerIconText}>💎</span></button>
@@ -179,14 +191,41 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 </svg>
             </button>
           </div>
+          
+          {/* Status Text - No Flashing, Balanced Wrap */}
+          <div className="flex-1 flex flex-col items-center justify-center px-4 hidden sm:flex opacity-80 min-w-[200px]">
+              <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-200 text-center leading-tight whitespace-pre-wrap ${
+                  systemMessage.type === 'error' ? 'text-red-500' : 
+                  systemMessage.type === 'success' ? 'text-blue-400' :
+                  systemMessage.type === 'warning' ? 'text-amber-500' :
+                  'text-emerald-600'
+              }`} style={{ textWrap: 'balance' } as any}>{systemMessage.text}</span>
+              <div className="w-full max-w-[120px] h-[1px] bg-zinc-900 mt-1 overflow-hidden">
+                  <div className={`h-full w-1/2 mx-auto ${
+                      systemMessage.type === 'error' ? 'bg-red-500' : 
+                      systemMessage.type === 'success' ? 'bg-blue-500' :
+                      systemMessage.type === 'warning' ? 'bg-amber-500' :
+                      'bg-emerald-900/50'
+                  }`} />
+              </div>
+          </div>
+
           <div className="flex gap-2 items-center">
-            <button onClick={onRepair} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800`}>REPAIR</button>
-            <button onClick={onRefuel} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800`}>REFUEL</button>
+            <button onClick={onRepair} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white`}>REPAIR</button>
+            <button onClick={onRefuel} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white`}>REFUEL</button>
             <div className="w-[1px] h-8 bg-zinc-800 mx-1 hidden md:block landscape:block"/>
-            <button onClick={onLaunch} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-emerald-600 border-2 border-emerald-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95`}>LAUNCH</button>
+            {allShipsCompromised ? (
+                <button onClick={() => setScreen('intro')} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-red-600 border-2 border-red-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all hover:scale-105 active:scale-95 animate-pulse`}>ABORT</button>
+            ) : (
+                <button onClick={onLaunch} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-emerald-600 border-2 border-emerald-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95`}>LAUNCH</button>
+            )}
           </div>
         </footer>
-        <button onClick={onLaunch} className="md:hidden landscape:hidden w-full py-5 bg-emerald-600 border-b-4 border-emerald-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-emerald-500 flex items-center justify-center gap-4"><span className="animate-pulse">▶</span> LAUNCH TO ORBIT <span className="animate-pulse">◀</span></button>
+        {allShipsCompromised ? (
+            <button onClick={() => setScreen('intro')} className="md:hidden landscape:hidden w-full py-5 bg-red-600 border-b-4 border-red-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(220,38,38,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-red-500 flex items-center justify-center gap-4 animate-pulse">⚠️ ABORT MISSION ⚠️</button>
+        ) : (
+            <button onClick={onLaunch} className="md:hidden landscape:hidden w-full py-5 bg-emerald-600 border-b-4 border-emerald-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-emerald-500 flex items-center justify-center gap-4"><span className="animate-pulse">▶</span> LAUNCH TO ORBIT <span className="animate-pulse">◀</span></button>
+        )}
       </div>
     </div>
   );

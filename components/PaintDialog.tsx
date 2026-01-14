@@ -42,7 +42,6 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
   const [selectedCustomIndex, setSelectedCustomIndex] = useState<number | null>(null);
   const [rgb, setRgb] = useState({ r: 0, g: 0, b: 0 });
 
-  // Default to first slot if nothing selected
   const activeEditIndex = selectedCustomIndex ?? 0;
 
   useEffect(() => {
@@ -58,8 +57,6 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
       
       updateCustomColor(activeEditIndex, hex);
       
-      // If user touches sliders while a standard color is active, 
-      // automatically switch to the custom slot being edited so they see changes on the ship.
       if (selectedCustomIndex === null) {
           setSelectedCustomIndex(0);
           setPartColor(hex); 
@@ -76,9 +73,11 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
       if (activePart === 'wings') return gameState.shipWingColors[selectedShipInstanceId];
       if (activePart === 'cockpit') return gameState.shipCockpitColors[selectedShipInstanceId];
       if (activePart === 'guns') return gameState.shipGunColors[selectedShipInstanceId];
+      if (activePart === 'secondary_guns') return gameState.shipSecondaryGunColors[selectedShipInstanceId];
       if (activePart === 'gun_body') return gameState.shipGunBodyColors[selectedShipInstanceId];
       if (activePart === 'engines') return gameState.shipEngineColors[selectedShipInstanceId];
       if (activePart === 'nozzles') return gameState.shipNozzleColors[selectedShipInstanceId];
+      if (activePart === 'bars') return gameState.shipBarColors[selectedShipInstanceId];
       return '#fff';
   })();
 
@@ -101,6 +100,9 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
       return `${baseClass} border-black/20 hover:border-zinc-500`;
   };
 
+  // Get current ship fitting to display weapons
+  const currentFitting = gameState.shipFittings[selectedShipInstanceId];
+
   return (
     <div className="fixed inset-0 z-[9950] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
         <div className="w-full max-w-5xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[90vh] shadow-2xl">
@@ -109,25 +111,30 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                 <button onClick={onClose} className={`text-red-500 uppercase font-black ${btnSize}`}>DONE</button>
             </header>
             <div className="flex-grow flex flex-col sm:flex-row overflow-hidden">
-                {/* Ship Viewport - Flexible height */}
+                {/* PREVIEW AREA */}
                 <div className="flex-1 p-2 sm:p-4 flex flex-col items-center justify-center bg-black/40 border-r border-zinc-900 relative min-h-[30vh]">
-                    <ShipIcon 
-                        config={selectedShipConfig} 
-                        className="w-full h-full cursor-pointer" 
-                        activePart={activePart} 
-                        onPartSelect={setActivePart} 
-                        hullColor={gameState.shipColors[selectedShipInstanceId]} 
-                        wingColor={gameState.shipWingColors[selectedShipInstanceId]} 
-                        cockpitColor={gameState.shipCockpitColors[selectedShipInstanceId]} 
-                        gunColor={gameState.shipGunColors[selectedShipInstanceId]} 
-                        gunBodyColor={gameState.shipGunBodyColors[selectedShipInstanceId]} 
-                        engineColor={gameState.shipEngineColors[selectedShipInstanceId]} 
-                        nozzleColor={gameState.shipNozzleColors[selectedShipInstanceId]} 
-                        showJets={false} 
-                    />
+                    <div className="relative w-full h-full max-h-[80vh] aspect-square flex items-center justify-center">
+                        <ShipIcon 
+                            config={selectedShipConfig} 
+                            className="w-full h-full object-contain cursor-pointer" 
+                            activePart={activePart} 
+                            onPartSelect={setActivePart} 
+                            hullColor={gameState.shipColors[selectedShipInstanceId]} 
+                            wingColor={gameState.shipWingColors[selectedShipInstanceId]} 
+                            cockpitColor={gameState.shipCockpitColors[selectedShipInstanceId]} 
+                            gunColor={gameState.shipGunColors[selectedShipInstanceId]} 
+                            secondaryGunColor={gameState.shipSecondaryGunColors[selectedShipInstanceId]}
+                            gunBodyColor={gameState.shipGunBodyColors[selectedShipInstanceId]} 
+                            engineColor={gameState.shipEngineColors[selectedShipInstanceId]} 
+                            nozzleColor={gameState.shipNozzleColors[selectedShipInstanceId]} 
+                            barColor={gameState.shipBarColors[selectedShipInstanceId]}
+                            showJets={false} 
+                            equippedWeapons={currentFitting?.weapons}
+                        />
+                    </div>
                 </div>
                 
-                {/* Controls - Fixed width on desktop, compact on mobile */}
+                {/* CONTROLS AREA */}
                 <div className="w-full sm:w-[320px] p-4 flex flex-col gap-3 bg-zinc-900/20 overflow-y-auto custom-scrollbar shrink-0">
                     
                     <div className="space-y-1 shrink-0 border-b border-zinc-800 pb-2">
@@ -137,7 +144,6 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
 
                     <div className="space-y-1 shrink-0">
                         <span className="text-[9px] font-black text-zinc-500 uppercase">Standard Protocols</span>
-                        {/* Compact 8-column grid */}
                         <div className="grid grid-cols-8 gap-1">
                             {STANDARD_COLORS.map(c => (
                                 <button 
@@ -164,7 +170,6 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                         </div>
                     </div>
 
-                    {/* Sliders - Always Visible & Pushed to bottom if space allows */}
                     <div className="space-y-2 pt-2 border-t border-zinc-800 bg-zinc-900/50 p-3 rounded mt-auto shrink-0">
                         <div className="flex justify-between items-center mb-1">
                             <span className="text-[9px] font-black text-emerald-500 uppercase">Spectrum Analyzer {selectedCustomIndex === null ? '(EDITING #1)' : ''}</span>

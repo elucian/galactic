@@ -24,9 +24,11 @@ export enum WeaponType {
   EMP = 'EMP'
 }
 
+export type AmmoType = 'iron' | 'titanium' | 'cobalt' | 'iridium' | 'tungsten' | 'explosive';
+
 export interface CargoItem {
   instanceId: string;
-  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'iron' | 'copper' | 'chromium' | 'titanium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser';
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'iron' | 'copper' | 'chromium' | 'titanium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser' | 'ammo' | 'robot';
   id?: string;
   name: string;
   weight: number;
@@ -45,7 +47,9 @@ export interface Weapon {
   energyCost: number;
   cargoWeight: number;
   isAmmoBased: boolean;
-  beamColor?: string; 
+  beamColor?: string;
+  barrelCount?: number; // 1, 3, or 6
+  defaultAmmo?: AmmoType;
 }
 
 export interface Shield {
@@ -75,6 +79,9 @@ export interface ShipConfig {
   noseType: 'rounded' | 'flat';
   wingConfig: 'front-heavy' | 'rear-heavy' | 'balanced';
   weaponId?: string;
+  noseGunDamage: number;
+  noseGunCooldown: number;
+  noseGunColor: string;
 }
 
 export interface ShipFitting {
@@ -93,6 +100,11 @@ export interface ShipFitting {
   lives: number;
   fuel: number;
   cargo: CargoItem[];
+  ammo: Record<AmmoType, number>;
+  selectedAmmo: AmmoType;
+  // Magazine Logic
+  magazineCurrent: number;
+  reloadTimer: number; // 0 if ready, timestamp if reloading
 }
 
 export interface EquippedWeapon {
@@ -105,7 +117,7 @@ export interface OwnedShipInstance {
   shipTypeId: string;
 }
 
-export type ShipPart = 'hull' | 'wings' | 'cockpit' | 'guns' | 'gun_body' | 'engines' | 'bars' | 'nozzles';
+export type ShipPart = 'hull' | 'wings' | 'cockpit' | 'guns' | 'secondary_guns' | 'gun_body' | 'engines' | 'bars' | 'nozzles';
 
 export interface GameMessage {
   id: string;
@@ -134,6 +146,7 @@ export interface GameState {
   shipCockpitColors: Record<string, string>; 
   shipBeamColors: Record<string, string>;
   shipGunColors: Record<string, string>; 
+  shipSecondaryGunColors: Record<string, string>;
   shipGunBodyColors: Record<string, string>;
   shipEngineColors: Record<string, string>;
   shipBarColors: Record<string, string>;

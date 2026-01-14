@@ -1,15 +1,19 @@
+
 import React, { useEffect, useRef, useState } from 'react';
 import { ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
+import { EquippedWeapon } from '../types.ts';
 
 interface WarpSequenceProps {
   shipConfig: ExtendedShipConfig;
   shipColors: any;
   shieldColor: string;
   onComplete: () => void;
+  weaponId?: string;
+  equippedWeapons?: (EquippedWeapon | null)[];
 }
 
-const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shieldColor, onComplete }) => {
+const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shieldColor, onComplete, weaponId, equippedWeapons }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [shipScale, setShipScale] = useState(1);
   const [shipOpacity, setShipOpacity] = useState(1);
@@ -166,7 +170,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shi
 
         // DRAW BUBBLE
         if (bubbleAlpha > 0) {
-            const baseRadius = 150 * bubbleScale;
+            const baseRadius = Math.max(0, 150 * bubbleScale);
             ctx.save();
             ctx.translate(cx, cy);
             
@@ -217,58 +221,9 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shi
         style={{ 
             transform: `translate(-50%, -50%) scale(${shipScale})`, 
             opacity: shipOpacity,
-            zIndex: 10 // Below canvas? No, canvas clears background. Bubble is drawn on canvas. 
-                       // If bubble is opaque, it should cover ship. 
-                       // So Ship DOM must be BEHIND canvas?
-                       // If bubble alpha < 1, we see ship.
+            zIndex: 10 
         }}
       >
-         {/* Ship Z-Index Management: 
-             If we put Ship *behind* canvas, and canvas clears to transparent (except black bg), 
-             we need canvas to have transparent background? 
-             Current implementation: `ctx.fillStyle = '#000'; ctx.fillRect...` -> Canvas is opaque black.
-             So Ship must be ON TOP of canvas.
-             But then Opaque Bubble (on canvas) is BEHIND ship.
-             
-             Correction: We should draw the ship on the canvas or put a div ON TOP for bubble?
-             Easier: Make Canvas transparent where no stars/bubble?
-             No, we want the starfield background.
-             
-             Solution: 
-             1. Draw BG Black.
-             2. Draw Stars.
-             3. Ship DOM is positioned (z-index 10).
-             4. Another Canvas layer on top (z-index 20) for the Bubble? 
-             
-             Let's use a single canvas. Since we need to obscure the ship with the bubble:
-             We can't easily obscure a DOM element with a Canvas drawing unless the Canvas is on top.
-             If Canvas is on top, we can't see the DOM element unless Canvas is transparent.
-             
-             Let's use z-index:
-             Canvas (Stars) : z-0
-             Ship (DOM)     : z-10
-             Overlay (Bubble): z-20 (Another div or canvas?)
-             
-             Actually, let's keep it simple.
-             If bubble is opaque, we just fade out the Ship DOM opacity.
-             "The shields arround the spaceship become opaque"
-             
-             So: 
-             Canvas (Stars + Background) -> z-0
-             Ship DOM -> z-10
-             Canvas (Bubble) -> z-20? 
-             
-             Let's try: Canvas draws EVERYTHING (Stars + Bubble). 
-             Ship DOM is z-10.
-             Canvas is z-20? But then canvas blocks ship.
-             
-             Revised Plan:
-             Canvas is z-0. Clears to Black. Draws Stars.
-             Ship is z-10.
-             Bubble is separate div z-20? Or drawn on a second canvas z-20?
-             
-             Let's use a `bubbleOpacity` state applied to a Div overlay on top of the ship.
-         */}
          <ShipIcon 
             config={shipConfig} 
             hullColor={shipColors.hull}
@@ -280,6 +235,8 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shi
             nozzleColor={shipColors.nozzles}
             showJets={true}
             className="w-full h-full"
+            weaponId={weaponId}
+            equippedWeapons={equippedWeapons}
          />
          
          {/* DOM Bubble Overlay */}
@@ -287,10 +244,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shi
             className="absolute inset-[-20%] rounded-full transition-all duration-100"
             style={{ 
                 backgroundColor: shieldColor, 
-                opacity: shipOpacity < 1 ? 1 : 0, // When ship "fades" (conceptually), bubble is max
-                // Actually, let's use a computed style from the loop via state?
-                // Too many re-renders. 
-                // Let's rely on the Loop drawing the bubble on a TOP canvas.
+                opacity: shipOpacity < 1 ? 1 : 0, 
             }}
          />
       </div>
@@ -298,11 +252,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shi
       {/* Upper Canvas for Bubble - z-index 20 */}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-20 pointer-events-none" />
       
-      {/* Background Canvas for Stars - z-index 0 */}
-      {/* We need two canvases to sandwich the ship. */}
-      {/* Or... just draw stars on a bg canvas, ship in middle, bubble on fg canvas. */}
-      {/* Let's refactor to use a BG component for stars. */}
-      
+      {/* Background Canvas for Stars */}
       <StarFieldCanvas shieldColor={shieldColor} phase={shipScale < 0.1 ? 'warp' : 'static'} /> 
 
       <div className="absolute bottom-20 left-0 right-0 text-center z-30">

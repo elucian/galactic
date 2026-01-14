@@ -1,0 +1,1 @@
+// DEPRECATED: This file is inactive. The application uses components/GameEngine.tsx at the project root.
