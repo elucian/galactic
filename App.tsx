@@ -67,6 +67,7 @@ export default function App() {
           shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', 
           rocketCount: 2, // Updated to 2
           mineCount: 2,   // Updated to 2
+          redMineCount: 0, // Init Omega Mines
           hullPacks: 0, wingWeaponId: null, 
           health: 100, ammoPercent: 100, lives: 1, fuel: config.maxFuel, cargo: [],
           ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 },
@@ -123,6 +124,7 @@ export default function App() {
             }
             if (fit.magazineCurrent === undefined) fit.magazineCurrent = 200;
             if (fit.reloadTimer === undefined) fit.reloadTimer = 0;
+            if (fit.redMineCount === undefined) fit.redMineCount = 0; // Migrated
         });
 
         return { ...createInitialState(), ...parsed }; 
@@ -276,6 +278,7 @@ export default function App() {
            fuel: payload?.fuel ?? 0, 
            rocketCount: payload?.rockets ?? fitting.rocketCount, 
            mineCount: payload?.mines ?? fitting.mineCount, 
+           redMineCount: payload?.redMineCount ?? fitting.redMineCount,
            hullPacks: payload?.hullPacks ?? fitting.hullPacks, 
            cargo: payload?.cargo ?? fitting.cargo,
            ammo: payload?.ammo ?? fitting.ammo, 
@@ -347,7 +350,7 @@ export default function App() {
           newWeapons[0] = { id: 'gun_pulse', count: 1 };
       }
 
-      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 2, mineCount: 2, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
+      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 2, mineCount: 2, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
       return { ...prev, credits: prev.credits - shipConfig.price, ownedShips: newOwned, shipFittings: newFittings, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: reserve }, shipColors: { ...prev.shipColors, [sId]: shipConfig.defaultColor || '#94a3b8' } };
     });
     setIsStoreOpen(false); audioService.playSfx('buy');
@@ -372,10 +375,10 @@ export default function App() {
       
       // Calculate remaining space only if going to cargo
       // Ordnance might fit in active slots first
-      
-      if (currentCargoCount >= config.maxCargo && !((item.type === 'missile' && fit.rocketCount < 10) || (item.type === 'mine' && fit.mineCount < 10))) {
+      // Check for Omega Mine specific logic
+      if (currentCargoCount >= config.maxCargo && !((item.type === 'missile' && fit.rocketCount < 10) || (item.type === 'mine' && fit.mineCount < 10) || (item.id === 'ord_mine_red' && (fit.redMineCount || 0) < 5))) {
           // If pure cargo item and full
-          if (!['missile', 'mine'].includes(item.type)) {
+          if (!['missile', 'mine'].includes(item.type) && item.id !== 'ord_mine_red') {
              audioService.playSfx('denied'); return; 
           }
       }
@@ -392,7 +395,16 @@ export default function App() {
           let remainingQty = qtyToBuy;
 
           // Special Handling for Ordnance: Fill active slots first
-          if (item.type === 'missile') {
+          if (item.id === 'ord_mine_red') {
+              const currentRed = updatedFit.redMineCount || 0;
+              const space = 5 - currentRed;
+              const toAdd = Math.min(remainingQty, space);
+              if (toAdd > 0) {
+                  updatedFit.redMineCount = currentRed + toAdd;
+                  remainingQty -= toAdd;
+                  purchased = true;
+              }
+          } else if (item.type === 'missile') {
               const space = 10 - updatedFit.rocketCount;
               const toAdd = Math.min(remainingQty, space);
               if (toAdd > 0) {

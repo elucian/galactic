@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { CargoItem } from '../types.ts';
 import { WEAPONS, SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, EXOTIC_WEAPONS, EXOTIC_SHIELDS, AMMO_MARKET_ITEMS, AMMO_CONFIG } from '../constants.ts';
 import { ItemSVG } from './Common.tsx';
@@ -20,19 +20,26 @@ interface MarketDialogProps {
 const getCategory = (item: any) => {
     // Check type or infer from properties if type is generic 'goods'
     const t = (item.type || '').toLowerCase();
-    if (t === 'ammo') return 'AMMUNITION';
-    if (['weapon', 'gun', 'projectile', 'laser'].includes(t) || item.damage) return 'WEAPONRY';
-    if (['shield'].includes(t) || item.capacity) return 'DEFENSE';
+    
+    // Combined AMMO into ORDNANCE
+    if (t === 'ammo') return 'ORDNANCE';
+    
+    // Combined WEAPONRY and DEFENSE into EQUIPMENT
+    if (['weapon', 'gun', 'projectile', 'laser'].includes(t) || item.damage) return 'EQUIPMENT';
+    if (['shield'].includes(t) || item.capacity) return 'EQUIPMENT';
+    
     if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
     if (['fuel', 'energy', 'repair', 'robot'].includes(t)) return 'SUPPLIES';
     return 'RESOURCES';
 };
 
-const CATEGORY_ORDER = ['AMMUNITION', 'WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
+const CATEGORY_ORDER = ['EQUIPMENT', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
 
 export const MarketDialog: React.FC<MarketDialogProps> = ({
   isOpen, onClose, marketTab, setMarketTab, currentReserves, credits, testMode, marketBuy, marketSell, fontSize
 }) => {
+  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+
   if (!isOpen) return null;
 
   const btnSize = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[14px]' : 'text-[12px]');
@@ -42,6 +49,15 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   const isExoticItem = (id?: string) => {
       if (!id) return false;
       return [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].some(ex => ex.id === id);
+  };
+
+  const toggleFilter = (cat: string) => {
+      setActiveFilters(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
+  };
+
+  const getFilteredCategories = () => {
+      if (activeFilters.length === 0) return CATEGORY_ORDER;
+      return CATEGORY_ORDER.filter(c => activeFilters.includes(c));
   };
 
   const renderBuyGrid = () => {
@@ -76,9 +92,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           grouped[cat].push(it);
       });
 
+      const catsToShow = getFilteredCategories();
+
       return (
           <div className="space-y-6">
-              {CATEGORY_ORDER.map(cat => {
+              {catsToShow.map(cat => {
                   const groupItems = grouped[cat];
                   if (!groupItems || groupItems.length === 0) return null;
                   return (
@@ -154,9 +172,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           grouped[cat].push({ item, idx });
       });
 
+      const catsToShow = getFilteredCategories();
+
       return (
           <div className="space-y-6">
-              {CATEGORY_ORDER.map(cat => {
+              {catsToShow.map(cat => {
                   const groupItems = grouped[cat];
                   if (!groupItems || groupItems.length === 0) return null;
                   return (
@@ -207,11 +227,38 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   return (
     <div className="fixed inset-0 z-[9800] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
         <div className="w-full max-w-4xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[85vh] shadow-2xl">
-            <header className="p-4 border-b border-zinc-800 flex justify-between bg-zinc-900/50 shrink-0">
+            <header className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50 shrink-0 gap-4">
                 <div className="flex gap-2">
                     <button onClick={() => setMarketTab('buy')} className={`retro-font ${btnSize} uppercase ${btnPadding} rounded-t-lg transition-all ${marketTab === 'buy' ? 'bg-emerald-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-white'}`}>BUY</button>
                     <button onClick={() => setMarketTab('sell')} className={`retro-font ${btnSize} uppercase ${btnPadding} rounded-t-lg transition-all ${marketTab === 'sell' ? 'bg-amber-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-white'}`}>SELL</button>
                 </div>
+                
+                {/* FILTER BUTTONS */}
+                <div className="flex gap-1 bg-zinc-900/50 p-1 rounded-lg border border-zinc-800/50">
+                    {[
+                        { label: 'EQUIPMENT', cat: 'EQUIPMENT' },
+                        { label: 'ORDNANCE', cat: 'ORDNANCE' },
+                        { label: 'SUPPLIES', cat: 'SUPPLIES' },
+                        { label: 'RESOURCES', cat: 'RESOURCES' }
+                    ].map(f => {
+                        const isActive = activeFilters.includes(f.cat);
+                        return (
+                            <button 
+                                key={f.cat}
+                                onClick={() => toggleFilter(f.cat)}
+                                className={`
+                                    ${btnSize} font-black uppercase px-3 py-1 rounded transition-all border
+                                    ${isActive 
+                                        ? 'bg-zinc-700 text-white border-zinc-600 shadow-inner' 
+                                        : 'bg-transparent text-zinc-600 border-transparent hover:text-zinc-400 hover:bg-zinc-800/50'}
+                                `}
+                            >
+                                {f.label}
+                            </button>
+                        )
+                    })}
+                </div>
+
                 <button onClick={onClose} className={`text-zinc-500 ${btnSize} font-black ${btnPadding.replace('py-3','py-2').replace('py-5','py-4').replace('py-4','py-3')}`}>DONE</button>
             </header>
             <div className="flex-grow overflow-y-auto p-4 custom-scrollbar bg-black/40">

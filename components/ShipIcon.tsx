@@ -1,8 +1,4 @@
 
-// --- LOCKED: SHIP VISUALIZATION MODULE ---
-// DO NOT REFACTOR OR MODIFY WITHOUT EXPLICIT USER REQUEST
-// Geometry, layers, and mounting logic are finalized.
-
 import React, { useEffect, useRef } from 'react';
 import { ExtendedShipConfig, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS } from '../constants.ts';
 import { ShipPart, Shield, EquippedWeapon } from '../types.ts';
@@ -65,7 +61,7 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
   const shouldScaleDown = !!shield || !!secondShield || forceShieldScale;
 
   // Use a ref for continuous animation if fire times are present
-  const animRef = useRef<number>();
+  const animRef = useRef<number | null>(null);
 
   const handleClick = (e: React.MouseEvent) => {
     if (!onPartSelect || !canvasRef.current) return;

@@ -193,6 +193,23 @@ class Enemy {
   }
 
   takeDamage(amount: number, type: string, isMain: boolean, isOvercharge: boolean = false) {
+      // OMEGA MINE LOGIC (RED MINE)
+      if (type === 'mine_red') {
+          if (this.type === 'boss') {
+              // Boss: Reduce HP 50% and Eliminate Shield
+              this.shieldLayers = []; // Eliminate shields
+              const dmg = this.maxHp * 0.5;
+              this.hp -= dmg;
+              this.vibration = 30;
+              audioService.playExplosion(0, 2.0); // Heavy impact sound
+          } else {
+              // Non-Boss: Instant Kill
+              this.hp = -9999;
+              this.vibration = 50;
+          }
+          return;
+      }
+
       if (this.shieldLayers.length > 0) {
           let shieldDmg = amount;
           
@@ -276,15 +293,17 @@ interface Projectile {
     weaponId?: string; isTracer?: boolean; traceColor?: string; isOvercharge?: boolean;
     // Smart Ordnance Props
     target?: Enemy | null;
-    homingState?: 'searching' | 'tracking' | 'returning' | 'engaging';
+    homingState?: 'searching' | 'tracking' | 'returning' | 'engaging' | 'launching';
     z?: number; // Visual Z-level
     headColor?: string;
     finsColor?: string;
     turnRate?: number;
     maxSpeed?: number;
+    launchTime?: number;
+    accel?: number;
 }
 interface Particle { x: number; y: number; vx: number; vy: number; life: number; color: string; size: number; }
-interface Loot { x: number; y: number; z: number; type: string; id?: string; name?: string; isPulled: boolean; }
+interface Loot { x: number; y: number; z: number; type: string; id?: string; name?: string; isPulled: boolean; isBeingPulled?: boolean; }
 
 // --- COLOR UTILS ---
 const hexToRgb = (hex: string) => {
@@ -328,7 +347,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   
   // UI & State
   const [hud, setHud] = useState({ 
-    hp: 100, sh1: 0, sh2: 0, energy: maxEnergy, score: 0, missiles: 0, mines: 0, fuel: 0, 
+    hp: 100, sh1: 0, sh2: 0, energy: maxEnergy, score: 0, missiles: 0, mines: 0, redMines: 0, fuel: 0, 
     alert: mode === 'drift' ? "DRIFTING" : "SYSTEMS READY", alertType: 'info', 
     timer: mode === 'drift' ? 60 : 120, boss: null as any, cargoCount: 0, isPaused: false,
     chargeLevel: 0,
@@ -344,7 +363,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     enemies: [] as Enemy[], asteroids: [] as Asteroid[], bullets: [] as Projectile[], 
     particles: [] as Particle[], loot: [] as Loot[], stars: [] as {x:number, y:number, s:number}[],
     keys: new Set<string>(), lastFire: 0, lastSpawn: 0, frame: 0, 
-    missiles: activeShip.fitting.rocketCount, mines: activeShip.fitting.mineCount,
+    missiles: activeShip.fitting.rocketCount, mines: activeShip.fitting.mineCount, redMines: activeShip.fitting.redMineCount || 0,
     cargo: [...activeShip.fitting.cargo],
     active: true, paused: false, meltdown: false, victoryTimer: 0,
     chargeLevel: 0, isCharging: false, hasFiredOverload: false, lastRapidFire: 0,
@@ -357,7 +376,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     weaponFireTimes: {} as {[key: number]: number}, // Slot index -> Timestamp
     weaponHeat: {} as {[key: number]: number}, // Slot index -> 0-100 Heat
     lastMissileFire: 0,
-    lastMineFire: 0
+    lastMineFire: 0,
+    lastRedMineFire: 0,
+    mineSide: false, // Track side for mines: false=Right, true=Left
+    omegaSide: false // Track side for Omega mines
   });
 
   // Helper to check if ship has ammo weapons
@@ -376,6 +398,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       s.sh2 = secondShield?.capacity || 0;
       s.missiles = activeShip.fitting.rocketCount;
       s.mines = activeShip.fitting.mineCount;
+      s.redMines = activeShip.fitting.redMineCount || 0;
       s.stars = Array.from({length: 150}, () => ({x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, s: Math.random()*2}));
       // Init heat
       [0, 1, 2].forEach(i => s.weaponHeat[i] = 0);
@@ -484,6 +507,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 fuel: state.current.fuel, 
                 rockets: state.current.missiles, 
                 mines: state.current.mines, 
+                redMineCount: state.current.redMines, // Save red mine count
                 cargo: state.current.cargo, 
                 ammo: state.current.ammo, 
                 magazineCurrent: state.current.magazineCurrent, 
@@ -494,6 +518,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if(!state.current.paused && state.current.active) {
             if(e.code === 'KeyM' || e.code === 'NumpadAdd') fireMissile();
             if(e.code === 'KeyN' || e.code === 'NumpadEnter') fireMine();
+            if(e.code === 'KeyB') fireRedMine(); // New Red Mine Key
             if (e.code === 'Tab') handleTabReload();
             if (e.code === 'CapsLock') { state.current.swivelMode = !state.current.swivelMode; audioService.playSfx('click'); }
             // NEW MAPPING: Shift is Overcharge (Charge)
@@ -590,23 +615,24 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const s = state.current;
       if (s.missiles > 0) {
           // Alternating Logic: If count is even, use Normal. If odd, use EMP.
-          // This allows users to cycle through "2 of each" simply by firing twice.
-          // Example: 4 -> Normal, 3 -> EMP, 2 -> Normal, 1 -> EMP.
           const isEmp = s.missiles % 2 !== 0; 
           
           s.missiles--;
           s.lastMissileFire = Date.now();
           
+          // 20% larger: width 8 -> 9.6 (~10), height 20 -> 24
+          // Start slow ahead (vy = -2)
           s.bullets.push({ 
               x: s.px, y: s.py, 
-              vx: 0, vy: -5, 
+              vx: 0, vy: -2, 
               damage: 0, // Damage handled by takeDamage type logic
               color: isEmp ? '#22d3ee' : '#ef4444', 
               type: isEmp ? 'missile_emp' : 'missile', 
               life: 600, 
               isEnemy: false, 
-              width: 8, height: 20,
-              homingState: 'searching',
+              width: 10, height: 24, // Upscaled
+              homingState: 'launching',
+              launchTime: s.frame,
               headColor: isEmp ? '#22d3ee' : '#ef4444',
               finsColor: isEmp ? '#0ea5e9' : '#ef4444',
               turnRate: 0.15,
@@ -620,27 +646,81 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const fireMine = () => {
       const s = state.current;
       if (s.mines > 0) {
-          // Alternating Logic for Mines as well
-          const isEmp = s.mines % 2 !== 0;
-
-          s.mines--;
-          s.lastMineFire = Date.now();
+          // Launch 2 at once if available
+          const launchCount = s.mines >= 2 ? 2 : 1;
           
+          // Toggle Side for this volley
+          s.mineSide = !s.mineSide;
+          
+          // 145 degrees from Vertical Up (-90 deg).
+          // Left: -90 - 145 = -235 deg (125 deg)
+          // Right: -90 + 145 = 55 deg
+          const sideAngle = s.mineSide ? -235 : 55;
+          const rad = (sideAngle * Math.PI) / 180;
+          const speed = 3;
+
+          for(let i=0; i<launchCount; i++) {
+              // Get current EMP status based on count before decrement
+              const isEmp = s.mines % 2 !== 0;
+              s.mines--;
+              s.lastMineFire = Date.now();
+              
+              // Add slight spread if launching 2
+              const spread = i === 0 ? 0 : (s.mineSide ? -0.2 : 0.2); // slight angle offset for second mine
+
+              s.bullets.push({ 
+                  x: s.px, y: s.py + 20, 
+                  vx: Math.cos(rad + spread) * speed, 
+                  vy: Math.sin(rad + spread) * speed, 
+                  damage: 0, 
+                  color: isEmp ? '#22d3ee' : '#fbbf24', 
+                  type: isEmp ? 'mine_emp' : 'mine', 
+                  life: 1200, 
+                  isEnemy: false, 
+                  width: 14, height: 14,
+                  homingState: 'launching',
+                  launchTime: s.frame,
+                  turnRate: 0.08,
+                  maxSpeed: 10,
+                  z: 0
+              });
+          }
+          audioService.playWeaponFire('mine'); // One sound for the volley
+      }
+  };
+
+  const fireRedMine = () => {
+      const s = state.current;
+      if (s.redMines > 0) {
+          s.redMines--;
+          s.lastRedMineFire = Date.now();
+          s.omegaSide = !s.omegaSide; // Toggle side
+          
+          // Use same 145 degree logic but slower speed
+          const sideAngle = s.omegaSide ? -235 : 55;
+          const rad = (sideAngle * Math.PI) / 180;
+          const speed = 1.5;
+
+          // Omega Mine: Powerful, Slow moving, Tracking
           s.bullets.push({ 
-              x: s.px, y: s.py + 20, 
-              vx: 0, vy: 2, 
+              x: s.px, y: s.py + 30, 
+              vx: Math.cos(rad) * speed, 
+              vy: Math.sin(rad) * speed, 
               damage: 0, // Damage handled by takeDamage type logic
-              color: isEmp ? '#22d3ee' : '#fbbf24', 
-              type: isEmp ? 'mine_emp' : 'mine', 
-              life: 1200, 
+              color: '#ef4444', 
+              type: 'mine_red', 
+              life: 1500, 
               isEnemy: false, 
-              width: 14, height: 14,
+              width: 20, height: 20,
               homingState: 'searching',
-              turnRate: 0.08,
-              maxSpeed: 10,
-              z: 0
+              turnRate: 0.05,
+              maxSpeed: 8,
+              z: 0,
+              glow: true,
+              glowIntensity: 30
           });
-          audioService.playWeaponFire(isEmp ? 'emp' : 'mine');
+          audioService.playWeaponFire('mine');
+          setHud(h => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'}));
       }
   };
 
@@ -963,7 +1043,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             } 
             else if (s.frame % 60 === 0) s.time--;
         } else if (s.phase === 'boss') {
-            if (s.bossDead) { s.victoryTimer++; if (s.victoryTimer > 180) { onGameOver(true, s.score, false, { health: s.hp, fuel: s.fuel, rockets: s.missiles, mines: s.mines, cargo: s.cargo, ammo: s.ammo, magazineCurrent: s.magazineCurrent, reloadTimer: s.reloadTimer }); s.active = false; } }
+            if (s.bossDead) { s.victoryTimer++; if (s.victoryTimer > 180) { onGameOver(true, s.score, false, { health: s.hp, fuel: s.fuel, rockets: s.missiles, mines: s.mines, redMineCount: s.redMines, cargo: s.cargo, ammo: s.ammo, magazineCurrent: s.magazineCurrent, reloadTimer: s.reloadTimer }); s.active = false; } }
         }
 
         // Update Entities
@@ -1090,39 +1170,69 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         s.bullets.forEach(b => {
             // Intelligent Projectile Logic
             if (b.type === 'missile' || b.type === 'missile_emp') {
-                if (!b.target || b.target.hp <= 0) {
-                    b.homingState = 'searching';
+                if (b.homingState === 'launching') {
+                    // Launch phase visual effects
+                    if (s.frame % 2 === 0) {
+                        s.particles.push({ 
+                            x: b.x, y: b.y + b.height/2, 
+                            vx: (Math.random()-0.5), vy: 2 + Math.random()*2, 
+                            life: 0.1, color: '#facc15', size: 3 
+                        });
+                        s.particles.push({ 
+                            x: b.x, y: b.y + b.height/2, 
+                            vx: (Math.random()-0.5)*0.5, vy: 1, 
+                            life: 0.6, color: 'rgba(200,200,200,0.2)', size: 4 
+                        });
+                    }
+                    
+                    // Fly straight ahead for 1.5s
+                    // Slight initial acceleration to clear ship
+                    b.vy -= 0.02; 
+                    
+                    if ((s.frame - (b.launchTime || 0)) > 90) { // 1.5s (60fps * 1.5)
+                        b.homingState = 'searching';
+                    }
+                } else if (b.homingState === 'searching') {
+                    // Find Target
                     let bestT = null; let minD = Infinity;
                     s.enemies.forEach(e => {
                         const dist = Math.hypot(e.x - b.x, e.y - b.y);
-                        // Forward is Up (-PI/2)
                         const angleToEnemy = Math.atan2(e.y - b.y, e.x - b.x);
                         let dAngle = Math.abs(angleToEnemy - (-Math.PI/2));
                         if (dAngle > Math.PI) dAngle = 2*Math.PI - dAngle;
-                        // 120 degree cone (PI/3 either side)
                         if (dAngle < Math.PI/3 && dist < minD && e.hp > 0) { minD = dist; bestT = e; }
                     });
-                    if (bestT) { b.target = bestT; b.homingState = 'tracking'; }
-                }
-                
-                if (b.target && b.homingState === 'tracking') {
+                    
+                    if (bestT) { 
+                        b.target = bestT; 
+                        b.homingState = 'tracking'; 
+                    } else {
+                        // Keep flying straight if no target
+                        b.vy -= 0.1;
+                    }
+                } else if (b.target && b.homingState === 'tracking') {
+                    // Accelerate towards target
                     const t = b.target;
-                    const dx = t.x - b.x; const dy = t.y - b.y;
-                    const dist = Math.hypot(dx, dy);
-                    const speed = b.maxSpeed || 14;
-                    const turnRate = b.turnRate || 0.15;
-                    
-                    const desiredVx = (dx / dist) * speed;
-                    const desiredVy = (dy / dist) * speed;
-                    
-                    b.vx += (desiredVx - b.vx) * turnRate;
-                    b.vy += (desiredVy - b.vy) * turnRate;
-                    
-                    // Z-Level Jumping
-                    b.z = (b.z || 0) + (t.z - (b.z || 0)) * 0.1;
+                    if (t.hp <= 0) { b.target = null; b.homingState = 'searching'; }
+                    else {
+                        const dx = t.x - b.x; const dy = t.y - b.y;
+                        const dist = Math.hypot(dx, dy);
+                        const speed = b.maxSpeed || 14;
+                        const turnRate = b.turnRate || 0.15;
+                        
+                        const desiredVx = (dx / dist) * speed;
+                        const desiredVy = (dy / dist) * speed;
+                        
+                        b.vx += (desiredVx - b.vx) * turnRate;
+                        b.vy += (desiredVy - b.vy) * turnRate;
+                        
+                        // Accelerate speed itself over time? 
+                        // The current logic moves TOWARDS maxSpeed.
+                        
+                        b.z = (b.z || 0) + (t.z - (b.z || 0)) * 0.1;
+                    }
                 }
                 
-                // Asteroid Avoidance
                 s.asteroids.forEach(a => {
                     const dx = b.x - a.x; const dy = b.y - a.y;
                     const d = Math.hypot(dx, dy);
@@ -1133,16 +1243,25 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     }
                 });
             } 
-            else if (b.type === 'mine' || b.type === 'mine_emp') {
-                if (b.homingState === 'searching') {
+            else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red') {
+                if (b.homingState === 'launching') {
+                    // Decelerate initial launch velocity
+                    b.vx *= 0.96; 
+                    b.vy *= 0.96;
+                    
+                    if ((s.frame - (b.launchTime || 0)) > 90) { // 1.5s
+                        b.homingState = 'searching';
+                    }
+                } else if (b.homingState === 'searching') {
+                    // Drift while searching
                     let bestT = null; let minD = Infinity;
                     s.enemies.forEach(e => {
                         const dist = Math.hypot(e.x - b.x, e.y - b.y);
-                        const angleToEnemy = Math.atan2(e.y - b.y, e.x - b.x);
-                        let dAngle = Math.abs(angleToEnemy - (-Math.PI/2));
-                        if (dAngle > Math.PI) dAngle = 2*Math.PI - dAngle;
-                        // PREFER OUTSIDE 120 degree cone
-                        if (dAngle > Math.PI/3 && dist < minD && e.hp > 0) { minD = dist; bestT = e; }
+                        // Omega mine tracks anything, standard mines have limited FOV?
+                        // Let's make mines track proximity
+                        if (dist < 400 && e.hp > 0) { // Detection range
+                             if (dist < minD) { minD = dist; bestT = e; }
+                        }
                     });
                     if (bestT) { b.target = bestT; b.homingState = 'engaging'; }
                 }
@@ -1159,7 +1278,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         b.vy += ((dy/dist)*speed - b.vy) * turnRate;
                     }
                 } else if (b.homingState === 'returning') {
-                    // Return to player vicinity to find new targets
+                    // Return to ship? Or just drift
                     const dx = s.px - b.x; const dy = s.py - b.y;
                     const dist = Math.hypot(dx, dy);
                     if (dist < 100) b.homingState = 'searching';
@@ -1170,7 +1289,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     }
                 }
                 
-                // Mine Avoidance
                 s.asteroids.forEach(a => {
                     const dx = b.x - a.x; const dy = b.y - a.y;
                     const d = Math.hypot(dx, dy);
@@ -1184,9 +1302,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
             b.x += b.vx; b.y += b.vy; b.life--;
             
-            // Standard non-intelligent collision for non-smart types
-            if (!b.isEnemy && !['missile', 'mine', 'missile_emp', 'mine_emp'].includes(b.type)) {
-                if (b.type.includes('missile') || b.type.includes('mine')) { // Keep simple physics if dumb fire
+            if (!b.isEnemy && !['missile', 'mine', 'missile_emp', 'mine_emp', 'mine_red'].includes(b.type)) {
+                if (b.type.includes('missile') || b.type.includes('mine')) { 
                     s.asteroids.forEach(ast => {
                         const dx = ast.x - b.x;
                         const dy = ast.y - b.y;
@@ -1202,29 +1319,25 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (Math.hypot(b.x-s.px, b.y-s.py) < 30) { takeDamage(b.damage, b.type); b.life = 0; createExplosion(b.x, b.y, b.color, 3); }
             } else {
                 let hit = false;
-                // Collision Logic
                 s.enemies.forEach(e => {
-                    // For missiles/mines, allow Z-level jumping (ignore Z dist check visually)
                     const hitDist = (b.type.includes('missile') || b.type.includes('mine')) 
-                        ? (e.type === 'boss' ? 100 : 60) // Larger hit radius for smart weapons
+                        ? (e.type === 'boss' ? 100 : 60)
                         : (e.type === 'boss' ? 80 : 40);
 
-                    // Check distance 
                     if (Math.hypot(b.x-e.x, b.y-e.y) < hitDist) {
-                        // Standard bullets check Z alignment in Enemy class, but we can bypass or assume hit here
                         e.takeDamage(b.damage, b.type as any, !!b.isMain, !!b.isOvercharge);
                         hit = true;
-                        createExplosion(b.x, b.y, b.color, 2);
+                        if (b.type === 'mine_red') createExplosion(b.x, b.y, '#ef4444', 30);
+                        else createExplosion(b.x, b.y, b.color, 2);
                     }
                 });
                 
                 if (hit) {
                     b.life = 0;
                 } else if (b.type.includes('mine') && b.target && (b.target.x < -100 || b.target.x > width+100 || b.target.y < -100)) {
-                    // Mine chased target off screen - Kill both
-                    b.target.takeDamage(9999, 'mine', false); // Kill enemy
-                    b.life = 0; // Explode mine
-                    s.score += 500; // Bonus points for off-screen kill
+                    b.target.takeDamage(9999, 'mine', false);
+                    b.life = 0; 
+                    s.score += 500; 
                     setHud(h => ({...h, alert: "OFF-SCREEN KILL +500"}));
                 }
 
@@ -1241,30 +1354,37 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 });
             }
         });
-        // Filter out dead bullets, but allow mines to go off-screen if engaging
         s.bullets = s.bullets.filter(b => {
             if (b.life <= 0) return false;
-            if (b.type.includes('mine') && b.homingState === 'engaging') return true; // Keep alive off screen
+            if (b.type.includes('mine') && b.homingState === 'engaging') return true; 
             return b.y > -200 && b.y < height + 200;
         });
 
         s.loot.forEach(l => {
             const d = Math.hypot(l.x - s.px, l.y - s.py);
-            if (d < 200) { l.x += (s.px - l.x) * 0.05; l.y += (s.py - l.y) * 0.05; if (d < 40) { 
-                l.isPulled = true; 
-                if (l.type === 'ammo') {
-                    s.magazineCurrent = Math.min(1000, s.magazineCurrent + 50);
-                    s.ammo[s.selectedAmmo] += 50; 
-                    audioService.playSfx('buy'); 
-                    setHud(h => ({...h, alert: `+50 ${l.name?.toUpperCase()}`}));
-                } else {
-                    const existing = s.cargo.find(c => c.type === l.type && c.id === l.id); 
-                    if (existing) existing.quantity++; 
-                    else s.cargo.push({ instanceId: Date.now().toString(), type: l.type as any, id: l.id, name: l.name || l.type, quantity: 1, weight: 1 }); 
-                    audioService.playSfx('buy'); 
-                    setHud(h => ({...h, alert: `GOT ${l.name || l.type.toUpperCase()}`})); 
-                }
-            } } else l.y += 2;
+            if (d < 200) { 
+                l.isBeingPulled = true; // Flag for tractor beam visual
+                l.x += (s.px - l.x) * 0.05; 
+                l.y += (s.py - l.y) * 0.05; 
+                if (d < 40) { 
+                    l.isPulled = true; 
+                    if (l.type === 'ammo') {
+                        s.magazineCurrent = Math.min(1000, s.magazineCurrent + 50);
+                        s.ammo[s.selectedAmmo] += 50; 
+                        audioService.playSfx('buy'); 
+                        setHud(h => ({...h, alert: `+50 ${l.name?.toUpperCase()}`}));
+                    } else {
+                        const existing = s.cargo.find(c => c.type === l.type && c.id === l.id); 
+                        if (existing) existing.quantity++; 
+                        else s.cargo.push({ instanceId: Date.now().toString(), type: l.type as any, id: l.id, name: l.name || l.type, quantity: 1, weight: 1 }); 
+                        audioService.playSfx('buy'); 
+                        setHud(h => ({...h, alert: `GOT ${l.name || l.type.toUpperCase()}`})); 
+                    }
+                } 
+            } else {
+                l.isBeingPulled = false;
+                l.y += 2;
+            }
         });
         s.loot = s.loot.filter(l => !l.isPulled && l.y < height + 100);
 
@@ -1353,17 +1473,101 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     nozzleColor: activeShip.nozzleColor
                 }, true);
             } else if (item.type === 'loot') {
-                const l = item.obj as Loot; ctx.translate(l.x, l.y); ctx.scale(scale, scale); 
+                const l = item.obj as Loot; 
+                ctx.translate(l.x, l.y); 
+                ctx.scale(scale, scale); 
+
+                // Dynamic Size Logic based on fontSize prop
+                let boxSize = 16;
+                let fontSizePx = 10;
+                if (fontSize === 'medium') { boxSize = 22; fontSizePx = 14; }
+                if (fontSize === 'large') { boxSize = 32; fontSizePx = 20; }
+                const half = boxSize / 2;
+
+                // Tractor Beam Visual Effect
+                if (l.isBeingPulled) {
+                    const dx = s.px - l.x;
+                    const dy = s.py - l.y;
+                    const dist = Math.hypot(dx, dy);
+                    const angle = Math.atan2(dy, dx);
+                    
+                    ctx.save();
+                    ctx.rotate(angle); 
+                    
+                    // Beam Cone
+                    const grad = ctx.createLinearGradient(0, 0, dist, 0);
+                    grad.addColorStop(0, 'rgba(56, 189, 248, 0.1)'); 
+                    grad.addColorStop(1, 'rgba(56, 189, 248, 0.0)');
+                    
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    const wStart = boxSize * 0.8;
+                    const wEnd = 10; // Point at ship
+                    
+                    ctx.moveTo(0, -wStart/2);
+                    ctx.lineTo(dist, -wEnd/2);
+                    ctx.lineTo(dist, wEnd/2);
+                    ctx.lineTo(0, wStart/2);
+                    ctx.fill();
+
+                    // Wave Arcs (Moving from Loot towards Ship)
+                    ctx.strokeStyle = 'rgba(125, 211, 252, 0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#38bdf8';
+                    ctx.shadowBlur = 5;
+                    
+                    const flowSpeed = 3;
+                    const waveSpacing = 15;
+                    const offset = (s.frame * flowSpeed) % waveSpacing;
+                    
+                    for (let x = offset; x < dist; x += waveSpacing) {
+                        const progress = x / dist;
+                        const currentW = (wStart * (1 - progress)) + (wEnd * progress);
+                        const h = currentW / 2;
+                        
+                        ctx.globalAlpha = Math.sin(progress * Math.PI); 
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(x, -h);
+                        ctx.quadraticCurveTo(x - 5, 0, x, h); 
+                        ctx.stroke();
+                    }
+                    ctx.globalAlpha = 1;
+                    ctx.restore();
+                }
+
                 if (l.type === 'ammo') {
                     ctx.fillStyle = '#facc15';
-                    ctx.beginPath(); ctx.rect(-6, -8, 12, 16); ctx.fill();
-                    ctx.fillStyle = '#000'; ctx.font = '10px monospace'; ctx.fillText('B', -3, 3);
+                    ctx.beginPath(); ctx.rect(-half, -half, boxSize, boxSize); ctx.fill();
+                    ctx.fillStyle = '#000'; 
+                    ctx.font = `bold ${fontSizePx}px monospace`; 
+                    ctx.textAlign = 'center'; 
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('B', 0, 1);
                 } else if (l.type === 'robot') {
                     ctx.fillStyle = '#10b981';
-                    ctx.beginPath(); ctx.rect(-7, -7, 14, 14); ctx.fill();
-                    ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText('R', -3, 3);
+                    ctx.beginPath(); ctx.rect(-half, -half, boxSize, boxSize); ctx.fill();
+                    ctx.fillStyle = '#fff'; 
+                    ctx.font = `bold ${fontSizePx}px monospace`; 
+                    ctx.textAlign = 'center'; 
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('R', 0, 1);
+                } else if (l.type === 'water') {
+                    ctx.fillStyle = '#3b82f6';
+                    ctx.beginPath(); ctx.arc(0, 0, half, 0, Math.PI*2); ctx.fill();
+                    ctx.fillStyle = '#fff'; 
+                    ctx.font = `bold ${fontSizePx}px monospace`; 
+                    ctx.textAlign = 'center'; 
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('H2O', 0, 1);
                 } else {
-                    ctx.fillStyle = l.type === 'gold' ? '#fbbf24' : '#a855f7'; ctx.fillRect(-8, -8, 16, 16); ctx.fillStyle = '#fff'; ctx.font = '10px monospace'; ctx.fillText(l.type.substring(0,1).toUpperCase(), -3, 3);
+                    ctx.fillStyle = l.type === 'gold' ? '#fbbf24' : '#a855f7'; 
+                    ctx.fillRect(-half, -half, boxSize, boxSize); 
+                    ctx.fillStyle = '#fff'; 
+                    ctx.font = `bold ${fontSizePx}px monospace`; 
+                    ctx.textAlign = 'center'; 
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(l.type.substring(0,1).toUpperCase(), 0, 1);
                 }
             }
             ctx.restore();
@@ -1418,23 +1622,24 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
                 // Core
                 ctx.fillStyle = b.color; 
-                ctx.shadowBlur = 10; ctx.shadowColor = b.color;
-                ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI*2); ctx.fill();
+                ctx.shadowBlur = b.glowIntensity || 10; ctx.shadowColor = b.color;
+                const size = b.width / 2; // radius
+                ctx.beginPath(); ctx.arc(0, 0, size, 0, Math.PI*2); ctx.fill();
                 
                 // Spikes
-                ctx.fillStyle = '#3f3f46'; 
+                ctx.fillStyle = b.type === 'mine_red' ? '#7f1d1d' : '#3f3f46'; 
                 for(let i=0; i<8; i++) {
                     const ang = (i * Math.PI * 2) / 8;
                     ctx.save();
                     ctx.rotate(ang);
-                    ctx.fillRect(-1, -10, 2, 6);
+                    ctx.fillRect(-1, -size - 4, 2, 6);
                     ctx.restore();
                 }
                 
                 // Blink light
-                if (s.frame % 20 < 10) {
+                if (s.frame % (b.type === 'mine_red' ? 10 : 20) < (b.type === 'mine_red' ? 5 : 10)) {
                     ctx.fillStyle = '#fff';
-                    ctx.beginPath(); ctx.arc(0,0,2,0,Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(0,0, b.type === 'mine_red' ? 4 : 2,0,Math.PI*2); ctx.fill();
                 }
                 ctx.shadowBlur = 0;
             }
@@ -1555,7 +1760,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
             setHud(prev => ({
                 ...prev, hp: s.hp, sh1: s.sh1, fuel: s.fuel, energy: s.energy, 
-                score: s.score, missiles: s.missiles, mines: s.mines,
+                score: s.score, missiles: s.missiles, mines: s.mines, redMines: s.redMines,
                 timer: s.time, cargoCount: s.cargo.length, chargeLevel: s.chargeLevel,
                 boss: s.enemies.find(e => e.type === 'boss'), swivelMode: s.swivelMode,
                 ammoCount: s.magazineCurrent, ammoType: s.selectedAmmo, isReloading: s.reloadTimer > 0,
@@ -1969,6 +2174,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     fuel: state.current.fuel, 
                     rockets: state.current.missiles, 
                     mines: state.current.mines, 
+                    redMineCount: state.current.redMines,
                     cargo: state.current.cargo, 
                     ammo: state.current.ammo, 
                     magazineCurrent: state.current.magazineCurrent, 
@@ -1985,6 +2191,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             <div className="bg-zinc-900/80 border border-zinc-700 p-2 rounded flex flex-col items-center min-w-[60px]">
                 <span className="text-[9px] font-black text-zinc-500">MINES</span>
                 <span className="text-xl font-black text-white">{hud.mines}</span>
+            </div>
+            <div className="bg-red-950/80 border border-red-600/50 p-2 rounded flex flex-col items-center min-w-[60px]">
+                <span className="text-[9px] font-black text-red-400">OMEGA</span>
+                <span className="text-xl font-black text-white">{hud.redMines}</span>
             </div>
         </div>
 

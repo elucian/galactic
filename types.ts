@@ -28,7 +28,7 @@ export type AmmoType = 'iron' | 'titanium' | 'cobalt' | 'iridium' | 'tungsten' |
 
 export interface CargoItem {
   instanceId: string;
-  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'iron' | 'copper' | 'chromium' | 'titanium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser' | 'ammo' | 'robot';
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'iron' | 'copper' | 'chromium' | 'titanium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser' | 'ammo' | 'robot' | 'water';
   id?: string;
   name: string;
   weight: number;
@@ -93,6 +93,7 @@ export interface ShipFitting {
   engineType: 'standard' | 'fusion' | 'afterburner' | 'smoke-trail';
   rocketCount: number;
   mineCount: number;
+  redMineCount: number; // New slot for Omega Mines
   hullPacks: number;
   wingWeaponId: string | null;
   health: number;

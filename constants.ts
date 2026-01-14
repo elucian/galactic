@@ -32,7 +32,7 @@ export interface ExtendedShipConfig extends ShipConfig {
   gunMount: 'wing' | 'hull' | 'strut';
   wingStyle: 'delta' | 'x-wing' | 'parenthesis' | 'curved' | 'pincer' | 'cylon' | 'fork' | 'diamond' | 'hammer' | 'alien-h' | 'alien-w' | 'alien-a' | 'alien-m';
   wingCurve: 'forward' | 'backward' | 'neutral';
-  hullShapeType: 'trapezoid' | 'triangle' | 'oval' | 'finger' | 'angled-flat' | 'rounded' | 'block' | 'needle' | 'none';
+  hullShapeType: 'trapezoid' | 'triangle' | 'oval' | 'finger' | 'angled-flat' | 'rounded' | 'block' | 'needle' | 'saucer' | 'none';
   extraDetail?: 'reservoir' | 'antenna' | 'both' | 'none';
   maxFuel: number;
   landingGearType: 'skids' | 'mechanical' | 'telescopic' | 'insect' | 'magnetic';
@@ -238,11 +238,11 @@ export const WEAPONS: Weapon[] = [
   // Level 4 High-End Energy
   { id: 'gun_photon', name: 'Photon Emitter', type: WeaponType.LASER, price: 100000, damage: 60, fireRate: 8, energyCost: 5, cargoWeight: 5, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
   
-  // Standard Projectile
-  { id: 'gun_bolt', name: 'Ion Pulse', type: WeaponType.PROJECTILE, price: 5000, damage: 45, fireRate: 2, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 1 },
+  // Standard Projectile (UPDATED: gun_bolt became Ion Emitter / LASER)
+  { id: 'gun_bolt', name: 'Ion Emitter', type: WeaponType.LASER, price: 5000, damage: 45, fireRate: 2, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
   { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 35, fireRate: 4, energyCost: 0, cargoWeight: 10, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 3, defaultAmmo: 'titanium' }, 
   { id: 'gun_heavy', name: 'Heavy Chaingun', type: WeaponType.PROJECTILE, price: 35000, damage: 30, fireRate: 6, energyCost: 0, cargoWeight: 25, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'cobalt' }, 
-  { id: 'gun_plasma', name: 'Plasma Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 25, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' } 
+  { id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 25, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' } 
 ];
 
 // 9 DISTINCT FANTASY EXOTIC WEAPONS
@@ -304,7 +304,9 @@ export const EXPLODING_ORDNANCE = [
   { id: 'ord_missile_heavy', name: 'Titan Missiles', price: 25000, count: 10 },
   { id: 'ord_missile_emp', name: 'EMP Shock Missiles', price: 35000, count: 10 },
   { id: 'ord_mine_plasma', name: 'Plasma Core Mines', price: 45000, count: 10 },
-  { id: 'ord_mine_emp', name: 'EMP Auto-Mines', price: 30000, count: 10 }
+  { id: 'ord_mine_emp', name: 'EMP Auto-Mines', price: 30000, count: 10 },
+  // Omega Mine: Powerful red mine
+  { id: 'ord_mine_red', name: 'Omega Mine', price: 150000, count: 5 }
 ];
 
 export const COMMODITIES = [
@@ -312,6 +314,7 @@ export const COMMODITIES = [
     { id: 'can_fuel', name: 'Fuel Cell', price: 200, type: 'fuel' },
     { id: 'batt_cell', name: 'Energy Cell', price: 300, type: 'energy' },
     { id: 'pack_repair', name: 'Nanite Pack', price: 500, type: 'repair' },
+    { id: 'water', name: 'Water Container', price: 50, type: 'water' },
     { id: 'iron', name: 'Iron Ingot', price: 100, type: 'iron' },
     { id: 'copper', name: 'Copper Spool', price: 200, type: 'copper' },
     { id: 'chromium', name: 'Chromium', price: 500, type: 'chromium' },
