@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 20
-// VERSION: Beta 20 - Ammo Market & Mechanics
+// CHECKPOINT: Beta 21
+// VERSION: Beta 21 - Stability Checkpoint
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;
