@@ -275,7 +275,7 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                             <button 
                                 onClick={() => setGameState(p => { 
                                     const active = !p.settings.testMode; 
-                                    const creditChange = active ? 1000000 : -1000000;
+                                    const creditChange = active ? 8000000 : -8000000;
                                     const newCredits = Math.max(0, p.credits + creditChange);
                                     return {
                                         ...p, 

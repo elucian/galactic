@@ -45,10 +45,12 @@ class Enemy {
 
     if (type === 'boss') {
         this.config.isAlien = true;
-        const selectedExotic = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
-        this.equippedWeapons[0] = { id: selectedExotic.id, count: 1 };
-        this.equippedWeapons[1] = { id: selectedExotic.id, count: 1 };
-        this.equippedWeapons[2] = { id: selectedExotic.id, count: 1 };
+        // Restore specific weapon assignment if defined in config, else random
+        const weaponId = this.config.weaponId || EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)].id;
+        
+        this.equippedWeapons[0] = { id: weaponId, count: 1 };
+        this.equippedWeapons[1] = { id: weaponId, count: 1 };
+        this.equippedWeapons[2] = { id: weaponId, count: 1 };
 
         const shield1 = EXOTIC_SHIELDS[0];
         this.shieldLayers.push({ color: shield1.color, max: shield1.capacity * (1 + diff * 0.1), current: shield1.capacity * (1 + diff * 0.1), rotation: 0 });
