@@ -169,6 +169,7 @@ export interface GameState {
   activeTaskForceIndex: number;
   pilotName: string;
   pilotAvatar: string;
+  pilotZoom: number; // Added: Camera Zoom level for pilot avatar
   gameInProgress: boolean;
   victories: number;
   failures: number;
@@ -192,7 +193,7 @@ export interface GameSettings {
   autosaveEnabled: boolean;
   showTransitions: boolean;
   testMode?: boolean;
-  fontSize: 'small' | 'medium' | 'large';
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large'; // Added extra-large
 }
 
 export interface Moon {

@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 23
-// VERSION: Beta 23 - Octo Burst Update
+// CHECKPOINT: Beta 24
+// VERSION: Beta 24 - Galactic Freelancer Rebrand
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;

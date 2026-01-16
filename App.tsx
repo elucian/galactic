@@ -90,7 +90,7 @@ export default function App() {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
-      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, marketListingsByPlanet: {},
+      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, marketListingsByPlanet: {},
       messages: [{ id: 'init', type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }],
       planetOrbitOffsets: initialOffsets,
       universeStartTime: Date.now(),
@@ -126,6 +126,9 @@ export default function App() {
             if (fit.reloadTimer === undefined) fit.reloadTimer = 0;
             if (fit.redMineCount === undefined) fit.redMineCount = 0; // Migrated
         });
+
+        // Init pilotZoom
+        if (parsed.pilotZoom === undefined) parsed.pilotZoom = 1.0;
 
         return { ...createInitialState(), ...parsed }; 
     } catch(e) { return createInitialState(); }
@@ -635,7 +638,7 @@ export default function App() {
         <div className="fixed inset-0 flex flex-col items-center justify-center p-6 z-10 text-center overflow-hidden">
           <div className="fixed inset-0 z-0"><StoryScene /></div>
           <div className="z-10 flex flex-col items-center">
-              <h1 className="retro-font text-3xl md:text-5xl text-emerald-500/50 uppercase tracking-widest mb-10 z-10 leading-tight drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]">GALACTIC<br/>DEFENDER</h1>
+              <h1 className="retro-font text-3xl md:text-5xl text-emerald-500/50 uppercase tracking-widest mb-10 z-10 leading-tight drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]">GALACTIC<br/>FREELANCER</h1>
               <div className="flex flex-col gap-4 z-10 w-64">
                 <button onClick={() => { setScreen('hangar'); audioService.playTrack('command'); }} className="py-4 bg-black/50 backdrop-blur-sm border-2 border-emerald-500 text-emerald-500 font-black uppercase tracking-widest hover:bg-emerald-900/40 hover:text-white transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">START MISSION</button>
                 <button onClick={() => { setScreen('hangar'); audioService.playTrack('command'); }} className="py-3 bg-black/50 backdrop-blur-sm border border-zinc-500 text-zinc-400 font-black uppercase hover:bg-zinc-800/60 hover:border-zinc-300 hover:text-white transition-all">RESUME MISSION</button>
