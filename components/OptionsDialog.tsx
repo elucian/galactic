@@ -59,6 +59,7 @@ interface OptionsDialogProps {
 
 export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, gameState, setGameState }) => {
   const [activeTab, setActiveTab] = useState<'pilot' | 'audio' | 'system'>('pilot');
+  const [nameFocusVal, setNameFocusVal] = useState('');
 
   if (!isOpen) return null;
 
@@ -94,10 +95,23 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
       setGameState(prev => {
           const isDefaultName = AVATAR_LIST.some(a => a.label === prev.pilotName) || prev.pilotName === 'STRATOS';
           const newName = isDefaultName ? avatar.label : prev.pilotName;
+          
+          // Announce Identity Change
+          const newMessages = [{
+              id: `sys_${Date.now()}`,
+              type: 'activity',
+              category: 'system',
+              pilotName: 'SYSTEM',
+              pilotAvatar: avatar.icon, // Display the user's NEW avatar
+              text: `IDENTITY UPDATE: BIOMETRICS RECONFIGURED TO ${avatar.label.toUpperCase()}`,
+              timestamp: Date.now()
+          }, ...prev.messages] as any[];
+
           return {
               ...prev,
               pilotAvatar: avatar.icon,
-              pilotName: newName
+              pilotName: newName,
+              messages: newMessages
           };
       });
   };
@@ -134,7 +148,29 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                         {/* Callsign Input */}
                         <div className="flex-1 w-full bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/50 shadow-inner">
                             <span className={`font-black uppercase text-zinc-300 mb-2 block ${titleSize}`}>Operational Callsign</span>
-                            <input type="text" value={gameState.pilotName} onChange={e => setGameState(p => ({...p, pilotName: e.target.value.toUpperCase().slice(0, 12)}))} className={`w-full bg-black border border-zinc-700 p-2 md:p-3 text-emerald-400 retro-font ${titleSize} outline-none uppercase focus:border-emerald-500 transition-colors rounded`} />
+                            <input 
+                                type="text" 
+                                value={gameState.pilotName} 
+                                onFocus={(e) => setNameFocusVal(e.target.value)}
+                                onBlur={(e) => {
+                                    if (e.target.value !== nameFocusVal && e.target.value.trim() !== '') {
+                                        setGameState(prev => ({
+                                            ...prev,
+                                            messages: [{
+                                                id: `sys_${Date.now()}`,
+                                                type: 'activity',
+                                                category: 'system',
+                                                pilotName: 'SYSTEM',
+                                                pilotAvatar: prev.pilotAvatar,
+                                                text: `CALLSIGN REGISTERED: ${e.target.value.toUpperCase()}`,
+                                                timestamp: Date.now()
+                                            }, ...prev.messages]
+                                        }));
+                                    }
+                                }}
+                                onChange={e => setGameState(p => ({...p, pilotName: e.target.value.toUpperCase().slice(0, 12)}))} 
+                                className={`w-full bg-black border border-zinc-700 p-2 md:p-3 text-emerald-400 retro-font ${titleSize} outline-none uppercase focus:border-emerald-500 transition-colors rounded`} 
+                            />
                         </div>
                         
                         {/* Face Distance Control */}

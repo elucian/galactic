@@ -1,12 +1,10 @@
-
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import GameEngine from './components/GameEngine.tsx';
-import SectorMap from './components/SectorMap.tsx';
-import LaunchSequence from './components/LaunchSequence.tsx';
-import WarpSequence from './components/WarpSequence.tsx'; 
-import LandingScene from './components/LandingScene.tsx';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry } from './types.ts';
+import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG } from './constants.ts';
+import { audioService } from './services/audioService.ts';
+import { backendService } from './services/backendService.ts';
+import { StoryScene } from './components/StoryScene.tsx';
 import { CommandCenter } from './components/CommandCenter.tsx';
-import { ShipIcon } from './components/ShipIcon.tsx';
 import { CargoDialog } from './components/CargoDialog.tsx';
 import { MarketDialog } from './components/MarketDialog.tsx';
 import { StoreDialog } from './components/StoreDialog.tsx';
@@ -15,11 +13,11 @@ import { PaintDialog } from './components/PaintDialog.tsx';
 import { MessagesDialog } from './components/MessagesDialog.tsx';
 import { OptionsDialog } from './components/OptionsDialog.tsx';
 import { ManualDialog } from './components/ManualDialog.tsx';
-import { StoryScene } from './components/StoryScene.tsx';
-import { audioService } from './services/audioService.ts';
-import { backendService } from './services/backendService.ts';
-import { GameState, MissionType, QuadrantType, ShipFitting, CargoItem, EquippedWeapon, DisplayMode, GameMessage, GameSettings, Planet, Moon, ShipPart, Shield, PlanetStatusData, AmmoType, LeaderboardEntry } from './types.ts';
-import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG } from './constants.ts';
+import SectorMap from './components/SectorMap.tsx';
+import LaunchSequence from './components/LaunchSequence.tsx';
+import WarpSequence from './components/WarpSequence.tsx';
+import GameEngine from './components/GameEngine.tsx';
+import LandingScene from './components/LandingScene.tsx';
 
 const SAVE_KEY = 'galactic_defender_beta_21'; 
 const REPAIR_COST_PER_PERCENT = 150;
@@ -141,6 +139,20 @@ export default function App() {
 
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
+
+  const startNewGame = () => {
+      const newState = createInitialState();
+      // Preserve persistent settings and identity
+      newState.settings = { ...gameState.settings };
+      newState.leaderboard = [...gameState.leaderboard];
+      newState.pilotName = gameState.pilotName;
+      newState.pilotAvatar = gameState.pilotAvatar;
+      newState.pilotZoom = gameState.pilotZoom;
+      
+      setGameState(newState);
+      setScreen('hangar');
+      audioService.playTrack('command');
+  };
 
   const triggerSystemMessage = (text: string, type: 'neutral'|'success'|'error'|'warning' = 'neutral') => {
       if (messageTimeoutRef.current) clearTimeout(messageTimeoutRef.current);
@@ -695,7 +707,7 @@ export default function App() {
           <div className="z-10 flex flex-col items-center">
               <h1 className="retro-font text-3xl md:text-5xl text-emerald-500/50 uppercase tracking-widest mb-10 z-10 leading-tight drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]">GALACTIC<br/>FREELANCER</h1>
               <div className="flex flex-col gap-4 z-10 w-64">
-                <button onClick={() => { setScreen('hangar'); audioService.playTrack('command'); }} className="py-4 bg-black/50 backdrop-blur-sm border-2 border-emerald-500 text-emerald-500 font-black uppercase tracking-widest hover:bg-emerald-900/40 hover:text-white transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">START MISSION</button>
+                <button onClick={startNewGame} className="py-4 bg-black/50 backdrop-blur-sm border-2 border-emerald-500 text-emerald-500 font-black uppercase tracking-widest hover:bg-emerald-900/40 hover:text-white transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">START MISSION</button>
                 <button onClick={() => { setScreen('hangar'); audioService.playTrack('command'); }} className="py-3 bg-black/50 backdrop-blur-sm border border-zinc-500 text-zinc-400 font-black uppercase hover:bg-zinc-800/60 hover:border-zinc-300 hover:text-white transition-all">RESUME MISSION</button>
                 <div className="flex gap-4">
                     <button onClick={() => { setIsManualOpen(true); setManualPage(1); }} className="flex-1 py-3 bg-black/50 backdrop-blur-sm border border-zinc-600 text-zinc-500 font-black uppercase hover:bg-zinc-800/60 hover:text-white transition-all text-[10px]">MANUAL</button>

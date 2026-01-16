@@ -755,19 +755,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   } else if (w.id === 'exotic_octo_burst') {
                       const spread = 12 * (Math.PI / 180);
                       const angle = (Math.random() - 0.5) * spread; // -6 to +6 degrees relative to forward
-                      const a = angleRad + angle;
+                      const baseAngle = -Math.PI / 2; // Forward
+                      const finalAngle = baseAngle + angle;
+                      const speed = 20;
                       s.bullets.push({
                           x: startX, y: startY,
-                          vx: Math.sin(a) * (bulletSpeed * 1.5), 
-                          vy: -Math.cos(a) * (bulletSpeed * 1.5),
-                          damage: damage,
+                          vx: Math.cos(finalAngle) * speed,
+                          vy: Math.sin(finalAngle) * speed,
+                          damage: wDef.damage,
                           color: '#a855f7',
                           type: 'plasma_jet',
                           life: 60,
                           isEnemy: false,
-                          width: 12, height: 40,
-                          weaponId: w.id,
-                          glow: true, glowIntensity: 15
+                          width: 12,
+                          height: 40,
+                          glow: true, glowIntensity: 15,
+                          isMain: true, weaponId: wDef.id
                       });
                   } else if (w.id === 'exotic_wave') {
                       s.bullets.push({ x: startX, y: startY, vx: Math.sin(angleRad) * bulletSpeed, vy: -Math.cos(angleRad) * bulletSpeed, damage: damage, color: '#8b5cf6', type: 'ring', life: 60, isEnemy: false, width: 10, height: 10, weaponId: w.id, growthRate: 1.5, originalSize: 10 });
@@ -1534,18 +1537,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     <div className="relative w-full h-full bg-black overflow-hidden cursor-crosshair">
         <canvas ref={canvasRef} className="absolute inset-0 z-10" />
         
-        {/* HUD - Top Center Score */}
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center z-20 pointer-events-none">
+        {/* HUD - Top Right Score */}
+        <div className="absolute top-4 right-4 flex flex-col items-end z-20 pointer-events-none">
             <span className={`${hudLabel} font-black text-emerald-500 uppercase tracking-widest`}>SCORE</span>
             <span className={`${hudScore} font-black text-white drop-shadow-[0_0_10px_rgba(16,185,129,0.5)] tabular-nums`}>{hud.score.toLocaleString()}</span>
-            
-            {/* MISSION TIMER */}
-            <div className={`mt-2 px-3 py-1 rounded bg-zinc-900/80 border ${hud.timer <= 30 ? 'border-red-500 animate-pulse' : 'border-zinc-700'}`}>
-                <span className={`${hudTimer} font-mono font-bold ${hud.timer <= 30 ? 'text-red-500' : 'text-zinc-300'}`}>
-                    {Math.floor(hud.timer / 60)}:{(hud.timer % 60).toString().padStart(2, '0')}
-                </span>
-            </div>
         </div>
+
+        {/* HUD - Top Center Timer (Only when > 0) */}
+        {hud.timer > 0 && (
+            <div className="absolute top-4 left-1/2 transform -translate-x-1/2 flex flex-col items-center z-20 pointer-events-none">
+                <div className={`mt-2 px-3 py-1 rounded bg-zinc-900/80 border ${hud.timer <= 30 ? 'border-red-500 animate-pulse' : 'border-zinc-700'}`}>
+                    <span className={`${hudTimer} font-mono font-bold ${hud.timer <= 30 ? 'text-red-500' : 'text-zinc-300'}`}>
+                        {Math.floor(hud.timer / 60)}:{(hud.timer % 60).toString().padStart(2, '0')}
+                    </span>
+                </div>
+            </div>
+        )}
 
         {/* HUD - Left Bars */}
         <div className="absolute top-4 left-4 flex flex-col gap-2 z-20 pointer-events-none w-48">

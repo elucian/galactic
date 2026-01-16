@@ -8,16 +8,14 @@ interface BackendDB {
     events: { text: string, type: 'join' | 'win', timestamp: number }[];
 }
 
-const INITIAL_LEADERBOARD: LeaderboardEntry[] = [
-    { name: "Viper One", score: 950000, avatar: "👨‍✈️", date: Date.now() - 10000000 },
-    { name: "Star Ace", score: 820000, avatar: "👩‍🚀", date: Date.now() - 20000000 },
-    { name: "Red Baron", score: 750000, avatar: "🧔", date: Date.now() - 30000000 },
-    { name: "Nova", score: 600000, avatar: "👩‍🎤", date: Date.now() - 40000000 },
-    { name: "Xeno Hunter", score: 550000, avatar: "👽", date: Date.now() - 50000000 },
-];
+// Initial leaderboard is empty as requested (single player start)
+const INITIAL_LEADERBOARD: LeaderboardEntry[] = [];
 
 class BackendService {
     private getDB(): BackendDB {
+        // Safe check for SSR environments (Next.js/Vite SSG)
+        if (typeof window === 'undefined') return { leaderboard: [], events: [] };
+
         const stored = localStorage.getItem(DB_KEY);
         if (stored) {
             return JSON.parse(stored);
@@ -32,7 +30,9 @@ class BackendService {
     }
 
     private saveDB(db: BackendDB) {
-        localStorage.setItem(DB_KEY, JSON.stringify(db));
+        if (typeof window !== 'undefined') {
+            localStorage.setItem(DB_KEY, JSON.stringify(db));
+        }
     }
 
     // Simulate async network call
@@ -66,6 +66,7 @@ class BackendService {
                 if (score > db.leaderboard[existingIdx].score) {
                     db.leaderboard[existingIdx].score = score;
                     db.leaderboard[existingIdx].date = Date.now();
+                    db.leaderboard[existingIdx].avatar = avatar; // Update avatar too
                 }
             } else {
                 db.leaderboard.push({ name: pilotName, score, avatar, date: Date.now() });
