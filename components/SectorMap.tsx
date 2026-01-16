@@ -323,7 +323,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
            ))}
         </div>
 
-        {/* Sector Selection Panel (Top Center) - Bordered Cards Design */}
+        {/* Sector Selection Panel (Top Center) */}
         <div className="absolute top-6 z-30 flex gap-4 pointer-events-auto">
            {[QuadrantType.ALFA, QuadrantType.BETA, QuadrantType.GAMA, QuadrantType.DELTA].map(q => {
              const style = getSunVisuals(q);
@@ -463,8 +463,12 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
             </div>
         </div>
 
-        {/* Zoom Controls (Bottom Right of Viewport) */}
-        <div className="absolute bottom-8 right-8 flex flex-col gap-2 z-30 pointer-events-auto">
+        {/* Zoom Controls (Bottom Left of Viewport) - With Home Button Above */}
+        <div className="absolute bottom-8 left-8 flex flex-col gap-2 z-50 pointer-events-auto">
+            <button onClick={onBack} className="w-10 h-10 bg-zinc-900 border border-zinc-700 text-zinc-400 rounded flex items-center justify-center hover:bg-zinc-800 hover:text-white hover:border-zinc-500 transition-all shadow-lg active:scale-95 mb-2">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+            </button>
+
             <button 
                 onClick={handleZoomIn}
                 className="w-10 h-10 bg-zinc-900 border border-zinc-700 text-zinc-400 rounded flex items-center justify-center hover:bg-zinc-800 hover:text-white hover:border-zinc-500 transition-all shadow-lg active:scale-95"
@@ -485,86 +489,123 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
             </button>
         </div>
 
-        {/* Sector Label */}
-        <div className="absolute bottom-8 left-8 pointer-events-none">
-           <h1 className="retro-font text-5xl text-zinc-900 font-black uppercase tracking-tighter drop-shadow-[0_2px_0_rgba(255,255,255,0.1)]">{activeQuadrant}</h1>
-           <div className="text-zinc-600 font-mono text-sm uppercase tracking-[0.5em] ml-1 mt-2">Sector Control</div>
+        {/* Sector Label - Moved to Top Right to clear controls */}
+        <div className={`absolute top-8 right-8 pointer-events-none hidden md:block`}>
+           <h1 className="retro-font text-5xl text-zinc-900 font-black uppercase tracking-tighter drop-shadow-[0_2px_0_rgba(255,255,255,0.1)] text-right">{activeQuadrant}</h1>
+           <div className="text-zinc-600 font-mono text-sm uppercase tracking-[0.5em] ml-1 mt-2 text-right">Sector Control</div>
         </div>
       </div>
 
-      {/* RIGHT PANEL: Fixed Property Panel */}
-      <div className="w-80 h-full bg-zinc-950 border-l border-zinc-800 flex flex-col shrink-0 z-40 shadow-2xl relative">
-        <div className="absolute inset-0 pointer-events-none opacity-10 bg-[linear-gradient(rgba(255,255,255,0.1)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.1)_1px,transparent_1px)] bg-[length:20px_20px]" />
+      {/* RIGHT PANEL: RESPONSIVE INTEL PANEL */}
+      <div className={`
+          transition-all duration-300 ease-in-out z-40 flex flex-col shadow-2xl overflow-hidden
+          
+          /* Mobile / Tablet Portrait: Compact Bottom Right Panel */
+          fixed bottom-4 right-4 w-1/2 h-[25vh] rounded-xl border border-zinc-700/50 bg-zinc-900/90 backdrop-blur-md
+          ${selectedPlanet ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0 pointer-events-none'}
+
+          /* Desktop / Landscape: Full Height Right Sidebar */
+          lg:relative lg:inset-auto lg:bottom-auto lg:left-auto lg:right-auto lg:translate-y-0
+          lg:h-full lg:rounded-none lg:border-t-0 lg:border-b-0 lg:border-r-0 lg:border-l lg:border-zinc-800 lg:bg-zinc-950 lg:backdrop-blur-none
+          lg:max-h-none lg:w-0
+          ${selectedPlanet ? 'lg:w-96 lg:translate-x-0' : 'lg:translate-x-full lg:border-none'}
+      `}>
         
-        <div className="p-5 border-b border-zinc-800 bg-zinc-900/80 backdrop-blur flex justify-between items-center shrink-0 z-10">
-          <h2 className="retro-font text-emerald-500 text-xs uppercase tracking-wide">Target Intel</h2>
-          <button onClick={onBack} className="text-zinc-500 hover:text-white text-[10px] uppercase font-black tracking-widest border border-zinc-700 px-3 py-1 rounded hover:bg-zinc-800 transition-colors">BACK</button>
-        </div>
-
         {selectedPlanet ? (
-          <div className="flex-grow flex flex-col overflow-y-auto custom-scrollbar p-6 gap-6 z-10">
-             <div className="w-full aspect-square bg-black rounded-lg border-2 border-zinc-700 relative flex items-center justify-center overflow-hidden shadow-[inset_0_0_30px_rgba(0,0,0,1)]">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_#000_100%)] z-10" />
-                <div className="w-32 h-32 rounded-full shadow-[inset_-12px_-12px_25px_rgba(0,0,0,0.9)] relative flex items-center justify-center" style={{ backgroundColor: selectedPlanet.color }}>
-                   <div className="absolute inset-0 rounded-full shadow-[0_0_40px_currentColor] z-10" style={{ color: selectedPlanet.color }} />
-                </div>
-                
-                <div className="absolute top-2 right-2 z-20">
-                   <span className="text-[9px] font-black text-white bg-red-600 px-2 py-0.5 rounded shadow-lg">CLASS {selectedPlanet.difficulty}</span>
-                </div>
-             </div>
+          <>
+            {/* Panel Header */}
+            <div className="p-3 lg:p-5 border-b border-zinc-800/50 lg:border-zinc-800 bg-zinc-900/40 lg:bg-zinc-950 flex justify-between items-start shrink-0 z-10 rounded-t-xl lg:rounded-none">
+              <div className="flex flex-col gap-1 w-full mr-4">
+                  <h2 className="text-sm lg:text-2xl font-black text-white uppercase leading-none">{selectedPlanet.name}</h2>
+                  <div className="flex flex-col mt-1 gap-0.5">
+                      <div className="flex items-center gap-2">
+                          <div className={`w-1.5 h-1.5 lg:w-2 lg:h-2 rounded-full ${getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'bg-emerald-500' : (getPlanetStatus(selectedPlanet.id) === 'siege' ? 'bg-orange-500 animate-pulse' : 'bg-red-500 animate-pulse')}`} />
+                          <span className="text-[8px] lg:text-[10px] text-zinc-400 font-mono tracking-widest uppercase">
+                              {getPlanetStatus(selectedPlanet.id)} {getPlanetStatus(selectedPlanet.id) !== 'friendly' && `(LIB ${getWins(selectedPlanet.id)}/1)`}
+                          </span>
+                      </div>
+                      <span className="text-[8px] lg:text-[10px] text-blue-400 font-mono tracking-widest uppercase">FC: 1 UNIT</span>
+                  </div>
+              </div>
+              <button 
+                  onClick={() => setSelectedPlanetId(null)} 
+                  className="text-zinc-500 hover:text-red-400 text-[10px] lg:text-xs font-black uppercase tracking-widest border border-zinc-700/50 px-2 py-1 rounded hover:bg-zinc-900 transition-colors shrink-0"
+              >
+                  HIDE
+              </button>
+            </div>
 
-             <div className="space-y-4">
-                <div className="border-b border-zinc-800 pb-4">
-                   <h3 className="text-2xl font-black text-white uppercase leading-none">{selectedPlanet.name}</h3>
-                   <div className="flex items-center gap-2 mt-2">
-                      <div className={`w-2 h-2 rounded-full ${getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'bg-emerald-500' : (getPlanetStatus(selectedPlanet.id) === 'siege' ? 'bg-orange-500 animate-pulse' : 'bg-red-500 animate-pulse')}`} />
-                      <span className="text-[10px] text-zinc-400 font-mono tracking-widest uppercase">{getPlanetStatus(selectedPlanet.id)} STATUS</span>
-                   </div>
-                   {getPlanetStatus(selectedPlanet.id) !== 'friendly' && (
-                       <div className="text-[9px] text-zinc-500 font-mono mt-1">LIBERATION PROGRESS: {getWins(selectedPlanet.id)}/2 WINS</div>
-                   )}
-                </div>
+            {/* Scrollable Content Area - Hidden on Mobile to prevent clutter per request "put just the name, status and the button" */}
+            <div className="hidden lg:flex flex-grow flex-col overflow-y-auto custom-scrollbar p-3 lg:p-6 gap-3 lg:gap-6 z-10">
+               
+               {/* PLANET IMAGE (Reduced height) */}
+               <div className="w-full h-24 lg:h-32 bg-black rounded-lg border-2 border-zinc-700 relative items-center justify-center overflow-hidden shadow-[inset_0_0_30px_rgba(0,0,0,1)] shrink-0 flex">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_#000_100%)] z-10" />
+                  <div className="w-16 h-16 lg:w-24 lg:h-24 rounded-full shadow-[inset_-12px_-12px_25px_rgba(0,0,0,0.9)] relative flex items-center justify-center" style={{ backgroundColor: selectedPlanet.color }}>
+                     <div className="absolute inset-0 rounded-full shadow-[0_0_40px_currentColor] z-10" style={{ color: selectedPlanet.color }} />
+                  </div>
+                  <div className="absolute top-2 right-2 z-20">
+                     <span className="text-[9px] font-black text-white bg-red-600 px-2 py-0.5 rounded shadow-lg">CLASS {selectedPlanet.difficulty}</span>
+                  </div>
+               </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                   <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800">
+               <div className="grid grid-cols-2 gap-2">
+                   <div className="bg-zinc-900/30 p-2 rounded border border-zinc-800/50">
                       <div className="text-[8px] text-zinc-500 uppercase font-black">Distance</div>
-                      <div className="text-white font-mono text-xs">{selectedPlanet.orbitRadius} AU</div>
+                      <div className="text-white font-mono text-[9px] lg:text-xs">{selectedPlanet.orbitRadius} AU</div>
                    </div>
-                   <div className="bg-zinc-900/50 p-2 rounded border border-zinc-800">
+                   <div className="bg-zinc-900/30 p-2 rounded border border-zinc-800/50">
                       <div className="text-[8px] text-zinc-500 uppercase font-black">Gravity</div>
-                      <div className="text-blue-400 font-mono text-xs">{selectedPlanet.size.toFixed(1)} G</div>
+                      <div className="text-blue-400 font-mono text-[9px] lg:text-xs">{selectedPlanet.size.toFixed(1)} G</div>
                    </div>
-                </div>
+               </div>
 
-                <div className="space-y-2 bg-zinc-900/30 p-3 rounded border border-zinc-800/50">
+               <div className="space-y-2 bg-zinc-900/20 p-3 rounded border border-zinc-800/30">
                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Command Briefing</span>
+                      <span className="text-[9px] font-black text-emerald-500 uppercase tracking-widest">Briefing</span>
                       {isLoadingBriefing && <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />}
                    </div>
                    <p className="text-[10px] leading-relaxed uppercase text-zinc-400 font-mono border-l-2 border-emerald-500/30 pl-2">
-                      {isLoadingBriefing ? "DECRYPTING SECURE CHANNEL..." : (briefing || selectedPlanet.description)}
+                      {isLoadingBriefing ? "DECRYPTING..." : (briefing || selectedPlanet.description)}
                    </p>
-                </div>
-             </div>
+               </div>
+            </div>
 
-             <div className="mt-auto pt-4 flex flex-col gap-2">
-                <button onClick={() => onLaunch(selectedPlanet)} className={`w-full py-4 text-white font-black uppercase tracking-[0.2em] text-xs rounded shadow-lg transition-all hover:scale-[1.02] active:scale-95 group relative overflow-hidden ${getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'bg-emerald-600 hover:bg-emerald-500 shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'bg-red-700 hover:bg-red-600 shadow-[0_0_20px_rgba(220,38,38,0.3)]'}`}>
-                   <span className="relative z-10 group-hover:animate-pulse">
-                       {getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'INITIATE LANDING' : 'ENGAGE HOSTILES'}
-                   </span>
-                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-[shimmer_1s_infinite]" />
-                </button>
+            {/* Fixed Footer for Buttons */}
+            <div className="p-3 lg:p-6 border-t border-zinc-800/50 lg:border-zinc-800 bg-zinc-900/40 lg:bg-zinc-950 shrink-0 z-20 flex flex-col gap-2 mt-auto">
+                <div className="grid grid-cols-2 gap-2">
+                    <button 
+                        onClick={() => onLaunch(selectedPlanet)} 
+                        disabled={getPlanetStatus(selectedPlanet.id) === 'friendly'}
+                        className={`w-full py-2 lg:py-4 font-black uppercase tracking-[0.1em] text-[9px] lg:text-xs rounded shadow-lg transition-all 
+                        ${getPlanetStatus(selectedPlanet.id) === 'friendly' 
+                            ? 'bg-zinc-800 text-zinc-600 border border-zinc-700 cursor-not-allowed opacity-50' 
+                            : 'bg-red-700 border border-red-500 text-white hover:bg-red-600 hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(220,38,38,0.3)] animate-pulse'}`}
+                    >
+                       DEFEND PLANET
+                    </button>
+                    
+                    <button 
+                        onClick={() => onLaunch(selectedPlanet)} 
+                        disabled={getPlanetStatus(selectedPlanet.id) !== 'friendly'}
+                        className={`w-full py-2 lg:py-4 font-black uppercase tracking-[0.1em] text-[9px] lg:text-xs rounded shadow-lg transition-all 
+                        ${getPlanetStatus(selectedPlanet.id) !== 'friendly'
+                            ? 'bg-zinc-800 text-zinc-600 border border-zinc-700 cursor-not-allowed opacity-50' 
+                            : 'bg-emerald-600 border border-emerald-500 text-white hover:bg-emerald-500 hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.3)]'}`}
+                    >
+                       VISIT PLANET
+                    </button>
+                </div>
                 
                 {testMode && onTestLanding && (
-                    <button onClick={() => onTestLanding(selectedPlanet)} className="w-full py-2 bg-orange-600/20 border border-orange-500 text-orange-500 font-black uppercase tracking-widest text-[10px] rounded hover:bg-orange-600 hover:text-white transition-colors">
+                    <button onClick={() => onTestLanding(selectedPlanet)} className="w-full py-1.5 lg:py-3 bg-orange-600/20 border border-orange-500 text-orange-500 font-black uppercase tracking-widest text-[8px] lg:text-[10px] rounded hover:bg-orange-600 hover:text-white transition-colors mt-1">
                         TEST LANDING SEQUENCE
                     </button>
                 )}
-             </div>
-          </div>
+            </div>
+          </>
         ) : (
-          <div className="flex-grow flex flex-col items-center justify-center p-8 text-center z-10">
+          <div className="flex-grow flex flex-col items-center justify-center p-8 text-center z-10 hidden lg:flex">
              {isWhiteDwarf ? (
                  <>
                     <div className="w-32 h-32 bg-black rounded-full border-2 border-cyan-500 flex items-center justify-center mb-6 relative overflow-hidden shadow-[0_0_30px_rgba(34,211,238,0.2)]">

@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { GameState, ShipFitting, Shield } from '../types.ts';
 import { SHIPS, SHIELDS, EXOTIC_SHIELDS, MAX_FLEET_SIZE } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
@@ -43,16 +43,26 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   setActiveSlotIndex,
   systemMessage
 }) => {
+  const [startIndex, setStartIndex] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(3);
   const touchStart = useRef<number | null>(null);
   
   const fs = gameState.settings.fontSize || 'medium';
-  // SCALE UP STRATEGY: Small (+10% from base), Medium (+20%), Large (+40%)
+  
+  // Dynamic Sizing Logic
   // Titles: SM 11px / MD 13px / LG 16px
   const titleSize = fs === 'small' ? 'text-[11px]' : (fs === 'large' ? 'text-[16px]' : 'text-[13px]');
   // Buttons: SM 10px / MD 12px / LG 14px
   const btnSize = fs === 'small' ? 'text-[10px]' : (fs === 'large' ? 'text-[14px]' : 'text-[12px]');
   // Labels: SM 8px / MD 10px / LG 12px
   const lblSize = fs === 'small' ? 'text-[8px]' : (fs === 'large' ? 'text-[12px]' : 'text-[10px]');
+  
+  // Fleet Card Specific Sizes
+  const cardTitleSize = fs === 'small' ? 'text-[9px]' : (fs === 'large' ? 'text-[13px]' : 'text-[11px]');
+  const cardUnitSize = fs === 'small' ? 'text-xs' : (fs === 'large' ? 'text-lg' : 'text-sm');
+  const cardStatLabel = fs === 'small' ? 'text-[6px]' : (fs === 'large' ? 'text-[9px]' : 'text-[7px]');
+  const cardBtnText = fs === 'small' ? 'text-[7px]' : (fs === 'large' ? 'text-[10px]' : 'text-[8px]');
+
   // Avatar Size (Container + Icon Text)
   const pilotIconSize = fs === 'small' ? 'w-10 h-10 text-xl' : (fs === 'large' ? 'w-16 h-16 text-4xl' : 'w-12 h-12 text-2xl');
   // Footer Icon Size
@@ -68,13 +78,65 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       return (fitting?.health || 0) <= 0;
   });
 
+  useEffect(() => {
+    const updateLayout = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const isLandscape = w > h;
+      
+      if (w >= 1024 || (w >= 768 && isLandscape)) {
+        setItemsPerPage(3);
+      } else if (w >= 768) {
+        setItemsPerPage(2);
+      } else {
+        setItemsPerPage(1);
+      }
+    };
+    
+    updateLayout();
+    window.addEventListener('resize', updateLayout);
+    return () => window.removeEventListener('resize', updateLayout);
+  }, []);
+
+  const maxIndex = Math.max(0, gameState.ownedShips.length - itemsPerPage);
+  
+  useEffect(() => {
+      if (startIndex > maxIndex) setStartIndex(maxIndex);
+  }, [itemsPerPage, maxIndex, startIndex]);
+
+  const goNext = () => {
+      if (startIndex < maxIndex) setStartIndex(s => s + 1);
+  };
+  
+  const goPrev = () => {
+      if (startIndex > 0) setStartIndex(s => s - 1);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+      touchStart.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+      if (touchStart.current === null) return;
+      const endX = e.changedTouches[0].clientX;
+      const diff = endX - touchStart.current;
+      
+      if (Math.abs(diff) > 50) { 
+          if (diff > 0) goPrev(); 
+          else goNext(); 
+      }
+      touchStart.current = null;
+  };
+
+  const visibleShips = gameState.ownedShips.slice(startIndex, startIndex + itemsPerPage);
+
   return (
-    <div className="flex-grow flex flex-col p-4 md:p-6 z-10 overflow-hidden relative w-full h-full bg-black">
+    <div className="flex-grow flex flex-col p-2 md:p-4 z-10 overflow-hidden relative w-full h-full bg-black">
       {/* HEADER TITLE - Hidden on mobile portrait */}
-      <div className="w-full text-center py-2 shrink-0 hidden md:block"><h1 className={`retro-font ${fs === 'small' ? 'text-[12px]' : (fs === 'large' ? 'text-[18px]' : 'text-[15px]')} text-emerald-500 uppercase tracking-[0.3em] opacity-80`}>COMMAND CENTER</h1></div>
+      <div className="w-full text-center py-1 shrink-0 hidden md:block"><h1 className={`retro-font ${fs === 'small' ? 'text-[12px]' : (fs === 'large' ? 'text-[18px]' : 'text-[15px]')} text-emerald-500 uppercase tracking-[0.3em] opacity-80`}>COMMAND CENTER</h1></div>
       
       {/* HEADER */}
-      <div className="w-full h-16 bg-black border-y border-zinc-800 flex items-center justify-between px-4 md:px-6 shrink-0 shadow-sm">
+      <div className="w-full h-14 bg-black border-y border-zinc-800 flex items-center justify-between px-3 md:px-4 shrink-0 shadow-sm relative">
         <div className="flex flex-col gap-1 min-w-[80px]">
           <div className="flex items-center gap-2">
              <button onClick={() => setIsOptionsOpen(true)} className={`${pilotIconSize} flex items-center justify-center bg-zinc-900 border border-zinc-800 rounded hover:border-emerald-500 transition-colors`}>{gameState.pilotAvatar}</button>
@@ -94,24 +156,36 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         </div>
       </div>
 
-      {/* FLEET CAROUSEL - Show all panels always */}
-      <div className="flex-grow flex flex-col md:flex-row gap-4 overflow-hidden mt-4 mb-4 relative touch-pan-y" 
-           onTouchStart={(e) => { touchStart.current = e.touches[0].clientX; }} 
-           onTouchEnd={(e) => { 
-             if (touchStart.current === null) return; 
-             const diff = touchStart.current - e.changedTouches[0].clientX; 
-             if (Math.abs(diff) > 50) { 
-               // Swipe logic still retained for selection state, though all visible
-               const dir = diff > 0 ? 1 : -1;
-               let ni = activeSlotIndex + dir; 
-               if (ni >= 0 && ni < MAX_FLEET_SIZE) { 
-                 setActiveSlotIndex(ni); 
-                 setGameState(p => ({ ...p, selectedShipInstanceId: p.ownedShips[ni]?.instanceId || p.selectedShipInstanceId })); 
-               } 
-             } 
-             touchStart.current = null; 
-           }}>
-        {gameState.ownedShips.map((inst, idx) => {
+      {/* NAVIGATION BUTTONS (Visible only if needed) */}
+      <div className="w-full flex justify-between items-center px-1 py-1 h-8 shrink-0 relative z-20">
+          <button 
+            onClick={goPrev} 
+            disabled={startIndex === 0}
+            className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest transition-colors ${startIndex === 0 ? 'opacity-30 cursor-not-allowed text-zinc-600' : 'text-emerald-500 hover:text-emerald-400 animate-pulse'}`}
+          >
+             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+             PREV UNIT
+          </button>
+          
+          <button 
+            onClick={goNext} 
+            disabled={startIndex >= maxIndex}
+            className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest transition-colors ${startIndex >= maxIndex ? 'opacity-30 cursor-not-allowed text-zinc-600' : 'text-emerald-500 hover:text-emerald-400 animate-pulse'}`}
+          >
+             NEXT UNIT
+             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
+      </div>
+
+      {/* FLEET CAROUSEL - No Scroll */}
+      <div 
+        className="flex-grow flex w-full overflow-hidden mt-1 mb-2 p-1 relative"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
+        {visibleShips.map((inst, visualIdx) => {
+          // Calculate true index based on start offset
+          const trueIdx = startIndex + visualIdx;
           const f = gameState.shipFittings[inst.instanceId];
           const config = SHIPS.find(s => s.id === inst.shipTypeId);
           if (!config || !f) return null;
@@ -120,65 +194,75 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           // Resolve shields for visualization
           const s1 = f.shieldId ? (f.shieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.shieldId) || null) : null;
           const s2 = f.secondShieldId ? (f.secondShieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.secondShieldId) || null) : null;
-          const hasShields = !!s1 || !!s2;
 
           return (
-            <div key={idx} onClick={() => { setGameState(p => ({ ...p, selectedShipInstanceId: inst.instanceId })); setActiveSlotIndex(idx); }} 
-                 className={`flex-1 border-2 p-4 flex flex-col items-center rounded-xl transition-all cursor-pointer relative h-full
-                 ${isSelected 
-                    ? 'border-emerald-500 bg-zinc-900 shadow-[0_0_20px_rgba(16,185,129,0.1)] z-10' 
-                    : 'border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900'}`}>
-              <div className="w-full flex justify-between items-center mb-2 shrink-0">
-                  <span className={`retro-font ${fs === 'small' ? 'text-[10px]' : (fs === 'large' ? 'text-[14px]' : 'text-[12px]')} text-emerald-500 uppercase`}>{config.name}</span>
-                  <span className={`${lblSize} uppercase text-zinc-500`}>UNIT 0{idx + 1}</span>
-              </div>
+            <div 
+                key={inst.instanceId} 
+                style={{ width: `${100/itemsPerPage}%` }}
+                className="h-full px-1.5 transition-all duration-300"
+            >
+                <div 
+                    onClick={() => { setGameState(p => ({ ...p, selectedShipInstanceId: inst.instanceId })); setActiveSlotIndex(trueIdx); }} 
+                    className={`flex flex-col items-center rounded-xl transition-all cursor-pointer relative h-full border-2 p-2 w-full
+                    ${isSelected 
+                        ? 'border-emerald-500 bg-zinc-900 shadow-[0_0_20px_rgba(16,185,129,0.1)] z-10' 
+                        : 'border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900'}`}
+                >
               
-              {/* RESPONSIVE SHIP DISPLAY - FLUID HEIGHT BUT ASPECT PRESERVED */}
-              <div className="flex-grow w-full flex items-center justify-center relative min-h-0 p-2">
-                <div className="h-full aspect-square flex items-center justify-center">
-                    <ShipIcon 
-                        config={config as any} 
-                        hullColor={gameState.shipColors[inst.instanceId]} 
-                        wingColor={gameState.shipWingColors[inst.instanceId]} 
-                        cockpitColor={gameState.shipCockpitColors[inst.instanceId]} 
-                        gunColor={gameState.shipGunColors[inst.instanceId]} 
-                        secondaryGunColor={gameState.shipSecondaryGunColors[inst.instanceId]}
-                        gunBodyColor={gameState.shipGunBodyColors[inst.instanceId]} 
-                        engineColor={gameState.shipEngineColors[inst.instanceId]} 
-                        nozzleColor={gameState.shipNozzleColors[inst.instanceId]} 
-                        className="w-full h-full object-contain" 
-                        shield={s1}
-                        secondShield={s2}
-                        fullShields={true}
-                        equippedWeapons={f.weapons}
-                        forceShieldScale={true}
-                    />
-                </div>
-              </div>
+                  {/* COMPACT HEADER */}
+                  <div className="w-full flex justify-between items-center mb-1 shrink-0 px-1 border-b border-zinc-800/50 pb-1">
+                      <span className={`retro-font ${cardTitleSize} text-emerald-500 uppercase truncate max-w-[60%]`}>{config.name}</span>
+                      <span className={`${cardUnitSize} uppercase text-zinc-500 font-black`}>UNIT 0{trueIdx + 1}</span>
+                  </div>
+                  
+                  {/* MAXIMIZED SHIP DISPLAY */}
+                  <div className="flex-grow w-full flex items-center justify-center relative min-h-0">
+                    <div className="h-full aspect-square flex items-center justify-center">
+                        <ShipIcon 
+                            config={config as any} 
+                            hullColor={gameState.shipColors[inst.instanceId]} 
+                            wingColor={gameState.shipWingColors[inst.instanceId]} 
+                            cockpitColor={gameState.shipCockpitColors[inst.instanceId]} 
+                            gunColor={gameState.shipGunColors[inst.instanceId]} 
+                            secondaryGunColor={gameState.shipSecondaryGunColors[inst.instanceId]}
+                            gunBodyColor={gameState.shipGunBodyColors[inst.instanceId]} 
+                            engineColor={gameState.shipEngineColors[inst.instanceId]} 
+                            nozzleColor={gameState.shipNozzleColors[inst.instanceId]} 
+                            className="w-full h-full object-contain" 
+                            shield={s1}
+                            secondShield={s2}
+                            fullShields={true}
+                            equippedWeapons={f.weapons}
+                            forceShieldScale={true}
+                        />
+                    </div>
+                  </div>
 
-              <div className="w-full mt-auto space-y-3 shrink-0">
-                <div className="space-y-1">
-                    <div className={`flex justify-between ${lblSize} uppercase font-black`}><span>Integrity</span><span>{Math.floor(f.health)}%</span></div>
-                    <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-800"><div className={`h-full transition-all duration-500 ${f.health < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} style={{ width: `${f.health}%` }} /></div>
+                  {/* COMPACT STATS FOOTER */}
+                  <div className="w-full mt-auto space-y-1 shrink-0 bg-black/30 p-2 rounded-lg border border-zinc-800/30">
+                    <div className="space-y-0.5">
+                        <div className={`flex justify-between ${cardStatLabel} uppercase font-black text-zinc-400`}><span>Integrity</span><span>{Math.floor(f.health)}%</span></div>
+                        <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-700"><div className={`h-full transition-all duration-500 ${f.health < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} style={{ width: `${f.health}%` }} /></div>
+                    </div>
+                    <div className="space-y-0.5">
+                        <div className={`flex justify-between ${cardStatLabel} uppercase font-black text-zinc-400`}><span>Fuel</span><span>{f.fuel.toFixed(1)}/{config.maxFuel}</span></div>
+                        <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-700"><div className={`h-full transition-all duration-500 ${f.fuel < (config.maxFuel*0.2) ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${(f.fuel/config.maxFuel)*100}%` }} /></div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1 pt-1">
+                        <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>REPLACE</button>
+                        <button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>EQUIP</button>
+                        <button onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>PAINT</button>
+                    </div>
+                  </div>
                 </div>
-                <div className="space-y-1">
-                    <div className={`flex justify-between ${lblSize} uppercase font-black`}><span>Fuel Level</span><span>{f.fuel.toFixed(1)} / {config.maxFuel}</span></div>
-                    <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-800"><div className={`h-full transition-all duration-500 ${f.fuel < (config.maxFuel*0.2) ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${(f.fuel/config.maxFuel)*100}%` }} /></div>
-                </div>
-                <div className="grid grid-cols-3 gap-1 pt-2">
-                    <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-black ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white`}>REPLACE</button>
-                    <button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-black ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white`}>EQUIP</button>
-                    <button onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-black ${btnSize} uppercase font-black rounded border border-zinc-800 hover:bg-zinc-800 text-zinc-400 hover:text-white`}>PAINT</button>
-                </div>
-              </div>
             </div>
           );
         })}
       </div>
 
       {/* FOOTER */}
-      <div className="flex flex-col gap-3 shrink-0 mb-2">
-        <footer className="bg-black p-2 md:p-3 rounded-xl border border-zinc-800 flex justify-between items-center shadow-lg">
+      <div className="flex flex-col gap-2 shrink-0 mb-1">
+        <footer className="bg-black p-2 rounded-xl border border-zinc-800 flex justify-between items-center shadow-lg">
           <div className="flex items-center gap-2">
             <button onClick={() => setIsMessagesOpen(true)} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-800 rounded hover:border-emerald-500 relative`}><span className={footerIconText}>📡</span>{gameState.messages.length > 0 && <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-zinc-950" />}</button>
             <button onClick={() => { setIsMarketOpen(true); }} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-800 rounded hover:border-amber-500`}><span className={footerIconText}>💎</span></button>
@@ -194,7 +278,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           
           {/* Status Text - No Flashing, Balanced Wrap */}
           <div className="flex-1 flex flex-col items-center justify-center px-4 hidden sm:flex opacity-80 min-w-[200px]">
-              <span className={`text-[10px] font-black uppercase tracking-[0.2em] transition-colors duration-200 text-center leading-tight whitespace-pre-wrap ${
+              <span className={`${btnSize} font-black uppercase tracking-[0.2em] transition-colors duration-200 text-center leading-tight whitespace-pre-wrap ${
                   systemMessage.type === 'error' ? 'text-red-500' : 
                   systemMessage.type === 'success' ? 'text-blue-400' :
                   systemMessage.type === 'warning' ? 'text-amber-500' :
@@ -222,9 +306,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           </div>
         </footer>
         {allShipsCompromised ? (
-            <button onClick={() => setScreen('intro')} className="md:hidden landscape:hidden w-full py-5 bg-red-600 border-b-4 border-red-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(220,38,38,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-red-500 flex items-center justify-center gap-4 animate-pulse">⚠️ ABORT MISSION ⚠️</button>
+            <button onClick={() => setScreen('intro')} className="md:hidden landscape:hidden w-full py-4 bg-red-600 border-b-4 border-red-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(220,38,38,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-red-500 flex items-center justify-center gap-4 animate-pulse">⚠️ ABORT MISSION ⚠️</button>
         ) : (
-            <button onClick={onLaunch} className="md:hidden landscape:hidden w-full py-5 bg-emerald-600 border-b-4 border-emerald-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-emerald-500 flex items-center justify-center gap-4"><span className="animate-pulse">▶</span> LAUNCH TO ORBIT <span className="animate-pulse">◀</span></button>
+            <button onClick={onLaunch} className="md:hidden landscape:hidden w-full py-4 bg-emerald-600 border-b-4 border-emerald-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-emerald-500 flex items-center justify-center gap-4"><span className="animate-pulse">▶</span> LAUNCH TO ORBIT <span className="animate-pulse">◀</span></button>
         )}
       </div>
     </div>

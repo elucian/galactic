@@ -535,14 +535,20 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
     };
 
     drawPart('guns', () => {
-        const mainId = equippedWeapons && equippedWeapons[0] ? equippedWeapons[0].id : (weaponId || 'gun_bolt');
-        // Main gun is slot 0
-        if (config.wingStyle === 'alien-h') { drawWeapon(25, 20, mainId, 'primary', 0); drawWeapon(75, 20, mainId, 'primary', 0); } 
-        else if (config.wingStyle === 'alien-w') { drawWeapon(10, 20, mainId, 'primary', 0); drawWeapon(90, 20, mainId, 'primary', 0); } 
-        else if (config.wingStyle === 'alien-m') { drawWeapon(20, 25, mainId, 'primary', 0); drawWeapon(80, 25, mainId, 'primary', 0); } 
-        else if (config.wingStyle === 'alien-a') { drawWeapon(50, 22, mainId, 'primary', 0); } 
-        else if (config.wingStyle === 'x-wing') { drawWeapon(50, 20, mainId, 'primary', 0); } 
-        else { drawWeapon(50, 10, mainId, 'primary', 0); }
+        // Fallback Logic: If equippedWeapons exists, use it. Otherwise use config default.
+        // Important: If equippedWeapons exists but slot 0 is null, mainId must be NULL (no gun).
+        // Before: (config.weaponId || 'gun_bolt') caused ghost guns.
+        const mainId = equippedWeapons ? (equippedWeapons[0]?.id || null) : (config.weaponId || 'gun_bolt');
+        
+        if (mainId) {
+            // Main gun is slot 0
+            if (config.wingStyle === 'alien-h') { drawWeapon(25, 20, mainId, 'primary', 0); drawWeapon(75, 20, mainId, 'primary', 0); } 
+            else if (config.wingStyle === 'alien-w') { drawWeapon(10, 20, mainId, 'primary', 0); drawWeapon(90, 20, mainId, 'primary', 0); } 
+            else if (config.wingStyle === 'alien-m') { drawWeapon(20, 25, mainId, 'primary', 0); drawWeapon(80, 25, mainId, 'primary', 0); } 
+            else if (config.wingStyle === 'alien-a') { drawWeapon(50, 22, mainId, 'primary', 0); } 
+            else if (config.wingStyle === 'x-wing') { drawWeapon(50, 20, mainId, 'primary', 0); } 
+            else { drawWeapon(50, 10, mainId, 'primary', 0); }
+        }
     });
 
     if (equippedWeapons) {

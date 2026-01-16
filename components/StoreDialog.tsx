@@ -34,7 +34,7 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
 
   // Logic to determine default weapon based on ship tier (matching App.tsx logic)
   const getDefaultWeaponId = (shipConfig: ExtendedShipConfig) => {
-      if (shipConfig.isAlien) return shipConfig.weaponId || 'exotic_plasma_jet';
+      if (shipConfig.isAlien) return shipConfig.weaponId || 'exotic_plasma_orb';
       
       const index = SHIPS.findIndex(s => s.id === shipConfig.id);
       // Ships index 3 (Eclipse) and 4 (Behemoth) get Level 4 Photon Emitter
@@ -53,6 +53,20 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
   const currentDefaultWeaponId = getDefaultWeaponId(ship);
   const currentWeaponColor = getWeaponColor(currentDefaultWeaponId);
 
+  // Construct equipped weapons for preview
+  const getPreviewEquipped = () => {
+      if (ship.isAlien) {
+          // A-Class gets 1 main weapon
+          if (ship.defaultGuns === 1) return [{id: currentDefaultWeaponId, count: 1}, null, null];
+          // Others get 2 wing weapons
+          return [null, {id: currentDefaultWeaponId, count: 1}, {id: currentDefaultWeaponId, count: 1}];
+      }
+      // Standard ships just show main gun in slot 0 for preview
+      return [{id: currentDefaultWeaponId, count:1}, null, null];
+  };
+
+  const previewEquipped = getPreviewEquipped();
+
   return (
     <div className="fixed inset-0 z-[9900] bg-black/95 flex items-center justify-center p-4 backdrop-blur-2xl">
         <div className="w-full max-w-5xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[90vh] shadow-2xl">
@@ -66,12 +80,16 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                         const defaultWep = getDefaultWeaponId(s);
                         const wepColor = getWeaponColor(defaultWep);
                         
+                        // Mini preview logic
+                        let miniEquipped = [{id: defaultWep, count:1}, null, null];
+                        if (s.isAlien && s.defaultGuns === 2) miniEquipped = [null, {id: defaultWep, count:1}, {id: defaultWep, count:1}];
+
                         return (
                             <button key={s.id} onClick={() => setInspectedShipId(s.id)} className={`w-full p-3 flex items-center gap-3 border transition-all ${inspectedShipId === s.id ? 'bg-emerald-900/20 border-emerald-500' : 'bg-zinc-900/30 border-zinc-800'}`}>
                                 <ShipIcon 
                                     config={s} 
                                     className="w-10 h-10" 
-                                    equippedWeapons={[{id: defaultWep, count:1}, null, null]} 
+                                    equippedWeapons={miniEquipped as any} 
                                     gunColor={wepColor} // Pass weapon color to override ship default gun color
                                 />
                                 <div className="flex flex-col items-start">
@@ -90,7 +108,7 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                                 config={ship} 
                                 className="w-32 h-32 sm:w-56 sm:h-56" 
                                 showJets={false} 
-                                equippedWeapons={[{id: currentDefaultWeaponId, count:1}, null, null]} 
+                                equippedWeapons={previewEquipped as any} 
                                 gunColor={currentWeaponColor}
                             />
                             <div className="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-6 w-full max-w-2xl px-4">
@@ -107,7 +125,7 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                             </div>
                             <div className="mt-4 flex gap-4">
                                  <div className="flex flex-col items-center"><span className="text-[7px] text-zinc-500 font-black uppercase">Fire Rate</span><span className="text-[10px] text-emerald-400 font-black">{Math.round(1000/ship.noseGunCooldown)}/s</span></div>
-                                 <div className="flex flex-col items-center"><span className="text-[7px] text-zinc-500 font-black uppercase">Sec. Slots</span><span className="text-[10px] text-emerald-400 font-black">2</span></div>
+                                 <div className="flex flex-col items-center"><span className="text-[7px] text-zinc-500 font-black uppercase">Gun Slots</span><span className="text-[10px] text-emerald-400 font-black">{ship.isAlien ? (ship.defaultGuns === 1 ? '1 (MAIN)' : '2 (WINGS)') : '3 (1 MAIN + 2 WING)'}</span></div>
                             </div>
                             <p className={`mt-10 ${textClass} text-zinc-400 text-center uppercase`}>{ship.description}</p>
                         </div>

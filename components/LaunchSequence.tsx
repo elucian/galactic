@@ -39,7 +39,7 @@ const Gauge = ({ value, max, label, unit, color = "#10b981" }: { value: number, 
                             strokeLinecap="round" className="transition-all duration-300 ease-out" />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center flex-col">
-                    <span className="text-[10px] font-black text-white tabular-nums">{value >= 1000 ? (value/1000).toFixed(1)+'k' : Math.floor(value)}</span>
+                    <span className="text-[10px] font-black text-white tabular-nums">{value >= 1000 ? (value/1000).toFixed(1)+'k' : (value < 10 ? value.toFixed(1) : Math.floor(value))}</span>
                     <span className="text-[6px] text-zinc-400 font-mono uppercase">{unit}</span>
                 </div>
             </div>
@@ -65,6 +65,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
   // Animation State
   const [altitude, setAltitude] = useState(0);
   const [velocity, setVelocity] = useState(0);
+  const [visualFuel, setVisualFuel] = useState(currentFuel); // Local visual fuel state
   
   // Engine locations for particles
   const engineLocs = useMemo(() => getEngineCoordinates(shipConfig), [shipConfig]);
@@ -92,7 +93,16 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
     // Landing Gear Physics
     legExtension: 1.0, // 1 = fully deployed
     suspension: 0.0,   // 0 = fully compressed (sitting on pad), 1 = uncompressed (in air)
-    windSpeed: 1.5 // Horizontal wind speed for smoke
+    windSpeed: 1.5, // Horizontal wind speed for smoke
+    internalFuel: currentFuel, // Track exact value for smooth lerp
+    targetFuel: Math.max(0, currentFuel - 1.0), // End target (1.0 launch cost)
+    // Celestial Body
+    celestialX: 0.7, // Relative 0-1
+    celestialY: 0.15, // Relative 0-1
+    moonPhase: 0,
+    // White Dwarf Companion (Delta Sector)
+    whiteDwarfAngle: 0,
+    whiteDwarfTrail: [] as {x: number, y: number, alpha: number}[]
   });
 
   // Skip Handler
@@ -121,6 +131,11 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       
       let skyColorTop = '#0f172a';
       let skyColorBot = '#1e293b';
+      let sunColor = '#facc15'; // Default Alfa
+
+      if (p.quadrant === QuadrantType.BETA) { sunColor = '#ef4444'; }
+      if (p.quadrant === QuadrantType.GAMA) { sunColor = '#3b82f6'; }
+      if (p.quadrant === QuadrantType.DELTA) { sunColor = '#000000'; }
       
       if (timeOfDay === 'day') {
           if (p.quadrant === QuadrantType.BETA) { skyColorTop = '#fca5a5'; skyColorBot = '#fecaca'; }
@@ -134,6 +149,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           timeOfDay,
           skyColorTop,
           skyColorBot,
+          sunColor,
           groundColor: isWinter ? '#e2e8f0' : (p.color || '#3f3f46'),
           starDensity: timeOfDay === 'night' ? 150 : 20
       };
@@ -144,6 +160,12 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       const s = stateRef.current;
       s.startTime = Date.now();
       
+      // Celestial position
+      s.celestialX = 0.2 + Math.random() * 0.6; // Random horizontal position
+      s.celestialY = 0.15 + Math.random() * 0.1; // Random height (high)
+      s.moonPhase = Math.random(); 
+      s.whiteDwarfAngle = Math.random() * Math.PI * 2;
+
       // Stars
       s.stars = Array.from({length: environment.starDensity}).map(() => ({
           x: Math.random(), y: Math.random(), size: Math.random()*2, alpha: Math.random()
@@ -294,6 +316,12 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                   s.legExtension = Math.max(0, s.legExtension - 0.006); 
               }
 
+              // --- FUEL CONSUMPTION (LIFT PHASE) ---
+              // Consume faster during acceleration
+              if (s.internalFuel > s.targetFuel) {
+                  s.internalFuel -= 0.0035; // Higher burn during lift
+              }
+
           } else if (currentPhase === 'atmosphere') {
               targetY = h * 0.3;
               s.viewY += (15 + s.velocity); 
@@ -301,11 +329,23 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               s.shipScale = Math.max(0.4, s.shipScale - 0.002);
               s.altitude += 50;
               s.legExtension = 0; // Ensure retracted
+              
+              // --- FUEL CONSUMPTION (MAX Q) ---
+              // Burn LESS in upper atmosphere
+              if (s.internalFuel > s.targetFuel) {
+                  s.internalFuel -= 0.0012; 
+              }
+
           } else if (currentPhase === 'orbit') {
               targetY = h * 0.2;
               s.viewY += 40;
               s.shipScale = Math.max(0.1, s.shipScale - 0.005);
               s.altitude += 100;
+              
+              // Finalize Fuel
+              if (s.internalFuel > s.targetFuel) {
+                  s.internalFuel = s.targetFuel; // Snap to target at orbit insertion
+              }
           }
 
           if (currentPhase === 'countdown' || currentPhase === 'ignition') {
@@ -313,6 +353,11 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               // Sitting on pad -> Compressed suspension
               s.suspension = 0;
               s.legExtension = 1;
+              
+              // Ignition consumes a tiny bit
+              if (currentPhase === 'ignition' && s.internalFuel > s.targetFuel) {
+                  s.internalFuel -= 0.001; 
+              }
           } else {
               s.shipY += (targetY - s.shipY) * 0.1;
           }
@@ -329,10 +374,12 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               s.armRetract = 0; // Stay connected
           }
 
-          if (s.frameCount % 10 === 0) {
+          if (s.frameCount % 5 === 0) {
               setAltitude(Math.floor(s.altitude));
               setVelocity(Math.floor(currentPhase === 'lift' ? s.velocity * 100 : (currentPhase === 'atmosphere' ? 2000 : 0)));
           }
+          // Update Fuel Gauge every frame for smoothness
+          setVisualFuel(Math.max(s.targetFuel, s.internalFuel));
 
           // --- 2. DRAWING ---
 
@@ -361,6 +408,112 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               });
               ctx.globalAlpha = 1;
           }
+
+          // CELESTIAL BODY (Sun/Moon)
+          // Removed spaceRatio check to keep sun visible during orbit insertion
+          const celParallax = s.viewY * 0.002; // Reduced parallax to keep it stable on screen
+          const celX = s.celestialX * w;
+          const celY = (s.celestialY * h) + celParallax;
+          
+          // Slight zoom effect as we leave atmosphere
+          const celScale = 1 + (spaceRatio * 0.2); 
+
+          if (environment.timeOfDay === 'day') {
+                  if (planet.quadrant === QuadrantType.DELTA) {
+                      // BLACK HOLE (Delta Sector) with Occlusion Logic
+                      
+                      // Scale dimensions
+                      const bhRadius = 50 * celScale;
+                      const bhCore = 12 * celScale;
+                      const ringRx = 60 * celScale;
+                      const ringRy = 12 * celScale;
+
+                      // 1. Draw Back Ring (Hidden tail)
+                      const rotation = -0.2;
+                      
+                      ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)'; // Dim purple back
+                      ctx.lineWidth = 2 * celScale;
+                      ctx.beginPath();
+                      // Top half visually is roughly PI to 2PI in standard ellipse space if not rotated much
+                      // With -0.2 rot, back is roughly the upper arc.
+                      ctx.ellipse(celX, celY, ringRx, ringRy, rotation, Math.PI, 2 * Math.PI);
+                      ctx.stroke();
+
+                      // 2. Draw Black Hole Core
+                      const bhGlow = ctx.createRadialGradient(celX, celY, 10 * celScale, celX, celY, bhRadius);
+                      bhGlow.addColorStop(0, '#000000');
+                      bhGlow.addColorStop(0.4, '#a855f7');
+                      bhGlow.addColorStop(1, 'rgba(0,0,0,0)');
+                      ctx.fillStyle = bhGlow;
+                      ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill();
+                      
+                      ctx.fillStyle = '#000';
+                      ctx.shadowColor = '#fff'; ctx.shadowBlur = 15 * celScale;
+                      ctx.beginPath(); ctx.arc(celX, celY, bhCore, 0, Math.PI*2); ctx.fill();
+                      ctx.shadowBlur = 0;
+
+                      // 3. Draw Front Ring
+                      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; // Bright front
+                      ctx.lineWidth = 2 * celScale;
+                      ctx.beginPath();
+                      ctx.ellipse(celX, celY, ringRx, ringRy, rotation, 0, Math.PI);
+                      ctx.stroke();
+
+                      // 4. White Dwarf Companion (Orbiting)
+                      s.whiteDwarfAngle += 0.02;
+                      const wdRx = 100 * celScale; 
+                      const wdRy = 25 * celScale;
+                      const wdX = celX + Math.cos(s.whiteDwarfAngle) * wdRx;
+                      const wdY = celY + Math.sin(s.whiteDwarfAngle) * wdRy;
+                      
+                      // Trail
+                      s.whiteDwarfTrail.push({x: wdX, y: wdY, alpha: 1.0});
+                      if (s.whiteDwarfTrail.length > 20) s.whiteDwarfTrail.shift();
+                      
+                      ctx.lineCap = 'round';
+                      s.whiteDwarfTrail.forEach((tp, i) => {
+                          const size = (1 + (i/20)*3) * celScale;
+                          const alpha = (i/20) * 0.6;
+                          ctx.fillStyle = `rgba(165, 243, 252, ${alpha})`;
+                          ctx.beginPath(); ctx.arc(tp.x, tp.y, size, 0, Math.PI*2); ctx.fill();
+                      });
+
+                      // Star
+                      const isBehind = Math.sin(s.whiteDwarfAngle) < 0; // Simple z-sort approximation
+                      // If strictly implementing z-sort, draw order changes. 
+                      // Here drawing on top is fine as it orbits "around".
+                      ctx.fillStyle = '#ffffff';
+                      ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 10 * celScale;
+                      ctx.beginPath(); ctx.arc(wdX, wdY, 4 * celScale, 0, Math.PI*2); ctx.fill();
+                      ctx.shadowBlur = 0;
+
+                  } else {
+                      // SUN (Sector Color)
+                      const sunR = 30 * celScale; // Small Sun
+                      const sGrad = ctx.createRadialGradient(celX, celY, sunR*0.2, celX, celY, sunR*2.5);
+                      sGrad.addColorStop(0, environment.sunColor);
+                      sGrad.addColorStop(1, 'rgba(0,0,0,0)');
+                      ctx.fillStyle = sGrad;
+                      ctx.beginPath(); ctx.arc(celX, celY, sunR*2.5, 0, Math.PI*2); ctx.fill();
+                      
+                      ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8;
+                      ctx.beginPath(); ctx.arc(celX, celY, sunR*0.7, 0, Math.PI*2); ctx.fill();
+                      ctx.globalAlpha = 1;
+                  }
+              } else {
+                  // MOON (Phased)
+                  const moonR = 25 * celScale;
+                  ctx.fillStyle = '#fff'; 
+                  ctx.shadowColor = '#fff'; ctx.shadowBlur = 10 * celScale;
+                  ctx.beginPath(); ctx.arc(celX, celY, moonR, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+                  
+                  // Phase Shadow
+                  ctx.fillStyle = environment.skyColorTop; // Match sky to hide part of moon
+                  // Phase varies from -1 (Full) to 1 (New) roughly
+                  const phaseOffset = (s.moonPhase - 0.5) * 2.5 * moonR;
+                  ctx.beginPath(); ctx.arc(celX + phaseOffset, celY - (5*celScale), moonR * 1.1, 0, Math.PI*2); ctx.fill();
+              }
 
           // CLOUDS (HIGH LAYER)
           s.cloudsHigh.forEach(c => {
@@ -682,7 +835,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           <div className="flex gap-4">
               <Gauge value={altitude} max={8000} label="DISTANCE" unit="METERS" color="#3b82f6" />
               <Gauge value={velocity} max={2500} label="SPEED" unit="KM/H" color="#facc15" />
-              <Gauge value={currentFuel} max={maxFuel} label="FUEL" unit="UNITS" color="#ef4444" />
+              <Gauge value={visualFuel} max={maxFuel} label="FUEL" unit="UNITS" color="#ef4444" />
           </div>
           
           <div className="flex flex-col items-end gap-2">

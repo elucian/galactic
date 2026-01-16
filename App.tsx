@@ -262,8 +262,51 @@ export default function App() {
     if (!selectedFitting || !selectedShipConfig) return;
     const launchCost = 1.0;
     if (selectedFitting.fuel < launchCost) { audioService.playSfx('denied'); triggerSystemMessage("LAUNCH ABORTED: INSUFFICIENT FUEL RESERVES", 'error'); return; }
-    setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: Math.max(0, fit.fuel - launchCost) } } }; });
-    setLaunchDestination('map'); if (gameState.settings.showTransitions) { setScreen('launch'); } else { setScreen('map'); audioService.playTrack('map'); }
+    
+    setLaunchDestination('map'); 
+    
+    // Defer fuel deduction if transition is enabled, so cinematic shows full fuel bar
+    if (gameState.settings.showTransitions) { 
+        setScreen('launch'); 
+    } else { 
+        // Immediate deduction if no transition
+        setGameState(prev => { 
+            const sId = prev.selectedShipInstanceId!; 
+            const fit = prev.shipFittings[sId]; 
+            return { 
+                ...prev, 
+                shipFittings: { 
+                    ...prev.shipFittings, 
+                    [sId]: { ...fit, fuel: Math.max(0, fit.fuel - launchCost) } 
+                } 
+            }; 
+        });
+        setScreen('map'); 
+        audioService.playTrack('map'); 
+    }
+  };
+
+  const handleLaunchSequenceComplete = () => { 
+      // Deduct fuel NOW after cinematic completes
+      setGameState(prev => { 
+          const sId = prev.selectedShipInstanceId!; 
+          const fit = prev.shipFittings[sId]; 
+          return { 
+              ...prev, 
+              shipFittings: { 
+                  ...prev.shipFittings, 
+                  [sId]: { ...fit, fuel: Math.max(0, fit.fuel - 1.0) } 
+              } 
+          }; 
+      });
+
+      if (launchDestination === 'map') { 
+          setScreen('map'); 
+          audioService.playTrack('map'); 
+      } else { 
+          setScreen('game'); 
+          audioService.playTrack('combat'); 
+      } 
   };
 
   const handleGameOver = (success: boolean, score: number, aborted: boolean, payload: any) => {
@@ -292,11 +335,17 @@ export default function App() {
 
        if (success) {
            pEntry.wins += 1; pEntry.losses = 0; 
-           if (pEntry.status !== 'friendly' && pEntry.wins >= 2) { pEntry.status = 'friendly'; pEntry.wins = 0; newMessages.unshift({ id: `msg_${Date.now()}`, type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `SECTOR ${prev.currentPlanet?.name} LIBERATED. LANDING AUTHORIZED.`, timestamp: Date.now() }); }
+           // WIN CONDITION: 1 Win = Friendly
+           if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { 
+               pEntry.status = 'friendly'; 
+               pEntry.wins = 0; 
+               newMessages.unshift({ id: `msg_${Date.now()}`, type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `SECTOR ${prev.currentPlanet?.name} LIBERATED. LANDING AUTHORIZED.`, timestamp: Date.now() }); 
+           }
        } else {
            if (!aborted) {
                pEntry.losses += 1;
-               if (pEntry.losses >= 3) {
+               // LOSS CONDITION: 1 Loss = Regression
+               if (pEntry.losses >= 1) {
                    pEntry.losses = 0;
                    const pIndex = PLANETS.findIndex(p => p.id === currentPId);
                    if (pIndex > 0) {
@@ -327,7 +376,6 @@ export default function App() {
 
   // ... [Other handlers omitted for brevity, no changes needed]
   const handlePlanetSelection = (planet: Planet) => { const status = gameState.planetRegistry[planet.id]?.status || 'occupied'; const isFriendly = status === 'friendly'; const isSameQuadrant = planet.quadrant === gameState.currentQuadrant; const showTransitions = gameState.settings.showTransitions; const shouldUpdateQuadrantNow = !isSameQuadrant && !showTransitions; setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: shouldUpdateQuadrantNow ? planet.quadrant : prev.currentQuadrant })); setLaunchDestination('planet'); if (isFriendly) { if (isSameQuadrant) { setScreen('landing'); } else { setWarpDestination('landing'); if (showTransitions) { setScreen('warp'); } else { setScreen('landing'); } } } else { setGameMode('combat'); setWarpDestination('game'); if (isSameQuadrant) { setScreen('game'); audioService.playTrack('combat'); } else { if (showTransitions) { setScreen('warp'); } else { setScreen('game'); audioService.playTrack('combat'); } } } };
-  const handleLaunchSequenceComplete = () => { if (launchDestination === 'map') { setScreen('map'); audioService.playTrack('map'); } else { setScreen('game'); audioService.playTrack('combat'); } };
   const handleWarpComplete = () => { if (warpDestination === 'hangar') { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } else if (warpDestination === 'landing') { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('landing'); } else { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('game'); if (gameMode === 'combat') { audioService.playTrack('combat'); } else { audioService.playTrack('map'); } } };
   const getActiveShieldColor = () => { if (!selectedFitting) return '#3b82f6'; const sId = selectedFitting.shieldId || selectedFitting.secondShieldId; if (!sId) return '#3b82f6'; if (sId === 'dev_god_mode') return '#ffffff'; const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === sId); return sDef ? sDef.color : '#3b82f6'; };
   const replaceShip = (shipTypeId: string) => {
@@ -342,12 +390,27 @@ export default function App() {
       const newOwned = prev.ownedShips.map(os => os.instanceId === sId ? { ...os, shipTypeId } : os); const newFittings = { ...prev.shipFittings };
       
       const newWeapons = Array(3).fill(null);
-      // Logic for weapon based on ship tier (index based on SHIPS list)
-      const shipIndex = SHIPS.findIndex(s => s.id === shipTypeId);
-      if (shipIndex >= 3 && shipIndex <= 4) {
-          newWeapons[0] = { id: 'gun_photon', count: 1 };
+      
+      // Determine default loadout based on ship type
+      if (shipConfig.isAlien) {
+          const wId = shipConfig.weaponId || 'exotic_plasma_orb';
+          // A-Class Alien gets 1 weapon (Main Slot)
+          if (shipConfig.defaultGuns === 1) {
+              newWeapons[0] = { id: wId, count: 1 };
+          } 
+          // Other Aliens get 2 weapons (Wing Slots)
+          else {
+              newWeapons[1] = { id: wId, count: 1 };
+              newWeapons[2] = { id: wId, count: 1 };
+          }
       } else {
-          newWeapons[0] = { id: 'gun_pulse', count: 1 };
+          // Standard Ships Logic
+          const shipIndex = SHIPS.findIndex(s => s.id === shipTypeId);
+          if (shipIndex >= 3 && shipIndex <= 4) {
+              newWeapons[0] = { id: 'gun_photon', count: 1 };
+          } else {
+              newWeapons[0] = { id: 'gun_pulse', count: 1 };
+          }
       }
 
       newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 2, mineCount: 2, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
@@ -597,9 +660,21 @@ export default function App() {
             planet={gameState.currentPlanet} 
             shipShape={selectedShipConfig?.shape || 'arrow'} 
             onComplete={() => { 
-                if (gameState.currentPlanet) {
-                    setGameState(prev => ({...prev, dockedPlanetId: prev.currentPlanet!.id}));
-                }
+                setGameState(prev => {
+                    const sId = prev.selectedShipInstanceId!;
+                    const fit = prev.shipFittings[sId];
+                    // Deduct landing fuel cost (30% of launch cost = 0.3)
+                    const newFuel = Math.max(0, fit.fuel - 0.3);
+                    
+                    return {
+                        ...prev, 
+                        dockedPlanetId: prev.currentPlanet!.id,
+                        shipFittings: {
+                            ...prev.shipFittings,
+                            [sId]: { ...fit, fuel: newFuel }
+                        }
+                    };
+                });
                 setScreen('hangar'); 
                 audioService.playTrack('command'); 
             }}

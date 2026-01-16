@@ -319,6 +319,65 @@ class AudioService {
     }
   }
 
+  playAlertSiren() {
+    this.init();
+    if (!this.ctx || !this.enabled) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    
+    const gain = ctx.createGain();
+    gain.connect(this.masterGain!);
+
+    // Filter for "siren" tone + Wah effect
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = 2; // Resonant to emphasize the wah
+    filter.frequency.setValueAtTime(1000, t);
+
+    // Frequency Sweep: Descend then Ascend Scale
+    // D4 ~ 293 Hz
+    // B3 ~ 246 Hz
+    // D5 ~ 587 Hz
+    
+    osc.frequency.setValueAtTime(293, t);
+    osc.frequency.linearRampToValueAtTime(246, t + 0.2); // Drop to B (The "lower to C, B" part)
+    // Ascend through "C, D, E, F, G, A, B, C, D" -> approximated by a sweep to D5
+    osc.frequency.exponentialRampToValueAtTime(587, t + 1.0); 
+    
+    // "Waee Wuaee Waee" - Wah-Wah Filter LFO
+    // We want roughly 3 pulses in the 1s duration
+    const filterLfo = ctx.createOscillator();
+    filterLfo.type = 'sine';
+    filterLfo.frequency.value = 3.5; // ~3.5 Hz for the pulses
+
+    const filterLfoGain = ctx.createGain();
+    filterLfoGain.gain.value = 600; // Modulate filter freq by +/- 600Hz
+
+    // Base filter frequency envelope
+    filter.frequency.setValueAtTime(800, t);
+    filter.frequency.linearRampToValueAtTime(1200, t + 1.0);
+
+    filterLfo.connect(filterLfoGain);
+    filterLfoGain.connect(filter.frequency);
+    
+    // Base gain envelope
+    gain.gain.setValueAtTime(0.2, t);
+    gain.gain.linearRampToValueAtTime(0.3, t + 0.5);
+    gain.gain.linearRampToValueAtTime(0, t + 1.2);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    
+    osc.start(t);
+    filterLfo.start(t);
+    
+    osc.stop(t + 1.2);
+    filterLfo.stop(t + 1.2);
+  }
+
   playSfx(type: 'click' | 'transition' | 'denied' | 'buy') {
     this.init();
     if (!this.ctx || !this.enabled) return;
@@ -467,7 +526,7 @@ class AudioService {
     return { wave, baseFreq };
   }
 
-  playWeaponFire(type: 'laser' | 'cannon' | 'missile' | 'mine' | 'rocket' | 'emp' | 'mega' | 'puff', pan: number = 0, variant?: string) {
+  playWeaponFire(type: 'laser' | 'cannon' | 'missile' | 'mine' | 'rocket' | 'emp' | 'mega' | 'puff' | 'flame', pan: number = 0, variant?: string) {
     this.init();
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
@@ -479,7 +538,32 @@ class AudioService {
 
     const ct = ctx.currentTime;
 
-    if (type === 'laser') {
+    if (type === 'flame') {
+        // Wind-like flame sound: Filtered noise
+        const duration = 0.4;
+        const bufferSize = ctx.sampleRate * duration;
+        const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for(let i=0; i<bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        
+        const noise = ctx.createBufferSource();
+        noise.buffer = buffer;
+        
+        // Lowpass filter for "Shhh" sound
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(300, ct);
+        filter.frequency.linearRampToValueAtTime(100, ct + duration);
+        
+        g.gain.setValueAtTime(0.1, ct); // Lower volume
+        g.gain.linearRampToValueAtTime(0, ct + duration);
+        
+        noise.connect(filter);
+        filter.connect(g);
+        noise.start();
+        noise.stop(ct + duration);
+
+    } else if (type === 'laser') {
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(1200, ct);

@@ -68,16 +68,16 @@ export const getWingMounts = (config: ExtendedShipConfig) => {
             lx = 25; ly = 20; 
             break;
         case 'alien-w': 
-            // Spike (35,75)->(10,20). Mid X=22.
-            lx = 22; ly = 46; 
+            // W-Class Tip at (10, 20) and (90, 20)
+            lx = 10; ly = 20; 
             break;
         case 'alien-a': 
             // Arch leg. Mid X=30.
             lx = 30; ly = 30; 
             break;
         case 'alien-m': 
-            // Slope (20,25)->(50,55). Mid X=35.
-            lx = 35; ly = 40; 
+            // M-Class Tip at (20, 25) and (80, 25)
+            lx = 20; ly = 25; 
             break;
         case 'fork': lx = 25; ly = 35; break;
         case 'diamond': lx = 20; ly = 45; break;

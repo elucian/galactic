@@ -37,7 +37,7 @@ const Gauge = ({ value, max, label, unit, color = "#10b981" }: { value: number, 
                             strokeLinecap="round" className="transition-all duration-300 ease-out" />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center flex-col">
-                    <span className="text-[10px] font-black text-white tabular-nums">{value >= 1000 ? (value/1000).toFixed(1)+'k' : Math.floor(value)}</span>
+                    <span className="text-[10px] font-black text-white tabular-nums">{value >= 1000 ? (value/1000).toFixed(1)+'k' : (value < 10 ? value.toFixed(1) : Math.floor(value))}</span>
                     <span className="text-[6px] text-zinc-400 font-mono uppercase">{unit}</span>
                 </div>
             </div>
@@ -53,9 +53,13 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
   const [status, setStatus] = useState("INITIATING DESCENT");
   const [altitude, setAltitude] = useState(25000);
   const [speed, setSpeed] = useState(1200);
+  const [visualFuel, setVisualFuel] = useState(currentFuel); // Local visual fuel state
   const [legExtension, setLegExtension] = useState(0); 
   const [suspension, setSuspension] = useState(1); 
   
+  // Landing Cost Constant: 0.3 units
+  const LANDING_COST = 0.3;
+
   const stateRef = useRef({
     startTime: 0,
     starScrollY: 0,
@@ -64,7 +68,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
     skyGradient: ['#000000', '#000000'],
     environmentDetails: {
         features: [] as { x: number, type: string, h: number, w: number, color: string, windowPattern?: number, scale?: number, variant?: string }[],
-        skyObjects: [] as { x: number, y: number, size: number, color: string, type: string, phaseOffset?: number, orbitAngle?: number, orbitSpeed?: number, orbitRadiusX?: number, orbitRadiusY?: number, centerX?: number, centerY?: number, z?: number }[],
+        skyObjects: [] as { x: number, y: number, size: number, color: string, type: string, phaseOffset?: number, orbitAngle?: number, orbitSpeed?: number, orbitRadiusX?: number, orbitRadiusY?: number, centerX?: number, centerY?: number, z?: number, trail?: {x:number, y:number, alpha:number}[] }[],
         groundColor: '#0f172a',
         terrainType: 'flat'
     },
@@ -73,7 +77,9 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
     shipVy: 0,
     targetY: 0,
     hasThudded: false,
-    hasAmbienceStarted: false
+    hasAmbienceStarted: false,
+    internalFuel: currentFuel, // Tracks for interpolation
+    targetFuel: Math.max(0, currentFuel - LANDING_COST)
   });
 
   useEffect(() => {
@@ -108,7 +114,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       let sunColor = '#facc15'; 
       if (p.quadrant === QuadrantType.BETA) sunColor = '#ef4444';
       if (p.quadrant === QuadrantType.GAMA) sunColor = '#3b82f6';
-      if (p.quadrant === QuadrantType.DELTA) sunColor = '#ffffff';
+      if (p.quadrant === QuadrantType.DELTA) sunColor = '#000000'; // Black Hole
 
       if (isDay) {
           if (p.quadrant === QuadrantType.BETA) stateRef.current.skyGradient = ['#fecaca', '#b91c1c'];
@@ -124,12 +130,27 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       stateRef.current.stars = Array.from({ length: starCount }).map(() => ({ x: Math.random(), y: Math.random(), size: Math.random() * 0.8 + 0.4, alpha: isDay ? 0 : (Math.random() * 0.5 + 0.3) }));
 
       const skyObjects = [];
-      if (isDay) skyObjects.push({ x: 0.8, y: 0.2, size: 60, color: sunColor, type: 'sun', z: 5 });
+      // Use Sector-Specific Sun or Black Hole
+      if (isDay) {
+          const isDelta = p.quadrant === QuadrantType.DELTA;
+          skyObjects.push({ 
+              x: 0.8, y: 0.2, 
+              size: isDelta ? 50 : 30, 
+              color: sunColor, 
+              type: isDelta ? 'black_hole' : 'sun', 
+              z: 5 
+          });
+          
+          if (isDelta) {
+              skyObjects.push({ x: 0, y: 0, size: 6, color: '#ffffff', type: 'white_dwarf', orbitAngle: Math.random() * Math.PI * 2, orbitSpeed: 0.003, orbitRadiusX: 0.35, orbitRadiusY: 0.08, centerX: 0.8, centerY: 0.2, z: 0, trail: [] });
+          }
+      }
 
+      // Delta Sector Night Logic (Black Hole still visible as anomaly)
       if (p.quadrant === QuadrantType.DELTA && !isDay) {
           const bhX = 0.8; const bhY = 0.25;
           skyObjects.push({ x: bhX, y: bhY, size: 50, color: '#000000', type: 'black_hole', z: 10 });
-          skyObjects.push({ x: 0, y: 0, size: 6, color: '#ffffff', type: 'white_dwarf', orbitAngle: Math.random() * Math.PI * 2, orbitSpeed: 0.003, orbitRadiusX: 0.35, orbitRadiusY: 0.08, centerX: bhX, centerY: bhY, z: 0 });
+          skyObjects.push({ x: 0, y: 0, size: 6, color: '#ffffff', type: 'white_dwarf', orbitAngle: Math.random() * Math.PI * 2, orbitSpeed: 0.003, orbitRadiusX: 0.35, orbitRadiusY: 0.08, centerX: bhX, centerY: bhY, z: 0, trail: [] });
       } else if (p.quadrant === QuadrantType.GAMA && !isDay) {
           skyObjects.push({ x: 0.1 + Math.random() * 0.8, y: 0.05 + Math.random() * 0.2, size: 4 + Math.random() * 3, color: '#ffffff', type: 'comet', z: 5 });
       }
@@ -139,12 +160,12 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       if (moonCount === 0 && Math.random() > 0.25 && !isDay) moonCount = 1 + (Math.random() > 0.7 ? 1 : 0);
       const visibleCount = Math.min(moonCount, 3);
       for(let i=0; i<visibleCount; i++) {
-          let size = 35 + Math.random() * 25;
+          let size = 25 + Math.random() * 15; // Slightly smaller moons
           if (i === 1) size *= 0.6; if (i === 2) size *= 0.4;
           let xBase = 0.15 + (i * 0.25);
           if (p.quadrant === QuadrantType.DELTA) xBase = 0.05 + (i * 0.2);
           const mColor = (existingMoons[i] && existingMoons[i].color) || (Math.random() > 0.5 ? '#e2e8f0' : '#94a3b8');
-          skyObjects.push({ x: xBase + (Math.random() * 0.05), y: 0.15 + Math.random() * 0.15, size: size, color: mColor, type: 'moon', phaseOffset: (Math.random() * 1.6) - 0.8, z: 20 });
+          skyObjects.push({ x: xBase + (Math.random() * 0.05), y: 0.15 + Math.random() * 0.15, size: size, color: mColor, type: 'moon', phaseOffset: Math.random(), z: 20 });
       }
       stateRef.current.environmentDetails.skyObjects = skyObjects;
 
@@ -152,7 +173,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       const pColor = p.color || '#94a3b8';
       let biomeType = 'barren'; let groundColor = '#0f172a'; let terrainType = 'flat';
 
-      if (['#10b981', '#064e3b', '#15803d', '#a3e635', '#60a5fa', '#3b82f6'].includes(pColor)) { biomeType = 'nature'; groundColor = pColor.includes('blue') ? '#1e3a8a' : '#064e3b'; terrainType = 'flat'; }
+      if (['#10b981', '#064e3b', '#60a5fa', '#3b82f6'].includes(pColor)) { biomeType = 'nature'; groundColor = pColor.includes('blue') ? '#1e3a8a' : '#064e3b'; terrainType = 'flat'; }
       else if (['#334155', '#64748b', '#475569', '#1e293b'].includes(pColor)) { biomeType = 'urban'; groundColor = '#1e293b'; terrainType = 'flat'; }
       else {
           biomeType = 'barren';
@@ -258,10 +279,46 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
               if (elapsed > TOTAL_DURATION) { onComplete(); return; }
           }
 
+          // --- FUEL CONSUMPTION LOGIC (Visual) ---
+          // Consume slightly when thrusting
+          // Tuned to consume exactly 0.3 units over 8 seconds approx
+          // Phase 1 (5s = 300f): 0.0009 * 300 = 0.27
+          // Phase 2 (3s = 180f): 0.0002 * 180 = 0.036
+          let burnRate = 0.0;
+          if (elapsed < DESCENT_DURATION) {
+             burnRate = 0.0009; // High burn high up (Retro-braking)
+          } else {
+             burnRate = 0.0002; // Low burn near ground (Hover)
+          }
+
+          if (thrustIntensity > 0 && s.internalFuel > s.targetFuel) {
+              s.internalFuel = Math.max(s.targetFuel, s.internalFuel - (burnRate * thrustIntensity));
+          }
+
           setLegExtension(legExt); setSuspension(susp); audioService.updateLandingThruster(thrustIntensity);
+          setVisualFuel(s.internalFuel); // Update UI every frame
+
           const renderGroundY = groundY + viewOffset; const renderShipY = s.shipY;
 
-          s.environmentDetails.skyObjects.forEach(obj => { if (obj.type === 'white_dwarf' && obj.centerX !== undefined && obj.orbitAngle !== undefined && obj.orbitSpeed !== undefined) { obj.orbitAngle += obj.orbitSpeed; const cx = obj.centerX * w; const cy = (obj.centerY || 0.25) * h; const rx = (obj.orbitRadiusX || 0.3) * w; const ry = (obj.orbitRadiusY || 0.1) * h; obj.x = (cx + Math.cos(obj.orbitAngle) * rx) / w; obj.y = (cy + Math.sin(obj.orbitAngle) * ry) / h; obj.z = Math.sin(obj.orbitAngle) < 0 ? 5 : 20; } });
+          // Update Orbiting Bodies (White Dwarf)
+          s.environmentDetails.skyObjects.forEach(obj => { 
+              if (obj.type === 'white_dwarf' && obj.centerX !== undefined && obj.orbitAngle !== undefined && obj.orbitSpeed !== undefined) { 
+                  obj.orbitAngle += obj.orbitSpeed; 
+                  const cx = obj.centerX * w; 
+                  const cy = (obj.centerY || 0.25) * h; 
+                  const rx = (obj.orbitRadiusX || 0.3) * w; 
+                  const ry = (obj.orbitRadiusY || 0.1) * h; 
+                  obj.x = (cx + Math.cos(obj.orbitAngle) * rx) / w; 
+                  obj.y = (cy + Math.sin(obj.orbitAngle) * ry) / h; 
+                  obj.z = Math.sin(obj.orbitAngle) < 0 ? 5 : 20; 
+                  
+                  // Trail Logic
+                  if (!obj.trail) obj.trail = [];
+                  obj.trail.push({x: obj.x * w, y: obj.y * h, alpha: 1.0});
+                  if (obj.trail.length > 20) obj.trail.shift();
+              } 
+          });
+          
           s.environmentDetails.skyObjects.sort((a,b) => (a.z || 0) - (b.z || 0));
 
           const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, s.skyGradient[0]); grad.addColorStop(1, s.skyGradient[1]); ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
@@ -269,7 +326,88 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
           if (!s.isDay) { ctx.fillStyle = '#ffffff'; s.stars.forEach(star => { const sy = (star.y * h - s.starScrollY * star.size * 100) % h; ctx.globalAlpha = star.alpha; ctx.beginPath(); ctx.arc(star.x * w, (sy < 0 ? sy + h : sy), star.size, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1.0; }
 
           const skyOffset = viewOffset * 0.1;
-          s.environmentDetails.skyObjects.forEach(obj => { const mx = obj.x * w; const my = (obj.y * h) - skyOffset; if (obj.type === 'sun') { ctx.save(); const shine = ctx.createRadialGradient(mx, my, obj.size * 0.5, mx, my, obj.size * 2); shine.addColorStop(0, obj.color); shine.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = shine; ctx.beginPath(); ctx.arc(mx, my, obj.size * 2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowColor = obj.color; ctx.shadowBlur = 30; ctx.beginPath(); ctx.arc(mx, my, obj.size * 0.8, 0, Math.PI*2); ctx.fill(); ctx.restore(); } else if (obj.type === 'moon') { ctx.save(); ctx.fillStyle = s.isDay ? 'rgba(255,255,255,0.5)' : 'rgba(20, 20, 30, 0.9)'; ctx.beginPath(); ctx.arc(mx, my, obj.size, 0, Math.PI*2); ctx.fill(); const phase = obj.phaseOffset || 0; ctx.fillStyle = s.isDay ? 'rgba(255,255,255,0.8)' : obj.color; ctx.beginPath(); ctx.arc(mx, my, obj.size, -Math.PI/2, Math.PI/2); ctx.bezierCurveTo(mx + (obj.size * phase * 1.5), my + obj.size, mx + (obj.size * phase * 1.5), my - obj.size, mx, my - obj.size); ctx.fill(); ctx.restore(); } });
+          
+          s.environmentDetails.skyObjects.forEach(obj => { 
+              const mx = obj.x * w; 
+              const my = (obj.y * h) - skyOffset; 
+              
+              if (obj.type === 'sun') { 
+                  ctx.save(); 
+                  const shine = ctx.createRadialGradient(mx, my, obj.size * 0.5, mx, my, obj.size * 2); 
+                  shine.addColorStop(0, obj.color); 
+                  shine.addColorStop(1, 'rgba(0,0,0,0)'); 
+                  ctx.fillStyle = shine; 
+                  ctx.beginPath(); ctx.arc(mx, my, obj.size * 2, 0, Math.PI*2); ctx.fill(); 
+                  ctx.fillStyle = '#fff'; 
+                  ctx.shadowColor = obj.color; 
+                  ctx.shadowBlur = 30; 
+                  ctx.beginPath(); ctx.arc(mx, my, obj.size * 0.8, 0, Math.PI*2); ctx.fill(); 
+                  ctx.restore(); 
+              } else if (obj.type === 'black_hole') {
+                  // BLACK HOLE (Occlusion Logic)
+                  
+                  // 1. Back Ring
+                  const rotation = -0.2;
+                  ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)'; 
+                  ctx.lineWidth = 2;
+                  ctx.beginPath();
+                  ctx.ellipse(mx, my, obj.size * 1.5, obj.size * 0.2, rotation, Math.PI, 2 * Math.PI);
+                  ctx.stroke();
+
+                  // 2. Body
+                  const bhGlow = ctx.createRadialGradient(mx, my, obj.size * 0.2, mx, my, obj.size * 1.5);
+                  bhGlow.addColorStop(0, '#000000');
+                  bhGlow.addColorStop(0.4, '#a855f7'); 
+                  bhGlow.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = bhGlow;
+                  ctx.beginPath(); ctx.arc(mx, my, obj.size * 1.5, 0, Math.PI*2); ctx.fill();
+                  
+                  ctx.fillStyle = '#000';
+                  ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
+                  ctx.beginPath(); ctx.arc(mx, my, obj.size * 0.4, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+                  
+                  // 3. Front Ring
+                  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+                  ctx.lineWidth = 2;
+                  ctx.beginPath(); 
+                  ctx.ellipse(mx, my, obj.size * 1.5, obj.size * 0.2, rotation, 0, Math.PI); 
+                  ctx.stroke();
+
+              } else if (obj.type === 'moon') { 
+                  ctx.save(); 
+                  ctx.fillStyle = s.isDay ? 'rgba(255,255,255,0.5)' : 'rgba(20, 20, 30, 0.9)'; 
+                  ctx.beginPath(); ctx.arc(mx, my, obj.size, 0, Math.PI*2); ctx.fill(); 
+                  
+                  // Phase Rendering
+                  const phase = obj.phaseOffset || 0.5; 
+                  const shadowOffset = (phase - 0.5) * 2 * obj.size;
+                  ctx.fillStyle = s.skyGradient[0]; 
+                  ctx.beginPath(); 
+                  ctx.arc(mx + shadowOffset, my, obj.size, 0, Math.PI*2);
+                  ctx.fill(); 
+                  ctx.restore(); 
+              } else if (obj.type === 'white_dwarf') {
+                  // Trail
+                  if (obj.trail) {
+                      ctx.lineCap = 'round';
+                      obj.trail.forEach((tp, i) => {
+                          const size = 1 + (i/20)*3;
+                          const alpha = (i/20) * 0.6;
+                          ctx.fillStyle = `rgba(165, 243, 252, ${alpha})`;
+                          // Apply view offset to trail points
+                          const ty = tp.y - skyOffset;
+                          ctx.beginPath(); ctx.arc(tp.x, ty, size, 0, Math.PI*2); ctx.fill();
+                      });
+                  }
+                  // Star
+                  ctx.fillStyle = '#ffffff';
+                  ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 10;
+                  ctx.beginPath(); ctx.arc(mx, my, 4, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+              }
+          });
+          
           if (allowShootingStars && Math.random() < 0.02) s.particles.push({ x: Math.random() * w, y: Math.random() * (h * 0.4), vx: -15 - Math.random() * 10, vy: 2 + Math.random() * 2, size: 2, life: 0.4, maxLife: 0.4, type: 'shooting_star' });
 
           if (renderGroundY < h + 200) {
@@ -393,7 +531,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
           <div className="flex gap-4">
               <Gauge value={altitude} max={30000} label="ALTITUDE" unit="METERS" color="#3b82f6" />
               <Gauge value={speed} max={1500} label="DESCENT" unit="KM/H" color="#facc15" />
-              <Gauge value={currentFuel} max={maxFuel} label="FUEL" unit="UNITS" color="#ef4444" />
+              <Gauge value={visualFuel} max={maxFuel} label="FUEL" unit="UNITS" color="#ef4444" />
           </div>
           
           <div className="flex flex-col items-end gap-2">

@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 21
-// VERSION: Beta 21 - Stability Checkpoint
+// CHECKPOINT: Beta 22
+// VERSION: Beta 22 - Exotic Weapons Overhaul
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -191,43 +191,44 @@ export const SHIPS: ExtendedShipConfig[] = [
     noseGunCooldown: 100,
     noseGunColor: '#ef4444' 
   },
-  // --- LOCKED: ALIEN SHIP DESIGNS (UPDATED PER REQUEST) ---
+  // --- LOCKED: ALIEN SHIP DESIGNS ---
+  // Modified: Removed default exotic weapons, set noseGunColor to standard energy colors
   {
     id: 'alien_h', name: 'Xenon H-Class', description: 'Heavy twin-pontoon cruiser.',
     price: 900000, maxEnergy: 20000, maxCargo: 2500, speed: 6, shape: 'block', canLayMines: true,
     defaultColor: '#3f6212', engines: 2, defaultGuns: 2, noseType: 'flat', wingConfig: 'balanced', gunMount: 'hull',
     wingStyle: 'alien-h', wingCurve: 'neutral', hullShapeType: 'none', maxFuel: 15.0, landingGearType: 'mechanical',
-    isAlien: true, noseGunDamage: 200, noseGunCooldown: 300, noseGunColor: '#84cc16', weaponId: 'exotic_trident'
+    isAlien: true, noseGunDamage: 200, noseGunCooldown: 300, noseGunColor: '#84cc16'
   },
   {
     id: 'alien_w', name: 'Xenon W-Class', description: 'Aggressive assault fighter.',
     price: 1100000, maxEnergy: 25000, maxCargo: 2000, speed: 9, shape: 'wing', canLayMines: true,
     defaultColor: '#7c2d12', engines: 2, defaultGuns: 2, noseType: 'flat', wingConfig: 'front-heavy', gunMount: 'wing',
     wingStyle: 'alien-w', wingCurve: 'forward', hullShapeType: 'none', maxFuel: 12.0, landingGearType: 'insect',
-    isAlien: true, noseGunDamage: 250, noseGunCooldown: 150, noseGunColor: '#fb923c', weaponId: 'exotic_plasma_jet'
+    isAlien: true, noseGunDamage: 250, noseGunCooldown: 150, noseGunColor: '#fb923c'
   },
   {
     id: 'alien_a', name: 'Xenon A-Class', description: 'Delta-wing interceptor.',
     price: 1300000, maxEnergy: 18000, maxCargo: 1500, speed: 11, shape: 'arrow', canLayMines: false,
     defaultColor: '#1e3a8a', engines: 2, defaultGuns: 1, noseType: 'flat', wingConfig: 'rear-heavy', gunMount: 'hull',
     wingStyle: 'alien-a', wingCurve: 'backward', hullShapeType: 'none', maxFuel: 10.0, landingGearType: 'skids',
-    isAlien: true, noseGunDamage: 220, noseGunCooldown: 120, noseGunColor: '#60a5fa', weaponId: 'exotic_rainbow_cloud'
+    isAlien: true, noseGunDamage: 220, noseGunCooldown: 120, noseGunColor: '#60a5fa'
   },
   {
     id: 'alien_m', name: 'Xenon M-Class', description: 'Twin-peak heavy bomber.',
     price: 1500000, maxEnergy: 30000, maxCargo: 4000, speed: 5, shape: 'frigate', canLayMines: true,
     defaultColor: '#4c1d95', engines: 2, defaultGuns: 2, noseType: 'flat', wingConfig: 'balanced', gunMount: 'strut',
     wingStyle: 'alien-m', wingCurve: 'neutral', hullShapeType: 'none', maxFuel: 20.0, landingGearType: 'magnetic',
-    isAlien: true, noseGunDamage: 300, noseGunCooldown: 200, noseGunColor: '#d8b4fe', weaponId: 'exotic_electric'
+    isAlien: true, noseGunDamage: 300, noseGunCooldown: 200, noseGunColor: '#d8b4fe'
   }
 ];
 // --- END LOCKED SHIP DESIGNS ---
 
-// --- LOCKED: BOSS SHIP DESIGNS (UPDATED: Valid Weapons) ---
+// --- LOCKED: BOSS SHIP DESIGNS ---
 export const BOSS_SHIPS: ExtendedShipConfig[] = [
-  { id: 'boss_alpha', name: 'Xenos Overlord', description: 'Heavy command ship.', price: 0, maxEnergy: 5000, maxCargo: 0, speed: 2, shape: 'frigate', canLayMines: true, engines: 6, defaultGuns: 2, noseType: 'flat', wingConfig: 'front-heavy', gunMount: 'strut', wingStyle: 'alien-h', wingCurve: 'forward', hullShapeType: 'none', maxFuel: 100, weaponId: 'exotic_trident', landingGearType: 'magnetic', noseGunDamage: 10, noseGunCooldown: 100, noseGunColor: '#f00', isAlien: true },
-  { id: 'boss_beta', name: 'Void Reaver', description: 'Scythe-like wings.', price: 0, maxEnergy: 6000, maxCargo: 0, speed: 3, shape: 'stealth', canLayMines: true, engines: 4, defaultGuns: 1, noseType: 'rounded', wingConfig: 'rear-heavy', gunMount: 'strut', wingStyle: 'alien-a', wingCurve: 'backward', hullShapeType: 'none', maxFuel: 100, weaponId: 'exotic_rainbow_cloud', landingGearType: 'insect', noseGunDamage: 10, noseGunCooldown: 100, noseGunColor: '#f00', isAlien: true },
-  { id: 'boss_gamma', name: 'Star Devourer', description: 'Diamond hull titan.', price: 0, maxEnergy: 8000, maxCargo: 0, speed: 1.5, shape: 'star-t', canLayMines: true, engines: 8, defaultGuns: 2, noseType: 'flat', wingConfig: 'balanced', gunMount: 'strut', wingStyle: 'alien-m', wingCurve: 'neutral', hullShapeType: 'none', maxFuel: 100, weaponId: 'exotic_electric', landingGearType: 'mechanical', noseGunDamage: 10, noseGunCooldown: 100, noseGunColor: '#f00', isAlien: true },
+  { id: 'boss_alpha', name: 'Xenos Overlord', description: 'Heavy command ship.', price: 0, maxEnergy: 5000, maxCargo: 0, speed: 2, shape: 'frigate', canLayMines: true, engines: 6, defaultGuns: 2, noseType: 'flat', wingConfig: 'front-heavy', gunMount: 'strut', wingStyle: 'alien-h', wingCurve: 'forward', hullShapeType: 'none', maxFuel: 100, weaponId: 'exotic_star_shatter', landingGearType: 'magnetic', noseGunDamage: 10, noseGunCooldown: 100, noseGunColor: '#f00', isAlien: true },
+  { id: 'boss_beta', name: 'Void Reaver', description: 'Scythe-like wings.', price: 0, maxEnergy: 6000, maxCargo: 0, speed: 3, shape: 'stealth', canLayMines: true, engines: 4, defaultGuns: 1, noseType: 'rounded', wingConfig: 'rear-heavy', gunMount: 'strut', wingStyle: 'alien-a', wingCurve: 'backward', hullShapeType: 'none', maxFuel: 100, weaponId: 'exotic_rainbow_spread', landingGearType: 'insect', noseGunDamage: 10, noseGunCooldown: 100, noseGunColor: '#f00', isAlien: true },
+  { id: 'boss_gamma', name: 'Star Devourer', description: 'Diamond hull titan.', price: 0, maxEnergy: 8000, maxCargo: 0, speed: 1.5, shape: 'star-t', canLayMines: true, engines: 8, defaultGuns: 2, noseType: 'flat', wingConfig: 'balanced', gunMount: 'strut', wingStyle: 'alien-m', wingCurve: 'neutral', hullShapeType: 'none', maxFuel: 100, weaponId: 'exotic_gravity_wave', landingGearType: 'mechanical', noseGunDamage: 10, noseGunCooldown: 100, noseGunColor: '#f00', isAlien: true },
 ];
 // --- END LOCKED BOSS DESIGNS ---
 
@@ -245,34 +246,34 @@ export const WEAPONS: Weapon[] = [
   { id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 25, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' } 
 ];
 
-// 9 DISTINCT FANTASY EXOTIC WEAPONS
+// 9 DISTINCT EXOTIC WEAPONS
 export const EXOTIC_WEAPONS: Weapon[] = [
-  // 1. Solar Flare: Round balls of fire, color based on crystal
-  { id: 'exotic_fireball', name: 'Solar Flare', type: WeaponType.PROJECTILE, price: 250000, damage: 300, fireRate: 5, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#f97316', barrelCount: 1 }, 
+  // 1. Star Shatter: Spread of energy small stars, 90 deg angle
+  { id: 'exotic_star_shatter', name: 'Star Shatter', type: WeaponType.PROJECTILE, price: 450000, damage: 120, fireRate: 6, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 1 },
   
-  // 2. Magma Slug: Plasma jets, thin head/tail, fat middle (elongated)
-  { id: 'exotic_plasma_jet', name: 'Magma Slug', type: WeaponType.PROJECTILE, price: 275000, damage: 350, fireRate: 4, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 1 }, 
+  // 2. Dragon Breath: Spreading fire flames on a 30 deg angle range half of screen
+  { id: 'exotic_flamer', name: 'Dragon Breath', type: WeaponType.PROJECTILE, price: 120000, damage: 35, fireRate: 15, energyCost: 2, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 3 },
   
-  // 3. Arc Generator: Shoots electricity (lightning) - STRONGEST
-  { id: 'exotic_electric', name: 'Arc Generator', type: WeaponType.LASER, price: 600000, damage: 600, fireRate: 5, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff', barrelCount: 3 }, 
+  // 3. Rainbow Nova: 6 color balls of plasma, 100 deg angle, 3/2 screen height
+  { id: 'exotic_rainbow_spread', name: 'Rainbow Nova', type: WeaponType.PROJECTILE, price: 550000, damage: 200, fireRate: 5, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff', barrelCount: 6 },
   
-  // 4. Sonic Ring: Shoots rings of plasma
-  { id: 'exotic_wave', name: 'Sonic Ring', type: WeaponType.PROJECTILE, price: 320000, damage: 280, fireRate: 6, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#8b5cf6', barrelCount: 1 }, 
+  // 4. Zeus Thunderbolt: Electricity bolts (Renamed)
+  { id: 'exotic_electric', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 600000, damage: 600, fireRate: 4, energyCost: 6, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff', barrelCount: 3 },
   
-  // 5. Void Comet: Round energy ball with gas tail
-  { id: 'exotic_comet', name: 'Void Comet', type: WeaponType.PROJECTILE, price: 350000, damage: 450, fireRate: 3, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#d8b4fe', barrelCount: 1 }, 
+  // 5. Octo Burst: Spreading little balls all at once in 8 directions ahead
+  { id: 'exotic_octo_burst', name: 'Octo Burst', type: WeaponType.PROJECTILE, price: 380000, damage: 150, fireRate: 6, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7', barrelCount: 8 },
   
-  // 6. Dragon Breath: Flamethrower (Short range, high falloff, high rate) - CHEAPEST
-  { id: 'exotic_flamer', name: 'Dragon Breath', type: WeaponType.PROJECTILE, price: 120000, damage: 35, fireRate: 15, energyCost: 2, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 3 }, 
+  // 6. Sonic Ring: Shooting rings of plasma that grow
+  { id: 'exotic_wave', name: 'Sonic Ring', type: WeaponType.PROJECTILE, price: 320000, damage: 280, fireRate: 5, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#8b5cf6', barrelCount: 1 },
   
-  // 7. Trident Beam: 3 Parallel bullets
-  { id: 'exotic_trident', name: 'Trident Beam', type: WeaponType.LASER, price: 420000, damage: 150, fireRate: 5, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#34d399', barrelCount: 3 }, 
+  // 7. Gravity Wave: Shooting arcs of circle similar to tractor beam
+  { id: 'exotic_gravity_wave', name: 'Gravity Wave', type: WeaponType.PROJECTILE, price: 400000, damage: 350, fireRate: 3, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#10b981', barrelCount: 1 },
   
-  // 8. Chaos Spreader: Scatter bullets large angle - Rotating Stars
-  { id: 'exotic_scatter', name: 'Chaos Spreader', type: WeaponType.PROJECTILE, price: 450000, damage: 120, fireRate: 8, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 6 }, 
-
-  // 9. Plasma Rainbow: 6 bullets, 90 deg coverage, Red/Yellow/Blue
-  { id: 'exotic_rainbow_cloud', name: 'Plasma Rainbow', type: WeaponType.LASER, price: 550000, damage: 200, fireRate: 6, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff', barrelCount: 6 }
+  // 8. Plasma Orb: Just shooting orbs of plasma
+  { id: 'exotic_plasma_orb', name: 'Plasma Orb', type: WeaponType.PROJECTILE, price: 275000, damage: 450, fireRate: 4, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#f472b6', barrelCount: 1 },
+  
+  // 9. Phaser Sweep: Continuous beam, 2 sweeps/sec (rate 60, damage/E reduced per tick)
+  { id: 'exotic_phaser_sweep', name: 'Phaser Sweep', type: WeaponType.LASER, price: 500000, damage: 20, fireRate: 60, energyCost: 0.5, cargoWeight: 0, isAmmoBased: false, beamColor: '#facc15', barrelCount: 1 }
 ];
 
 export const SHIELDS: Shield[] = [
