@@ -120,14 +120,24 @@ export interface OwnedShipInstance {
 
 export type ShipPart = 'hull' | 'wings' | 'cockpit' | 'guns' | 'secondary_guns' | 'gun_body' | 'engines' | 'bars' | 'nozzles';
 
+export type MessageCategory = 'system' | 'combat';
+
 export interface GameMessage {
   id: string;
   type: 'activity' | 'score';
+  category?: MessageCategory; // Added category
   pilotName: string;
   pilotAvatar: string;
   text: string;
   score?: number;
   timestamp: number;
+}
+
+export interface LeaderboardEntry {
+  name: string;
+  score: number;
+  avatar: string;
+  date: number;
 }
 
 export interface PlanetStatusData {
@@ -169,7 +179,7 @@ export interface GameState {
   activeTaskForceIndex: number;
   pilotName: string;
   pilotAvatar: string;
-  pilotZoom: number; // Added: Camera Zoom level for pilot avatar
+  pilotZoom: number; 
   gameInProgress: boolean;
   victories: number;
   failures: number;
@@ -177,6 +187,7 @@ export interface GameState {
   reserveByPlanet: Record<string, CargoItem[]>;
   marketListingsByPlanet: Record<string, CargoItem[]>;
   messages: GameMessage[];
+  leaderboard: LeaderboardEntry[]; // Added Leaderboard
   planetOrbitOffsets: Record<string, number>;
   universeStartTime: number;
   planetRegistry: Record<string, PlanetStatusData>;
@@ -193,7 +204,7 @@ export interface GameSettings {
   autosaveEnabled: boolean;
   showTransitions: boolean;
   testMode?: boolean;
-  fontSize: 'small' | 'medium' | 'large' | 'extra-large'; // Added extra-large
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large'; 
 }
 
 export interface Moon {

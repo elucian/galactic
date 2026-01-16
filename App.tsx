@@ -17,7 +17,8 @@ import { OptionsDialog } from './components/OptionsDialog.tsx';
 import { ManualDialog } from './components/ManualDialog.tsx';
 import { StoryScene } from './components/StoryScene.tsx';
 import { audioService } from './services/audioService.ts';
-import { GameState, MissionType, QuadrantType, ShipFitting, CargoItem, EquippedWeapon, DisplayMode, GameMessage, GameSettings, Planet, Moon, ShipPart, Shield, PlanetStatusData, AmmoType } from './types.ts';
+import { backendService } from './services/backendService.ts';
+import { GameState, MissionType, QuadrantType, ShipFitting, CargoItem, EquippedWeapon, DisplayMode, GameMessage, GameSettings, Planet, Moon, ShipPart, Shield, PlanetStatusData, AmmoType, LeaderboardEntry } from './types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG } from './constants.ts';
 
 const SAVE_KEY = 'galactic_defender_beta_21'; 
@@ -49,25 +50,20 @@ export default function App() {
     initialOwned.forEach((os, idx) => { 
       const config = SHIPS.find(s => s.id === os.shipTypeId)!;
       const weapons = Array(3).fill(null);
-      
-      // Default Weapon Allocation:
-      // First 3 ships (index 0,1,2 in SHIPS list) get Level 1 Pulse Laser
-      // Last 2 ships (index 3,4 in SHIPS list) get Level 4 Photon Emitter
-      // Here we check against config ID to determine default loadout if matching standard ships
       const shipIndex = SHIPS.findIndex(s => s.id === config.id);
       
       if (shipIndex >= 3 && shipIndex <= 4) {
-          weapons[0] = { id: 'gun_photon', count: 1 }; // High Level
+          weapons[0] = { id: 'gun_photon', count: 1 };
       } else {
-          weapons[0] = { id: 'gun_pulse', count: 1 }; // Low Level
+          weapons[0] = { id: 'gun_pulse', count: 1 };
       }
 
       initialFittings[os.instanceId] = { 
           weapons, 
           shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', 
-          rocketCount: 2, // Updated to 2
-          mineCount: 2,   // Updated to 2
-          redMineCount: 0, // Init Omega Mines
+          rocketCount: 2, 
+          mineCount: 2,   
+          redMineCount: 0, 
           hullPacks: 0, wingWeaponId: null, 
           health: 100, ammoPercent: 100, lives: 1, fuel: config.maxFuel, cargo: [],
           ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 },
@@ -91,7 +87,8 @@ export default function App() {
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
       currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, marketListingsByPlanet: {},
-      messages: [{ id: 'init', type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }],
+      messages: [{ id: 'init', type: 'activity', category: 'system', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }],
+      leaderboard: [],
       planetOrbitOffsets: initialOffsets,
       universeStartTime: Date.now(),
       planetRegistry: initialRegistry
@@ -104,6 +101,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (!parsed.settings.fontSize) parsed.settings.fontSize = 'medium';
         if (!parsed.customColors) parsed.customColors = ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'];
+        if (!parsed.leaderboard) parsed.leaderboard = []; // Ensure leaderboard exists
         if (!parsed.planetRegistry) {
             const reg: Record<string, PlanetStatusData> = {};
             PLANETS.forEach((p, i) => { reg[p.id] = { id: p.id, status: i === 0 ? 'friendly' : p.status, wins: 0, losses: 0 }; });
@@ -124,10 +122,9 @@ export default function App() {
             }
             if (fit.magazineCurrent === undefined) fit.magazineCurrent = 200;
             if (fit.reloadTimer === undefined) fit.reloadTimer = 0;
-            if (fit.redMineCount === undefined) fit.redMineCount = 0; // Migrated
+            if (fit.redMineCount === undefined) fit.redMineCount = 0; 
         });
 
-        // Init pilotZoom
         if (parsed.pilotZoom === undefined) parsed.pilotZoom = 1.0;
 
         return { ...createInitialState(), ...parsed }; 
@@ -183,6 +180,34 @@ export default function App() {
   const dockedPlanet = PLANETS.find(p => p.id === dockedId);
   const currentReserves = useMemo(() => gameState.reserveByPlanet[dockedId] || [], [gameState.reserveByPlanet, dockedId]);
 
+  // Initial Backend Sync & Welcome
+  useEffect(() => {
+      // Load leaderboard on mount
+      backendService.getLeaderboard().then(lb => {
+          setGameState(p => ({ ...p, leaderboard: lb }));
+      });
+
+      // Simple session welcome (if not already logged this session)
+      const hasWelcomed = sessionStorage.getItem('has_welcomed_session');
+      if (!hasWelcomed) {
+          backendService.registerUser(gameState.pilotName).then(msg => {
+              setGameState(p => ({
+                  ...p,
+                  messages: [{
+                      id: `sys_${Date.now()}`,
+                      type: 'activity',
+                      category: 'system',
+                      pilotName: 'SYSTEM',
+                      pilotAvatar: '🛰️',
+                      text: msg,
+                      timestamp: Date.now()
+                  }, ...p.messages]
+              }));
+              sessionStorage.setItem('has_welcomed_session', 'true');
+          });
+      }
+  }, [gameState.pilotName]);
+
   useEffect(() => {
     localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
     audioService.updateVolume(gameState.settings.musicVolume);
@@ -213,7 +238,6 @@ export default function App() {
         const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; const newCargo = [...fit.cargo]; const newReserve = [...(prev.reserveByPlanet[dockedId] || [])];
         let currentHp = fit.health; const hpNeeded = 100 - currentHp; let hpRestored = 0;
         const resourcePriority = ['iron', 'copper', 'chromium', 'titanium', 'gold', 'repair', 'platinum', 'lithium'];
-        // Updated repair value for 'repair' (Nanite Pack) to 50%
         const repairValues: Record<string, number> = { iron: 2, copper: 4, chromium: 10, titanium: 16, gold: 20, repair: 50, platinum: 50, lithium: 80 };
         const processList = (list: CargoItem[]) => {
             let totalRestored = 0;
@@ -241,7 +265,6 @@ export default function App() {
   };
 
   const refuelSelected = () => {
-    // ... [Refuel logic]
     if (!gameState.selectedShipInstanceId || !selectedShipConfig) return;
     const sId = gameState.selectedShipInstanceId;
     const fit = gameState.shipFittings[sId];
@@ -268,11 +291,9 @@ export default function App() {
     
     setLaunchDestination('map'); 
     
-    // Defer fuel deduction if transition is enabled, so cinematic shows full fuel bar
     if (gameState.settings.showTransitions) { 
         setScreen('launch'); 
     } else { 
-        // Immediate deduction if no transition
         setGameState(prev => { 
             const sId = prev.selectedShipInstanceId!; 
             const fit = prev.shipFittings[sId]; 
@@ -290,7 +311,6 @@ export default function App() {
   };
 
   const handleLaunchSequenceComplete = () => { 
-      // Deduct fuel NOW after cinematic completes
       setGameState(prev => { 
           const sId = prev.selectedShipInstanceId!; 
           const fit = prev.shipFittings[sId]; 
@@ -312,12 +332,21 @@ export default function App() {
       } 
   };
 
-  const handleGameOver = (success: boolean, score: number, aborted: boolean, payload: any) => {
+  const handleGameOver = async (success: boolean, score: number, aborted: boolean, payload: any) => {
+    // 1. Process Local Game State
+    let rankAchieved: number | null = null;
+    let newLeaderboard: LeaderboardEntry[] = [];
+
+    // Backend Score Submission
+    if (success) {
+        rankAchieved = await backendService.submitScore(gameState.pilotName, gameState.credits + score + 5000, gameState.pilotAvatar);
+        newLeaderboard = await backendService.getLeaderboard();
+    }
+
     setGameState(prev => {
        const newCredits = prev.credits + score + (success ? 5000 : 0);
        const sId = prev.selectedShipInstanceId!;
        const fitting = prev.shipFittings[sId];
-       // Preserve state including ammo
        const updatedFitting = { 
            ...fitting, 
            health: payload?.health ?? 0, 
@@ -336,18 +365,51 @@ export default function App() {
        const pEntry = { ...reg[currentPId] };
        let newMessages = [...prev.messages];
 
+       // NEW: Message Handling
        if (success) {
            pEntry.wins += 1; pEntry.losses = 0; 
-           // WIN CONDITION: 1 Win = Friendly
            if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { 
                pEntry.status = 'friendly'; 
                pEntry.wins = 0; 
-               newMessages.unshift({ id: `msg_${Date.now()}`, type: 'activity', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `SECTOR ${prev.currentPlanet?.name} LIBERATED. LANDING AUTHORIZED.`, timestamp: Date.now() }); 
+               // Combat Log
+               newMessages.unshift({ 
+                   id: `win_${Date.now()}`, 
+                   type: 'activity', 
+                   category: 'combat',
+                   pilotName: 'COMMAND', 
+                   pilotAvatar: '🛰️', 
+                   text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, 
+                   timestamp: Date.now() 
+               }); 
+           } else {
+               // Standard Victory Log
+               newMessages.unshift({ 
+                   id: `win_${Date.now()}`, 
+                   type: 'activity', 
+                   category: 'combat',
+                   pilotName: 'COMMAND', 
+                   pilotAvatar: '🛰️', 
+                   text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, 
+                   timestamp: Date.now() 
+               }); 
            }
+
+           // Top 20 Announcement
+           if (rankAchieved && rankAchieved <= 20) {
+                newMessages.unshift({
+                    id: `rank_${Date.now()}`,
+                    type: 'activity',
+                    category: 'system',
+                    pilotName: 'FLEET ADMIRALTY',
+                    pilotAvatar: '🎖️',
+                    text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`,
+                    timestamp: Date.now()
+                });
+           }
+
        } else {
            if (!aborted) {
                pEntry.losses += 1;
-               // LOSS CONDITION: 1 Loss = Regression
                if (pEntry.losses >= 1) {
                    pEntry.losses = 0;
                    const pIndex = PLANETS.findIndex(p => p.id === currentPId);
@@ -356,17 +418,38 @@ export default function App() {
                        const prevEntry = { ...reg[prevPId] };
                        let regressionHappened = false;
                        if (prevEntry.status === 'friendly') { prevEntry.status = 'siege'; regressionHappened = true; } else if (prevEntry.status === 'siege') { prevEntry.status = 'occupied'; regressionHappened = true; }
-                       if (regressionHappened) { reg[prevPId] = prevEntry; newMessages.unshift({ id: `msg_${Date.now()}`, type: 'activity', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, timestamp: Date.now() }); }
+                       if (regressionHappened) { 
+                           reg[prevPId] = prevEntry; 
+                           newMessages.unshift({ 
+                               id: `loss_${Date.now()}`, 
+                               type: 'activity', 
+                               category: 'combat',
+                               pilotName: 'COMMAND', 
+                               pilotAvatar: '⚠️', 
+                               text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, 
+                               timestamp: Date.now() 
+                           }); 
+                       }
                    }
                }
            }
        }
        reg[currentPId] = pEntry;
-       return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
+       
+       return { 
+           ...prev, 
+           credits: newCredits, 
+           shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, 
+           gameInProgress: false, 
+           planetRegistry: reg, 
+           messages: newMessages,
+           leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, // Update leaderboard state
+           currentQuadrant: prev.currentPlanet!.quadrant, 
+           dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId 
+       };
     });
 
     if (aborted) {
-        // RETREAT: Just return to hangar, do not play destruction/landing
         const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1'));
         const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA;
         const currentQuad = gameState.currentQuadrant;
@@ -392,21 +475,16 @@ export default function App() {
       const newOwned = prev.ownedShips.map(os => os.instanceId === sId ? { ...os, shipTypeId } : os); const newFittings = { ...prev.shipFittings };
       
       const newWeapons = Array(3).fill(null);
-      
-      // Determine default loadout based on ship type
       if (shipConfig.isAlien) {
           const wId = shipConfig.weaponId || 'exotic_plasma_orb';
-          // A-Class Alien gets 1 weapon (Main Slot)
           if (shipConfig.defaultGuns === 1) {
               newWeapons[0] = { id: wId, count: 1 };
           } 
-          // Other Aliens get 2 weapons (Wing Slots)
           else {
               newWeapons[1] = { id: wId, count: 1 };
               newWeapons[2] = { id: wId, count: 1 };
           }
       } else {
-          // Standard Ships Logic
           const shipIndex = SHIPS.findIndex(s => s.id === shipTypeId);
           if (shipIndex >= 3 && shipIndex <= 4) {
               newWeapons[0] = { id: 'gun_photon', count: 1 };
@@ -438,11 +516,7 @@ export default function App() {
       const qtyToBuy = item._buyAmount || 1;
       const currentCargoCount = fit.cargo.reduce((acc, c) => acc + c.quantity, 0);
       
-      // Calculate remaining space only if going to cargo
-      // Ordnance might fit in active slots first
-      // Check for Omega Mine specific logic
       if (currentCargoCount >= config.maxCargo && !((item.type === 'missile' && fit.rocketCount < 10) || (item.type === 'mine' && fit.mineCount < 10) || (item.id === 'ord_mine_red' && (fit.redMineCount || 0) < 5))) {
-          // If pure cargo item and full
           if (!['missile', 'mine'].includes(item.type) && item.id !== 'ord_mine_red') {
              audioService.playSfx('denied'); return; 
           }
@@ -459,7 +533,6 @@ export default function App() {
           let purchased = false;
           let remainingQty = qtyToBuy;
 
-          // Special Handling for Ordnance: Fill active slots first
           if (item.id === 'ord_mine_red') {
               const currentRed = updatedFit.redMineCount || 0;
               const space = 5 - currentRed;
@@ -487,7 +560,6 @@ export default function App() {
               }
           }
 
-          // Add remaining quantity to Cargo
           if (remainingQty > 0) {
               const cargoSpace = config.maxCargo - newCargo.reduce((acc, c) => acc + c.quantity, 0);
               const toCargo = Math.min(remainingQty, cargoSpace);
@@ -502,12 +574,10 @@ export default function App() {
                   updatedFit.cargo = newCargo;
                   purchased = true;
                   
-                  // NEW: Ammo Logic - Purchasing specific ammo sets it as active preference
                   if (item.type === 'ammo') {
                       updatedFit.selectedAmmo = item.id;
                   }
               } else if (!purchased) {
-                  // If we didn't buy anything active AND couldn't fit in cargo
                   return prev;
               }
           }
@@ -516,7 +586,7 @@ export default function App() {
               audioService.playSfx('buy');
               return { ...prev, credits: prev.credits - item.price, shipFittings: { ...prev.shipFittings, [sId]: updatedFit } }; 
           } else {
-              audioService.playSfx('denied'); // Cargo full
+              audioService.playSfx('denied'); 
               return prev;
           }
       });
@@ -530,19 +600,13 @@ export default function App() {
         const sId = prev.selectedShipInstanceId!; 
         const fit = prev.shipFittings[sId]; 
         let newCargo = [...fit.cargo]; 
-        
-        // 1. Get Source Item from Cargo
         const sourceItem = newCargo[cargoIdx];
         if (!sourceItem) return prev; 
-        
-        // 2. Remove/Decrement Source Item from Cargo
         if (sourceItem.quantity > 1) { 
             newCargo[cargoIdx] = { ...sourceItem, quantity: sourceItem.quantity - 1 }; 
         } else { 
             newCargo.splice(cargoIdx, 1); 
         } 
-        
-        // 3. Identify Existing Item in Slot
         let unmountId: string | null = null; 
         if (type === 'weapon') { 
             unmountId = fit.weapons[slotIdx]?.id || null; 
@@ -550,8 +614,6 @@ export default function App() {
             unmountId = slotIdx === 0 ? fit.shieldId : fit.secondShieldId; 
             if (unmountId === 'dev_god_mode') unmountId = null; 
         } 
-        
-        // 4. Move Existing Item to Cargo (Unmount)
         if (unmountId) { 
             const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === unmountId); 
             const existingCargoIdx = newCargo.findIndex(c => c.id === unmountId); 
@@ -568,8 +630,6 @@ export default function App() {
                 }); 
             } 
         } 
-        
-        // 5. Update Slot with New Item
         const newFits = { ...prev.shipFittings }; 
         if (type === 'weapon') { 
             const newWeps = [...fit.weapons]; 
@@ -579,7 +639,6 @@ export default function App() {
             const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; 
             newFits[sId] = { ...fit, [key]: sourceItem.id!, cargo: newCargo }; 
         } 
-        
         return { ...prev, shipFittings: newFits }; 
     }); 
     audioService.playSfx('click'); 
@@ -590,13 +649,10 @@ export default function App() {
     setGameState(prev => { 
         const sId = prev.selectedShipInstanceId!; 
         const fit = prev.shipFittings[sId], newCargo = [...fit.cargo]; 
-        
         const id = type === 'weapon' ? fit.weapons[slotIdx]?.id : (slotIdx === 0 ? fit.shieldId : fit.secondShieldId); 
         if (!id) return prev; 
-        
         const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === id); 
         const existingIdx = newCargo.findIndex(c => c.id === id); 
-        
         if (existingIdx >= 0) { 
             newCargo[existingIdx] = { ...newCargo[existingIdx], quantity: newCargo[existingIdx].quantity + 1 }; 
         } else { 
@@ -609,7 +665,6 @@ export default function App() {
                 quantity: 1 
             }); 
         } 
-        
         const newFits = { ...prev.shipFittings }; 
         if (type === 'weapon') { 
             const newWeps = [...fit.weapons]; 
@@ -678,7 +733,7 @@ export default function App() {
       <StoreDialog isOpen={isStoreOpen} onClose={() => setIsStoreOpen(false)} inspectedShipId={inspectedShipId} setInspectedShipId={setInspectedShipId} credits={gameState.credits} replaceShip={replaceShip} fontSize={gameState.settings.fontSize} testMode={!!gameState.settings.testMode} />
       <LoadoutDialog isOpen={isLoadoutOpen} onClose={() => setIsLoadoutOpen(false)} fitting={selectedFitting!} shipConfig={selectedShipConfig} loadoutTab={loadoutTab} setLoadoutTab={setLoadoutTab} activeFittingSlot={activeFittingSlot} setActiveFittingSlot={setActiveFittingSlot} unmountSlot={unmountSlot} mountFromCargo={mountFromCargo} testMode={!!gameState.settings.testMode} setGodMode={setGodMode} buyAmmo={buyAmmo} selectAmmo={selectAmmo} fontSize={gameState.settings.fontSize} />
       <PaintDialog isOpen={isPaintOpen} onClose={() => setIsPaintOpen(false)} selectedShipInstanceId={gameState.selectedShipInstanceId!} selectedShipConfig={selectedShipConfig} activePart={activePart} setActivePart={setActivePart} gameState={gameState} setPartColor={setPartColor} updateCustomColor={updateCustomColor} fontSize={gameState.settings.fontSize} />
-      <MessagesDialog isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} messages={gameState.messages} fontSize={gameState.settings.fontSize} />
+      <MessagesDialog isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} messages={gameState.messages} leaderboard={gameState.leaderboard} fontSize={gameState.settings.fontSize} />
       <OptionsDialog isOpen={isOptionsOpen} onClose={() => setIsOptionsOpen(false)} gameState={gameState} setGameState={setGameState} />
       <ManualDialog isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} manualPage={manualPage} setManualPage={setManualPage} fontSize={gameState.settings.fontSize} />
 
@@ -764,7 +819,6 @@ export default function App() {
                 setGameState(prev => {
                     const sId = prev.selectedShipInstanceId!;
                     const fit = prev.shipFittings[sId];
-                    // Deduct landing fuel cost (30% of launch cost = 0.3)
                     const newFuel = Math.max(0, fit.fuel - 0.3);
                     
                     return {
