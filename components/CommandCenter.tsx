@@ -50,29 +50,23 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   const fs = gameState.settings.fontSize || 'medium';
   
   // Dynamic Sizing Logic
-  // Titles: SM 11px / MD 13px / LG 16px
   const titleSize = fs === 'small' ? 'text-[11px]' : (fs === 'large' ? 'text-[16px]' : 'text-[13px]');
-  // Buttons: SM 10px / MD 12px / LG 14px
   const btnSize = fs === 'small' ? 'text-[10px]' : (fs === 'large' ? 'text-[14px]' : 'text-[12px]');
-  // Labels: SM 8px / MD 10px / LG 12px
   const lblSize = fs === 'small' ? 'text-[8px]' : (fs === 'large' ? 'text-[12px]' : 'text-[10px]');
   
   // Fleet Card Specific Sizes
   const cardTitleSize = fs === 'small' ? 'text-[9px]' : (fs === 'large' ? 'text-[13px]' : 'text-[11px]');
-  const cardUnitSize = fs === 'small' ? 'text-xs' : (fs === 'large' ? 'text-lg' : 'text-sm');
   const cardStatLabel = fs === 'small' ? 'text-[6px]' : (fs === 'large' ? 'text-[9px]' : 'text-[7px]');
   const cardBtnText = fs === 'small' ? 'text-[7px]' : (fs === 'large' ? 'text-[10px]' : 'text-[8px]');
 
-  // Avatar Size (Container + Icon Text)
+  // Avatar Size
   const pilotIconSize = fs === 'small' ? 'w-10 h-10 text-xl' : (fs === 'large' ? 'w-16 h-16 text-4xl' : 'w-12 h-12 text-2xl');
   // Footer Icon Size
   const footerIconClass = fs === 'small' ? 'w-10 h-10' : (fs === 'large' ? 'w-14 h-14' : 'w-12 h-12');
   const footerIconText = fs === 'small' ? 'text-lg' : (fs === 'large' ? 'text-3xl' : 'text-2xl');
   const footerSvgSize = fs === 'small' ? 'w-5 h-5' : (fs === 'large' ? 'w-8 h-8' : 'w-6 h-6');
-  // Footer Button Padding
   const btnPad = fs === 'small' ? 'px-6 py-2' : (fs === 'large' ? 'px-8 py-4' : 'px-7 py-3');
 
-  // Check if all ships are compromised (health <= 0)
   const allShipsCompromised = gameState.ownedShips.every(ship => {
       const fitting = gameState.shipFittings[ship.instanceId];
       return (fitting?.health || 0) <= 0;
@@ -132,7 +126,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
 
   return (
     <div className="flex-grow flex flex-col p-2 md:p-4 z-10 overflow-hidden relative w-full h-full bg-black">
-      {/* HEADER TITLE - Hidden on mobile portrait */}
+      {/* HEADER TITLE */}
       <div className="w-full text-center py-1 shrink-0 hidden md:block"><h1 className={`retro-font ${fs === 'small' ? 'text-[12px]' : (fs === 'large' ? 'text-[18px]' : 'text-[15px]')} text-emerald-500 uppercase tracking-[0.3em] opacity-80`}>COMMAND CENTER</h1></div>
       
       {/* HEADER */}
@@ -156,44 +150,48 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
         </div>
       </div>
 
-      {/* NAVIGATION BUTTONS (Visible only if needed) */}
-      <div className="w-full flex justify-between items-center px-1 py-1 h-8 shrink-0 relative z-20">
-          <button 
-            onClick={goPrev} 
-            disabled={startIndex === 0}
-            className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest transition-colors ${startIndex === 0 ? 'opacity-30 cursor-not-allowed text-zinc-600' : 'text-emerald-500 hover:text-emerald-400 animate-pulse'}`}
-          >
-             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
-             PREV UNIT
-          </button>
-          
-          <button 
-            onClick={goNext} 
-            disabled={startIndex >= maxIndex}
-            className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest transition-colors ${startIndex >= maxIndex ? 'opacity-30 cursor-not-allowed text-zinc-600' : 'text-emerald-500 hover:text-emerald-400 animate-pulse'}`}
-          >
-             NEXT UNIT
-             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
-          </button>
-      </div>
+      {/* EXTERNAL NAVIGATION BUTTONS (DESKTOP ONLY) */}
+      {itemsPerPage >= 3 && (
+          <div className="w-full flex justify-between items-center px-1 py-1 h-8 shrink-0 relative z-20">
+              <button 
+                onClick={goPrev} 
+                disabled={startIndex === 0}
+                className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest transition-colors ${startIndex === 0 ? 'opacity-30 cursor-not-allowed text-zinc-600' : 'text-emerald-500 hover:text-emerald-400 animate-pulse'}`}
+              >
+                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                 PREV UNIT
+              </button>
+              
+              <button 
+                onClick={goNext} 
+                disabled={startIndex >= maxIndex}
+                className={`flex items-center gap-1 text-[10px] font-black uppercase tracking-widest transition-colors ${startIndex >= maxIndex ? 'opacity-30 cursor-not-allowed text-zinc-600' : 'text-emerald-500 hover:text-emerald-400 animate-pulse'}`}
+              >
+                 NEXT UNIT
+                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+              </button>
+          </div>
+      )}
 
-      {/* FLEET CAROUSEL - No Scroll */}
+      {/* FLEET CAROUSEL */}
       <div 
         className="flex-grow flex w-full overflow-hidden mt-1 mb-2 p-1 relative"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
         {visibleShips.map((inst, visualIdx) => {
-          // Calculate true index based on start offset
           const trueIdx = startIndex + visualIdx;
           const f = gameState.shipFittings[inst.instanceId];
           const config = SHIPS.find(s => s.id === inst.shipTypeId);
           if (!config || !f) return null;
           const isSelected = gameState.selectedShipInstanceId === inst.instanceId;
           
-          // Resolve shields for visualization
           const s1 = f.shieldId ? (f.shieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.shieldId) || null) : null;
           const s2 = f.secondShieldId ? (f.secondShieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.secondShieldId) || null) : null;
+
+          // INTERNAL NAVIGATION LOGIC (Mobile/Tablet)
+          const showPrev = itemsPerPage < 3 && ((itemsPerPage === 1) || (itemsPerPage === 2 && visualIdx === 0));
+          const showNext = itemsPerPage < 3 && ((itemsPerPage === 1) || (itemsPerPage === 2 && visualIdx === 1));
 
           return (
             <div 
@@ -203,21 +201,48 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             >
                 <div 
                     onClick={() => { setGameState(p => ({ ...p, selectedShipInstanceId: inst.instanceId })); setActiveSlotIndex(trueIdx); }} 
-                    className={`flex flex-col items-center rounded-xl transition-all cursor-pointer relative h-full border-2 p-2 w-full
+                    className={`flex flex-col items-center rounded-xl transition-all cursor-pointer relative h-full border-2 p-2 w-full overflow-hidden
                     ${isSelected 
                         ? 'border-emerald-500 bg-zinc-900 shadow-[0_0_20px_rgba(16,185,129,0.1)] z-10' 
                         : 'border-zinc-800 bg-zinc-950 hover:border-zinc-600 hover:bg-zinc-900'}`}
                 >
-              
-                  {/* COMPACT HEADER */}
-                  <div className="w-full flex justify-between items-center mb-1 shrink-0 px-1 border-b border-zinc-800/50 pb-1">
-                      <span className={`retro-font ${cardTitleSize} text-emerald-500 uppercase truncate max-w-[60%]`}>{config.name}</span>
-                      <span className={`${cardUnitSize} uppercase text-zinc-500 font-black`}>UNIT 0{trueIdx + 1}</span>
+                  
+                  {/* CARD HEADER: Buttons & Title Vertically Aligned */}
+                  <div className="relative w-full h-12 flex items-center justify-center shrink-0 border-b border-zinc-800/50 mb-2">
+                      {/* EMBEDDED NAV PREV */}
+                      {showPrev && startIndex > 0 && (
+                          <button 
+                              onClick={(e) => { e.stopPropagation(); goPrev(); }}
+                              className="absolute left-0 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center bg-zinc-800/80 border border-zinc-600 text-emerald-500 rounded hover:bg-zinc-700 active:scale-95 transition-all shadow-lg z-30"
+                          >
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                  <path d="M15 19l-7-7 7-7v14z" />
+                              </svg>
+                          </button>
+                      )}
+
+                      {/* SHIP NAME CENTERED */}
+                      <span className={`retro-font ${cardTitleSize} text-emerald-500 uppercase truncate text-center px-10 w-full`}>
+                          {config.name}
+                      </span>
+
+                      {/* EMBEDDED NAV NEXT */}
+                      {showNext && startIndex < maxIndex && (
+                          <button 
+                              onClick={(e) => { e.stopPropagation(); goNext(); }}
+                              className="absolute right-0 top-1/2 -translate-y-1/2 w-10 h-10 flex items-center justify-center bg-zinc-800/80 border border-zinc-600 text-emerald-500 rounded hover:bg-zinc-700 active:scale-95 transition-all shadow-lg z-30"
+                          >
+                              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                                  <path d="M9 5l7 7-7 7V5z" />
+                              </svg>
+                          </button>
+                      )}
                   </div>
                   
                   {/* MAXIMIZED SHIP DISPLAY */}
                   <div className="flex-grow w-full flex items-center justify-center relative min-h-0">
-                    <div className="h-full aspect-square flex items-center justify-center">
+                    {/* Added padding p-6 to make ship icon smaller and allow room for shields */}
+                    <div className="h-full aspect-square flex items-center justify-center relative p-6">
                         <ShipIcon 
                             config={config as any} 
                             hullColor={gameState.shipColors[inst.instanceId]} 
@@ -235,11 +260,17 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                             equippedWeapons={f.weapons}
                             forceShieldScale={true}
                         />
+                        {/* OVERLAY UNIT NUMBER - Positioned over bottom of ship/shield area */}
+                        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
+                            <span className="text-[10px] sm:text-xs font-black text-zinc-500 uppercase tracking-[0.2em] whitespace-nowrap bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded border border-zinc-800/30">
+                                UNIT 0{trueIdx + 1}
+                            </span>
+                        </div>
                     </div>
                   </div>
 
                   {/* COMPACT STATS FOOTER */}
-                  <div className="w-full mt-auto space-y-1 shrink-0 bg-black/30 p-2 rounded-lg border border-zinc-800/30">
+                  <div className="w-full mt-auto space-y-1 shrink-0 bg-black/30 p-2 rounded-lg border border-zinc-800/30 relative z-20">
                     <div className="space-y-0.5">
                         <div className={`flex justify-between ${cardStatLabel} uppercase font-black text-zinc-400`}><span>Integrity</span><span>{Math.floor(f.health)}%</span></div>
                         <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-700"><div className={`h-full transition-all duration-500 ${f.health < 30 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} style={{ width: `${f.health}%` }} /></div>
