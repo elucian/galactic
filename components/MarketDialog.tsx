@@ -1,14 +1,14 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { CargoItem } from '../types.ts';
-import { WEAPONS, SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, EXOTIC_WEAPONS, EXOTIC_SHIELDS, AMMO_MARKET_ITEMS, AMMO_CONFIG } from '../constants.ts';
+import { WEAPONS, SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, AMMO_MARKET_ITEMS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, AMMO_CONFIG } from '../constants.ts';
 import { ItemSVG } from './Common.tsx';
 
 interface MarketDialogProps {
   isOpen: boolean;
   onClose: () => void;
   marketTab: 'buy' | 'sell';
-  setMarketTab: (tab: 'buy' | 'sell') => void;
+  setMarketTab: (t: 'buy' | 'sell') => void;
   currentReserves: CargoItem[];
   credits: number;
   testMode: boolean;
@@ -17,254 +17,215 @@ interface MarketDialogProps {
   fontSize: 'small' | 'medium' | 'large';
 }
 
+const CATEGORY_ORDER = ['WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES', 'AMMO'];
+
+// Helper to categorize items
 const getCategory = (item: any) => {
-    // Check type or infer from properties if type is generic 'goods'
-    const t = (item.type || '').toLowerCase();
-    
-    // Combined AMMO into ORDNANCE
-    if (t === 'ammo') return 'ORDNANCE';
-    
-    // Combined WEAPONRY and DEFENSE into EQUIPMENT
-    if (['weapon', 'gun', 'projectile', 'laser'].includes(t) || item.damage) return 'EQUIPMENT';
-    if (['shield'].includes(t) || item.capacity) return 'EQUIPMENT';
-    
+    const t = item.type?.toLowerCase() || '';
+    if (t === 'ammo') return 'AMMO';
+    if (['weapon', 'gun', 'projectile', 'laser'].includes(t)) return 'WEAPONRY';
+    if (['shield'].includes(t)) return 'DEFENSE';
     if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
     if (['fuel', 'energy', 'repair', 'robot'].includes(t)) return 'SUPPLIES';
     return 'RESOURCES';
 };
 
-const CATEGORY_ORDER = ['EQUIPMENT', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
-
 export const MarketDialog: React.FC<MarketDialogProps> = ({
   isOpen, onClose, marketTab, setMarketTab, currentReserves, credits, testMode, marketBuy, marketSell, fontSize
 }) => {
-  const [activeFilters, setActiveFilters] = useState<string[]>([]);
+  const [activeFilters, setActiveFilters] = useState<string[]>(CATEGORY_ORDER);
+  const [pendingFilters, setPendingFilters] = useState<string[]>(CATEGORY_ORDER);
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+
+  // Sync pending filters with active when dropdown opens
+  useEffect(() => {
+      if (isDropdownOpen) {
+          setPendingFilters([...activeFilters]);
+      }
+  }, [isDropdownOpen, activeFilters]);
+
+  // Construct Buy List (Moved above conditional return)
+  const buyItems = useMemo(() => {
+      const all = [
+          ...AMMO_MARKET_ITEMS,
+          ...EXPLODING_ORDNANCE.map(i => ({ ...i, type: i.id.includes('missile') ? 'missile' : 'mine' })),
+          ...COMMODITIES,
+          ...WEAPONS.map(w => ({ ...w, type: 'weapon' })),
+          ...SHIELDS.map(s => ({ ...s, type: 'shield' }))
+      ];
+      if (testMode) {
+          all.push(...EXOTIC_WEAPONS.map(w => ({ ...w, type: 'weapon' })));
+          all.push(...EXOTIC_SHIELDS.map(s => ({ ...s, type: 'shield' })));
+      }
+      return all;
+  }, [testMode]);
+
+  // Preserve original index for selling actions (Moved above conditional return)
+  const displayItems = useMemo(() => {
+      const source = marketTab === 'buy' ? buyItems : currentReserves;
+      return source.map((item, originalIndex) => ({ item, originalIndex })).filter(({ item }) => {
+          return activeFilters.includes(getCategory(item));
+      });
+  }, [marketTab, buyItems, currentReserves, activeFilters]);
 
   if (!isOpen) return null;
+
+  const togglePendingFilter = (cat: string) => {
+      setPendingFilters(prev => {
+          if (prev.includes(cat)) return prev.filter(c => c !== cat);
+          return [...prev, cat];
+      });
+  };
+
+  const applyFilters = () => {
+      setActiveFilters([...pendingFilters]);
+      setIsDropdownOpen(false);
+  };
+
+  const resetFilters = () => {
+      setPendingFilters(CATEGORY_ORDER);
+  };
 
   const btnSize = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[14px]' : 'text-[12px]');
   const btnPadding = fontSize === 'small' ? 'px-6 py-3' : (fontSize === 'large' ? 'px-8 py-5' : 'px-7 py-4');
   const iconSize = fontSize === 'small' ? 22 : (fontSize === 'large' ? 32 : 26);
 
-  const isExoticItem = (id?: string) => {
-      if (!id) return false;
-      return [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].some(ex => ex.id === id);
-  };
-
-  const toggleFilter = (cat: string) => {
-      setActiveFilters(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat]);
-  };
-
-  const getFilteredCategories = () => {
-      if (activeFilters.length === 0) return CATEGORY_ORDER;
-      return CATEGORY_ORDER.filter(c => activeFilters.includes(c));
-  };
-
-  const renderBuyGrid = () => {
-      // Prepare Items: Inject types for Ordnance
-      let itemsToBuy: any[] = [
-          ...AMMO_MARKET_ITEMS, 
-          ...WEAPONS, 
-          ...SHIELDS, 
-          ...EXPLODING_ORDNANCE.map(o => ({ ...o, type: o.id.includes('mine') ? 'mine' : 'missile' })), 
-          ...COMMODITIES
-      ];
+  const renderItem = (entry: { item: any, originalIndex: number }, idx: number) => {
+      const { item, originalIndex } = entry;
+      const cat = getCategory(item);
+      const isSell = marketTab === 'sell';
+      const price = isSell ? Math.floor((item.price || 1000) * 0.8) : (item.price || 1000);
+      const canAfford = credits >= price;
       
-      // Inject Supplies if missing from constants but supported by logic
-      if (!itemsToBuy.some(i => i.type === 'repair')) {
-          itemsToBuy.push({ id: 'pack_repair', name: 'Nanite Pack', price: 500, type: 'repair' });
-      }
-      if (!itemsToBuy.some(i => i.type === 'fuel')) {
-          itemsToBuy.push({ id: 'can_fuel', name: 'Fuel Cell', price: 200, type: 'fuel' });
-      }
-      if (!itemsToBuy.some(i => i.type === 'energy')) {
-          itemsToBuy.push({ id: 'batt_cell', name: 'Energy Cell', price: 300, type: 'energy' });
-      }
+      // Determine quantity for sell items (reserves)
+      const quantity = isSell ? item.quantity : (item.count || 1); 
 
-      if (testMode) {
-          itemsToBuy = [...itemsToBuy, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
+      // Icon Color
+      let iconColor = isSell ? "#fbbf24" : "#10b981";
+      if (item.type === 'ammo') {
+          const conf = AMMO_CONFIG[item.id as keyof typeof AMMO_CONFIG];
+          if (conf) iconColor = conf.color;
+          else iconColor = "#fbbf24";
       }
-
-      const grouped: Record<string, any[]> = {};
-      itemsToBuy.forEach(it => {
-          const cat = getCategory(it);
-          if (!grouped[cat]) grouped[cat] = [];
-          grouped[cat].push(it);
-      });
-
-      const catsToShow = getFilteredCategories();
+      if (item.type === 'missile') iconColor = "#ef4444";
+      if (cat === 'WEAPONRY') {
+          const w = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === item.id);
+          if (w) iconColor = w.beamColor || '#ef4444';
+          else iconColor = "#ef4444";
+      }
+      if (cat === 'DEFENSE') {
+          const s = [...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === item.id);
+          if (s) iconColor = (s as any).color;
+          else iconColor = "#3b82f6";
+      }
 
       return (
-          <div className="space-y-6">
-              {catsToShow.map(cat => {
-                  const groupItems = grouped[cat];
-                  if (!groupItems || groupItems.length === 0) return null;
-                  return (
-                      <div key={cat}>
-                          <div className="flex items-center gap-2 mb-2 border-b border-zinc-800/50 pb-1">
-                              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{cat}</span>
-                          </div>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                              {groupItems.map(it => {
-                                  const isExotic = isExoticItem(it.id);
-                                  const isAmmo = it.type === 'ammo';
-                                  const isOrdnance = cat === 'ORDNANCE';
-                                  const isBulkItem = ['missile', 'mine', 'repair'].includes(it.type);
-                                  
-                                  // Bulk Pricing for 10 units
-                                  const buyQty = isBulkItem ? 10 : 1;
-                                  const displayPrice = it.price * buyQty;
-                                  const buyLabel = isBulkItem ? "BUY 10" : "BUY 1";
-                                  
-                                  const buyAction = () => marketBuy({ ...it, price: displayPrice, _buyAmount: buyQty });
-                                  
-                                  let color = '#10b981'; // Default Green
-                                  if (isExotic) color = '#fb923c'; // Exotic Orange
-                                  else if (isAmmo) color = (AMMO_CONFIG[it.id as keyof typeof AMMO_CONFIG]?.color || '#facc15');
-                                  else if (isOrdnance) {
-                                      if (it.id.includes('missile')) color = '#ef4444'; // Red
-                                      else if (it.id.includes('emp')) color = '#3b82f6'; // Blue (EMP Mine)
-                                      else color = '#fbbf24'; // Yellow (Standard Mine)
-                                  } else {
-                                      // Check for Standard Weapon
-                                      const wDef = WEAPONS.find(w => w.id === it.id);
-                                      if (wDef) {
-                                           if (wDef.type === 'LASER') color = wDef.beamColor || '#3b82f6';
-                                           else if (wDef.type === 'PROJECTILE') color = '#9ca3af'; // Gray
-                                      }
-                                  }
-
-                                  return (
-                                      <button key={it.id} onClick={buyAction} className={`flex justify-between items-center p-3 bg-zinc-900/40 border border-zinc-800 hover:border-emerald-500/40 hover:bg-zinc-800 rounded group transition-all text-left ${isExotic ? 'border-orange-500/30 bg-orange-900/10 hover:border-orange-500 hover:bg-orange-900/30' : ''} ${isAmmo ? 'hover:border-yellow-500/40 hover:bg-yellow-900/10' : ''}`}>
-                                          <div className="flex items-center gap-3">
-                                              <div className={`w-8 h-8 flex items-center justify-center bg-black border border-zinc-700 rounded ${isExotic ? 'border-orange-500 shadow-[0_0_10px_#f97316]' : (isAmmo ? 'border-yellow-600' : '')}`}>
-                                                  <ItemSVG 
-                                                    type={(it as any).damage ? 'weapon' : ((it as any).capacity ? 'shield' : ((it as any).type || 'goods'))} 
-                                                    color={color} 
-                                                    size={iconSize}
-                                                  />
-                                              </div>
-                                              <span className={`text-[10px] font-black uppercase truncate w-24 ${isExotic ? 'text-orange-400' : (isAmmo ? 'text-yellow-400' : 'text-emerald-400')}`}>{it.name}</span>
-                                          </div>
-                                          <div className="flex flex-col items-end">
-                                              <span className={`text-[10px] font-black tabular-nums ${isExotic ? 'text-orange-300' : (isAmmo ? 'text-yellow-300' : 'text-emerald-400')}`}>${displayPrice.toLocaleString()}</span>
-                                              <span className="text-[8px] text-zinc-600 uppercase font-black group-hover:text-emerald-500">{buyLabel}</span>
-                                          </div>
-                                      </button>
-                                  );
-                              })}
-                          </div>
-                      </div>
-                  );
-              })}
-          </div>
-      );
-  };
-
-  const renderSellList = () => {
-      if (currentReserves.length === 0) return <div className="p-10 text-center opacity-30 text-sm font-black uppercase">No Reserve Items to Sell</div>;
-
-      const grouped: Record<string, { item: CargoItem, idx: number }[]> = {};
-      currentReserves.forEach((item, idx) => {
-          const cat = getCategory(item);
-          if (!grouped[cat]) grouped[cat] = [];
-          grouped[cat].push({ item, idx });
-      });
-
-      const catsToShow = getFilteredCategories();
-
-      return (
-          <div className="space-y-6">
-              {catsToShow.map(cat => {
-                  const groupItems = grouped[cat];
-                  if (!groupItems || groupItems.length === 0) return null;
-                  return (
-                      <div key={cat}>
-                          <div className="flex items-center gap-2 mb-2 border-b border-zinc-800/50 pb-1">
-                              <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
-                              <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">{cat}</span>
-                          </div>
-                          <div className="space-y-2">
-                              {groupItems.map(({ item, idx }) => {
-                                  const isExotic = isExoticItem(item.id);
-                                  const isAmmo = item.type === 'ammo';
-                                  const isOrdnance = cat === 'ORDNANCE';
-                                  
-                                  let color = isExotic ? '#fb923c' : '#fbbf24';
-                                  if (isAmmo) color = AMMO_CONFIG[item.id as keyof typeof AMMO_CONFIG]?.color || '#fbbf24';
-                                  else if (isOrdnance) {
-                                      if (item.id?.includes('missile')) color = '#ef4444'; 
-                                      else if (item.id?.includes('emp')) color = '#3b82f6';
-                                      else color = '#fbbf24'; 
-                                  } else {
-                                      // Check for Standard Weapon
-                                      const wDef = WEAPONS.find(w => w.id === item.id);
-                                      if (wDef) {
-                                           if (wDef.type === 'LASER') color = wDef.beamColor || '#3b82f6';
-                                           else if (wDef.type === 'PROJECTILE') color = '#9ca3af'; 
-                                      }
-                                  }
-
-                                  return (
-                                      <div key={item.instanceId} className="flex justify-between items-center p-3 border border-zinc-800 bg-zinc-900/40 rounded hover:border-amber-500/50 transition-all">
-                                          <div className="flex items-center gap-4">
-                                              <ItemSVG type={item.type} color={color} size={iconSize}/>
-                                              <span className={`text-[11px] font-black uppercase ${isExotic ? 'text-orange-400' : 'text-emerald-400'}`}>{item.name} x{item.quantity}</span>
-                                          </div>
-                                          <button onClick={() => marketSell(idx)} className="px-4 py-2 bg-amber-600/20 border border-amber-600 text-amber-500 text-[9px] font-black uppercase rounded hover:bg-amber-600 hover:text-white transition-all">SELL 1 UNIT</button>
-                                      </div>
-                                  );
-                              })}
-                          </div>
-                      </div>
-                  );
-              })}
+          <div key={idx} className="flex justify-between items-center p-3 bg-zinc-900/40 border border-zinc-800 rounded hover:border-zinc-600 transition-all group select-none">
+              <div className="flex items-center gap-3">
+                  <ItemSVG type={item.type || 'goods'} color={iconColor} size={iconSize} />
+                  <div className="flex flex-col">
+                      <span className={`font-black uppercase ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')} text-white`}>{item.name}</span>
+                      <span className="text-[9px] text-zinc-500 uppercase font-mono">{cat} {isSell && `x${quantity}`}</span>
+                  </div>
+              </div>
+              <div className="flex items-center gap-4">
+                  <div className="text-right">
+                      <div className={`font-black tabular-nums ${canAfford || isSell ? 'text-emerald-400' : 'text-red-500'}`}>${price.toLocaleString()}</div>
+                      {!isSell && item.count && <div className="text-[8px] text-zinc-500">PACK OF {item.count}</div>}
+                  </div>
+                  <button 
+                      onClick={() => isSell ? marketSell(originalIndex) : marketBuy(item)}
+                      disabled={!isSell && !canAfford}
+                      className={`px-4 py-2 rounded font-black uppercase text-[10px] border transition-all ${isSell 
+                          ? 'bg-amber-600/20 border-amber-500 text-amber-500 hover:bg-amber-600 hover:text-white' 
+                          : (canAfford ? 'bg-emerald-600/20 border-emerald-500 text-emerald-500 hover:bg-emerald-600 hover:text-white' : 'bg-zinc-800 border-zinc-700 text-zinc-600 cursor-not-allowed')}`}
+                  >
+                      {isSell ? 'SELL' : 'BUY'}
+                  </button>
+              </div>
           </div>
       );
   };
 
   return (
-    <div className="fixed inset-0 z-[9800] bg-black/95 flex items-center justify-center p-4 backdrop-blur-md">
-        <div className="w-full max-w-4xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[85vh] shadow-2xl">
-            <header className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50 shrink-0 gap-4">
-                <div className="flex gap-2">
-                    <button onClick={() => setMarketTab('buy')} className={`retro-font ${btnSize} uppercase ${btnPadding} rounded-t-lg transition-all ${marketTab === 'buy' ? 'bg-emerald-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-white'}`}>BUY</button>
-                    <button onClick={() => setMarketTab('sell')} className={`retro-font ${btnSize} uppercase ${btnPadding} rounded-t-lg transition-all ${marketTab === 'sell' ? 'bg-amber-600 text-white' : 'bg-zinc-900 text-zinc-500 hover:text-white'}`}>SELL</button>
-                </div>
-                
-                {/* FILTER BUTTONS */}
-                <div className="flex gap-1 bg-zinc-900/50 p-1 rounded-lg border border-zinc-800/50">
-                    {[
-                        { label: 'EQUIPMENT', cat: 'EQUIPMENT' },
-                        { label: 'ORDNANCE', cat: 'ORDNANCE' },
-                        { label: 'SUPPLIES', cat: 'SUPPLIES' },
-                        { label: 'RESOURCES', cat: 'RESOURCES' }
-                    ].map(f => {
-                        const isActive = activeFilters.includes(f.cat);
-                        return (
-                            <button 
-                                key={f.cat}
-                                onClick={() => toggleFilter(f.cat)}
-                                className={`
-                                    ${btnSize} font-black uppercase px-3 py-1 rounded transition-all border
-                                    ${isActive 
-                                        ? 'bg-zinc-700 text-white border-zinc-600 shadow-inner' 
-                                        : 'bg-transparent text-zinc-600 border-transparent hover:text-zinc-400 hover:bg-zinc-800/50'}
-                                `}
-                            >
-                                {f.label}
-                            </button>
-                        )
-                    })}
+    <div className="fixed inset-0 z-[9800] bg-black/95 flex items-center justify-center p-4 backdrop-blur-2xl">
+       <div className="w-full max-w-5xl bg-zinc-950 border-2 border-zinc-800 rounded-xl flex flex-col h-[85vh] shadow-2xl overflow-hidden relative">
+          
+          <header className="p-4 border-b border-zinc-800 flex justify-between bg-zinc-900/50 shrink-0 relative z-50">
+             <div className="flex gap-2 items-center">
+                {/* FILTER DROPDOWN BUTTON */}
+                <div className="relative group">
+                    <button 
+                        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                        className={`w-10 h-10 flex items-center justify-center rounded border transition-all ${isDropdownOpen || activeFilters.length < CATEGORY_ORDER.length ? 'bg-zinc-800 border-emerald-500 text-emerald-400' : 'bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-white'}`}
+                        title="Filter Categories"
+                    >
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
+                        {activeFilters.length < CATEGORY_ORDER.length && (
+                            <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-zinc-950" />
+                        )}
+                    </button>
+
+                    {/* DROPDOWN MENU */}
+                    {isDropdownOpen && (
+                        <>
+                            {/* CLICK OUTSIDE LAYER */}
+                            <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} style={{ cursor: 'default' }} />
+                            
+                            <div className="absolute top-full left-0 mt-2 w-64 bg-zinc-950 border border-zinc-700 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 p-4 flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-150">
+                                <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
+                                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Filter Categories</span>
+                                    <button onClick={resetFilters} className="text-[9px] text-emerald-500 hover:text-emerald-400 font-bold uppercase">Reset</button>
+                                </div>
+                                <div className="space-y-1">
+                                    {CATEGORY_ORDER.map(cat => (
+                                        <div 
+                                            key={cat}
+                                            onClick={(e) => { e.stopPropagation(); togglePendingFilter(cat); }}
+                                            className="flex items-center gap-3 p-2 hover:bg-zinc-800/50 rounded cursor-pointer group transition-colors select-none"
+                                        >
+                                            <div className={`w-4 h-4 border rounded flex items-center justify-center transition-all ${pendingFilters.includes(cat) ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-zinc-600 bg-black group-hover:border-zinc-400'}`}>
+                                                {pendingFilters.includes(cat) && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>}
+                                            </div>
+                                            <span className={`text-[10px] font-black uppercase ${pendingFilters.includes(cat) ? 'text-white' : 'text-zinc-500 group-hover:text-zinc-300'}`}>{cat}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                                <button 
+                                    onClick={applyFilters}
+                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase text-[10px] rounded shadow-lg transition-all active:scale-95 mt-2"
+                                >
+                                    Update View
+                                </button>
+                            </div>
+                        </>
+                    )}
                 </div>
 
-                <button onClick={onClose} className={`text-zinc-500 ${btnSize} font-black ${btnPadding.replace('py-3','py-2').replace('py-5','py-4').replace('py-4','py-3')}`}>DONE</button>
-            </header>
-            <div className="flex-grow overflow-y-auto p-4 custom-scrollbar bg-black/40">
-                {marketTab === 'buy' ? renderBuyGrid() : renderSellList()}
-            </div>
-        </div>
+                {['buy', 'sell'].map(t => (
+                    <button key={t} onClick={() => setMarketTab(t as any)} className={`${btnPadding} ${btnSize} font-black uppercase border-b-2 transition-all ${marketTab === t ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>{t === 'buy' ? 'MARKET LISTINGS' : 'RESERVE SALES'}</button>
+                ))}
+             </div>
+
+             <div className="flex items-center gap-4">
+                 <span className="text-emerald-500 font-black text-xl tabular-nums">${credits.toLocaleString()}</span>
+                 <button onClick={onClose} className={`px-6 py-2 bg-zinc-900 border border-zinc-700 text-zinc-400 font-black ${btnSize} rounded hover:text-white hover:border-zinc-500`}>CLOSE</button>
+             </div>
+          </header>
+          
+          <div className="flex-grow flex flex-col bg-black/40 p-4 overflow-y-auto custom-scrollbar">
+                {displayItems.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center opacity-30 text-center">
+                        <span className="text-4xl mb-4 text-zinc-600">∅</span>
+                        <span className="text-sm font-black text-zinc-500 uppercase">No Items Found</span>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {displayItems.map((entry, i) => renderItem(entry, i))}
+                    </div>
+                )}
+          </div>
+       </div>
     </div>
   );
 };

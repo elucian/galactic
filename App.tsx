@@ -374,7 +374,6 @@ export default function App() {
     }
   };
 
-  // ... [Other handlers omitted for brevity, no changes needed]
   const handlePlanetSelection = (planet: Planet) => { const status = gameState.planetRegistry[planet.id]?.status || 'occupied'; const isFriendly = status === 'friendly'; const isSameQuadrant = planet.quadrant === gameState.currentQuadrant; const showTransitions = gameState.settings.showTransitions; const shouldUpdateQuadrantNow = !isSameQuadrant && !showTransitions; setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: shouldUpdateQuadrantNow ? planet.quadrant : prev.currentQuadrant })); setLaunchDestination('planet'); if (isFriendly) { if (isSameQuadrant) { setScreen('landing'); } else { setWarpDestination('landing'); if (showTransitions) { setScreen('warp'); } else { setScreen('landing'); } } } else { setGameMode('combat'); setWarpDestination('game'); if (isSameQuadrant) { setScreen('game'); audioService.playTrack('combat'); } else { if (showTransitions) { setScreen('warp'); } else { setScreen('game'); audioService.playTrack('combat'); } } } };
   const handleWarpComplete = () => { if (warpDestination === 'hangar') { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } else if (warpDestination === 'landing') { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('landing'); } else { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('game'); if (gameMode === 'combat') { audioService.playTrack('combat'); } else { audioService.playTrack('map'); } } };
   const getActiveShieldColor = () => { if (!selectedFitting) return '#3b82f6'; const sId = selectedFitting.shieldId || selectedFitting.secondShieldId; if (!sId) return '#3b82f6'; if (sId === 'dev_god_mode') return '#ffffff'; const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === sId); return sDef ? sDef.color : '#3b82f6'; };
@@ -521,8 +520,107 @@ export default function App() {
   };
 
   const marketSell = (resIdx: number) => { setGameState(prev => { const newRes = [...(prev.reserveByPlanet[dockedId] || [])]; const item = newRes[resIdx]; const basePrice = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].find(x => x.id === item.id)?.price || 1000; const sellPrice = Math.floor(basePrice * 0.8); if (item.quantity > 1) item.quantity--; else newRes.splice(resIdx, 1); return { ...prev, credits: prev.credits + sellPrice, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newRes } }; }); audioService.playSfx('buy'); };
-  const mountFromCargo = (cargoIdx: number, slotIdx: number, type: 'weapon' | 'shield') => { if (!gameState.selectedShipInstanceId) return; setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; let newCargo = [...fit.cargo]; let existingId: string | null = null; if (type === 'weapon') { existingId = fit.weapons[slotIdx]?.id || null; } else { existingId = slotIdx === 0 ? fit.shieldId : fit.secondShieldId; if (existingId === 'dev_god_mode') existingId = null; } if (existingId) { const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === existingId); const existingCargoIdx = newCargo.findIndex(c => c.id === existingId); if (existingCargoIdx >= 0) { newCargo[existingCargoIdx] = { ...newCargo[existingCargoIdx], quantity: newCargo[existingCargoIdx].quantity + 1 }; } else { newCargo.push({ instanceId: `unmt_${Date.now()}_${Math.random()}`, type: type, id: existingId, name: def?.name || 'Item', weight: 1, quantity: 1 }); } } const itemToMount = newCargo[cargoIdx]; if (itemToMount) { if (itemToMount.quantity > 1) { newCargo[cargoIdx] = { ...itemToMount, quantity: itemToMount.quantity - 1 }; } else { newCargo.splice(cargoIdx, 1); } } const newFits = { ...prev.shipFittings }; if (type === 'weapon') { const newWeps = [...fit.weapons]; newWeps[slotIdx] = { id: itemToMount.id!, count: 1 }; newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; } else { const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; newFits[sId] = { ...fit, [key]: itemToMount.id!, cargo: newCargo }; } return { ...prev, shipFittings: newFits }; }); audioService.playSfx('click'); };
-  const unmountSlot = (slotIdx: number, type: 'weapon' | 'shield') => { if (!gameState.selectedShipInstanceId) return; setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId], newCargo = [...fit.cargo]; const id = type === 'weapon' ? fit.weapons[slotIdx]?.id : (slotIdx === 0 ? fit.shieldId : fit.secondShieldId); if (!id) return prev; const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === id); const existing = newCargo.find(c => c.id === id); if (existing) existing.quantity++; else newCargo.push({ instanceId: `unmt_${Date.now()}`, type: type, id, name: def?.name || 'Item', weight: 1, quantity: 1 }); const newFits = { ...prev.shipFittings }; if (type === 'weapon') { const newWeps = [...fit.weapons]; newWeps[slotIdx] = null; newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; } else { const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; newFits[sId] = { ...fit, [key]: null, cargo: newCargo }; } return { ...prev, shipFittings: newFits }; }); audioService.playSfx('click'); };
+  
+  const mountFromCargo = (cargoIdx: number, slotIdx: number, type: 'weapon' | 'shield') => { 
+    if (!gameState.selectedShipInstanceId) return; 
+    setGameState(prev => { 
+        const sId = prev.selectedShipInstanceId!; 
+        const fit = prev.shipFittings[sId]; 
+        let newCargo = [...fit.cargo]; 
+        
+        // 1. Get Source Item from Cargo
+        const sourceItem = newCargo[cargoIdx];
+        if (!sourceItem) return prev; 
+        
+        // 2. Remove/Decrement Source Item from Cargo
+        if (sourceItem.quantity > 1) { 
+            newCargo[cargoIdx] = { ...sourceItem, quantity: sourceItem.quantity - 1 }; 
+        } else { 
+            newCargo.splice(cargoIdx, 1); 
+        } 
+        
+        // 3. Identify Existing Item in Slot
+        let unmountId: string | null = null; 
+        if (type === 'weapon') { 
+            unmountId = fit.weapons[slotIdx]?.id || null; 
+        } else { 
+            unmountId = slotIdx === 0 ? fit.shieldId : fit.secondShieldId; 
+            if (unmountId === 'dev_god_mode') unmountId = null; 
+        } 
+        
+        // 4. Move Existing Item to Cargo (Unmount)
+        if (unmountId) { 
+            const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === unmountId); 
+            const existingCargoIdx = newCargo.findIndex(c => c.id === unmountId); 
+            if (existingCargoIdx >= 0) { 
+                newCargo[existingCargoIdx] = { ...newCargo[existingCargoIdx], quantity: newCargo[existingCargoIdx].quantity + 1 }; 
+            } else { 
+                newCargo.push({ 
+                    instanceId: `unmt_${Date.now()}_${Math.random()}`, 
+                    type: type, 
+                    id: unmountId, 
+                    name: def?.name || 'Item', 
+                    weight: 1, 
+                    quantity: 1 
+                }); 
+            } 
+        } 
+        
+        // 5. Update Slot with New Item
+        const newFits = { ...prev.shipFittings }; 
+        if (type === 'weapon') { 
+            const newWeps = [...fit.weapons]; 
+            newWeps[slotIdx] = { id: sourceItem.id!, count: 1 }; 
+            newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; 
+        } else { 
+            const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; 
+            newFits[sId] = { ...fit, [key]: sourceItem.id!, cargo: newCargo }; 
+        } 
+        
+        return { ...prev, shipFittings: newFits }; 
+    }); 
+    audioService.playSfx('click'); 
+  };
+
+  const unmountSlot = (slotIdx: number, type: 'weapon' | 'shield') => { 
+    if (!gameState.selectedShipInstanceId) return; 
+    setGameState(prev => { 
+        const sId = prev.selectedShipInstanceId!; 
+        const fit = prev.shipFittings[sId], newCargo = [...fit.cargo]; 
+        
+        const id = type === 'weapon' ? fit.weapons[slotIdx]?.id : (slotIdx === 0 ? fit.shieldId : fit.secondShieldId); 
+        if (!id) return prev; 
+        
+        const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === id); 
+        const existingIdx = newCargo.findIndex(c => c.id === id); 
+        
+        if (existingIdx >= 0) { 
+            newCargo[existingIdx] = { ...newCargo[existingIdx], quantity: newCargo[existingIdx].quantity + 1 }; 
+        } else { 
+            newCargo.push({ 
+                instanceId: `unmt_${Date.now()}`, 
+                type: type, 
+                id, 
+                name: def?.name || 'Item', 
+                weight: 1, 
+                quantity: 1 
+            }); 
+        } 
+        
+        const newFits = { ...prev.shipFittings }; 
+        if (type === 'weapon') { 
+            const newWeps = [...fit.weapons]; 
+            newWeps[slotIdx] = null; 
+            newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; 
+        } else { 
+            const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; 
+            newFits[sId] = { ...fit, [key]: null, cargo: newCargo }; 
+        } 
+        return { ...prev, shipFittings: newFits }; 
+    }); 
+    audioService.playSfx('click'); 
+  };
+
   const setPartColor = (color: string) => { if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; let colorKey: keyof GameState | undefined; switch (activePart) { case 'hull': colorKey = 'shipColors'; break; case 'wings': colorKey = 'shipWingColors'; break; case 'cockpit': colorKey = 'shipCockpitColors'; break; case 'guns': colorKey = 'shipGunColors'; break; case 'secondary_guns': colorKey = 'shipSecondaryGunColors'; break; case 'gun_body': colorKey = 'shipGunBodyColors'; break; case 'engines': colorKey = 'shipEngineColors'; break; case 'nozzles': colorKey = 'shipNozzleColors'; break; default: return; } if (colorKey) { setGameState(prev => ({ ...prev, [colorKey!]: { ...((prev[colorKey!] as Record<string, string>) || {}), [sId]: color } })); audioService.playSfx('click'); } };
   const updateCustomColor = (index: number, newColor: string) => { setGameState(prev => { const oldColor = prev.customColors[index]; const newCustomColors = [...prev.customColors]; newCustomColors[index] = newColor; const updateMap = (map: Record<string, string>) => { const newMap = { ...map }; let changed = false; Object.keys(newMap).forEach(key => { if (newMap[key] === oldColor) { newMap[key] = newColor; changed = true; } }); return changed ? newMap : map; }; return { ...prev, customColors: newCustomColors, shipColors: updateMap(prev.shipColors), shipWingColors: updateMap(prev.shipWingColors), shipCockpitColors: updateMap(prev.shipCockpitColors), shipGunColors: updateMap(prev.shipGunColors), shipSecondaryGunColors: updateMap(prev.shipSecondaryGunColors), shipGunBodyColors: updateMap(prev.shipGunBodyColors), shipEngineColors: updateMap(prev.shipEngineColors), shipNozzleColors: updateMap(prev.shipNozzleColors), }; }); };
   const setGodMode = (slotIdx: number) => { if (!gameState.selectedShipInstanceId) return; setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; const newFits = { ...prev.shipFittings }; const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; newFits[sId] = { ...fit, [key]: 'dev_god_mode' }; return { ...prev, shipFittings: newFits }; }); audioService.playSfx('click'); };
