@@ -86,6 +86,10 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       setPendingFilters(CATEGORY_ORDER);
   };
 
+  const clearFilters = () => {
+      setPendingFilters([]);
+  };
+
   const btnSize = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[14px]' : 'text-[12px]');
   const btnPadding = fontSize === 'small' ? 'px-6 py-3' : (fontSize === 'large' ? 'px-8 py-5' : 'px-7 py-4');
   const iconSize = fontSize === 'small' ? 22 : (fontSize === 'large' ? 32 : 26);
@@ -174,8 +178,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                             
                             <div className="absolute top-full left-0 mt-2 w-64 bg-zinc-950 border border-zinc-700 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 p-4 flex flex-col gap-3 animate-in fade-in zoom-in-95 duration-150">
                                 <div className="flex justify-between items-center border-b border-zinc-800 pb-2">
-                                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">Filter Categories</span>
-                                    <button onClick={resetFilters} className="text-[9px] text-emerald-500 hover:text-emerald-400 font-bold uppercase">Reset</button>
+                                    <span className="text-[10px] font-black uppercase text-zinc-400 tracking-widest">CATEGORIES</span>
+                                    <div className="flex gap-2">
+                                        <button onClick={clearFilters} className="text-[9px] text-red-500 hover:text-red-400 font-bold uppercase">CLEAR</button>
+                                        <button onClick={resetFilters} className="text-[9px] text-emerald-500 hover:text-emerald-400 font-bold uppercase">RESET</button>
+                                    </div>
                                 </div>
                                 <div className="space-y-1">
                                     {CATEGORY_ORDER.map(cat => (
@@ -193,7 +200,8 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                                 </div>
                                 <button 
                                     onClick={applyFilters}
-                                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase text-[10px] rounded shadow-lg transition-all active:scale-95 mt-2"
+                                    disabled={pendingFilters.length === 0}
+                                    className={`w-full py-3 font-black uppercase text-[10px] rounded shadow-lg transition-all active:scale-95 mt-2 ${pendingFilters.length === 0 ? 'bg-zinc-800 text-zinc-600 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
                                 >
                                     Update View
                                 </button>

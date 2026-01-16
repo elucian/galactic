@@ -1209,7 +1209,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < 60 && !s.rescueMode) { takeDamage(30, 'collision'); if(e.type !== 'boss') e.hp = 0; createExplosion(e.x, e.y, '#f00', 10); } 
         });
         const deadEnemies = s.enemies.filter(e => e.hp <= 0);
-        deadEnemies.forEach(e => { createExplosion(e.x, e.y, '#fbbf24', 30, e.type === 'boss' ? 'boss' : 'standard'); if (e.type === 'boss') { s.bossDead = true; const bossScore = 10000 * difficulty; s.score += bossScore; setHud(h => ({...h, alert: `BOSS DESTROYED: +${bossScore}`})); const exotic = EXOTIC_WEAPONS[Math.floor(Math.random()*EXOTIC_WEAPONS.length)]; spawnLoot(e.x, e.y, 0, 'weapon', exotic.id, exotic.name); if (Math.random() > 0.5) { const shield = EXOTIC_SHIELDS[Math.floor(Math.random()*EXOTIC_SHIELDS.length)]; spawnLoot(e.x + 20, e.y + 20, 0, 'shield', shield.id, shield.name); } if (Math.random() > 0.7) { const rand = Math.random(); if (rand < 0.33) { spawnLoot(e.x - 20, e.y, 0, 'ammo', s.selectedAmmo, 'MEGA AMMO', 10000); } else if (rand < 0.66) { spawnLoot(e.x - 20, e.y, 0, 'missile', undefined, 'MEGA MISSILES', 100); } else { spawnLoot(e.x - 20, e.y, 0, 'mine', undefined, 'MEGA MINES', 100); } } } else { s.score += 100; const roll = Math.random(); if (roll > 0.5) { const drops = ['ammo', 'ammo', 'missile', 'mine']; const drop = drops[Math.floor(Math.random() * drops.length)]; if (drop === 'ammo') spawnLoot(e.x, e.y, e.z, 'ammo', s.selectedAmmo, 'Ammo'); else spawnLoot(e.x, e.y, e.z, drop, undefined, drop.charAt(0).toUpperCase() + drop.slice(1)); } } });
+        deadEnemies.forEach(e => { createExplosion(e.x, e.y, '#fbbf24', 30, e.type === 'boss' ? 'boss' : 'standard'); if (e.type === 'boss') { s.bossDead = true; const bossScore = 10000 * difficulty; s.score += bossScore; setHud(h => ({...h, alert: `BOSS DESTROYED: +${bossScore}`})); const exotic = EXOTIC_WEAPONS[Math.floor(Math.random()*EXOTIC_WEAPONS.length)]; spawnLoot(e.x, e.y, 0, 'weapon', exotic.id, exotic.name); if (Math.random() > 0.5) { const shield = EXOTIC_SHIELDS[Math.floor(Math.random()*EXOTIC_SHIELDS.length)]; spawnLoot(e.x + 20, e.y + 20, 0, 'shield', shield.id, shield.name); } if (Math.random() > 0.7) { const rand = Math.random(); if (rand < 0.33) { spawnLoot(e.x - 20, e.y, 0, 'ammo', s.selectedAmmo, 'MEGA AMMO', 10000); } else if (rand < 0.66) { spawnLoot(e.x - 20, e.y, 0, 'missile', undefined, 'MEGA MISSILES', 100); } else { spawnLoot(e.x - 20, e.y, 0, 'mine', undefined, 'MEGA MINES', 100); } } } else { s.score += 100; const roll = Math.random(); if (roll > 0.5) { const drops = ['ammo', 'ammo', 'missile', 'mine']; const drop = drops[Math.floor(Math.random() * drops.length)]; if (drop === 'ammo') spawnLoot(e.x, e.y, e.z, 'ammo', s.selectedAmmo, 'Ammo', 200); else spawnLoot(e.x, e.y, e.z, drop, undefined, drop.charAt(0).toUpperCase() + drop.slice(1), 5); } } });
         s.enemies = s.enemies.filter(e => e.hp > 0 && e.y < height + 200);
 
         s.bullets.forEach(b => {
@@ -1301,7 +1301,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         });
         s.bullets = s.bullets.filter(b => { if (b.life <= 0) return false; if (b.type.includes('mine') && b.homingState === 'engaging') return true; return b.y > -200 && b.y < height + 200 && b.x > -100 && b.x < width + 100; }); // Added boundary filter here
 
-        s.loot.forEach(l => { const d = Math.hypot(l.x - s.px, l.y - s.py); if (d < 200 && !s.rescueMode) { l.isBeingPulled = true; l.x += (s.px - l.x) * 0.05; l.y += (s.py - l.y) * 0.05; if (d < 40) { l.isPulled = true; const qty = l.quantity || 1; if (l.type === 'ammo') { s.magazineCurrent = Math.min(1000, s.magazineCurrent + 50 * qty); const amount = qty > 1 ? qty : 50; s.ammo[s.selectedAmmo] += amount; audioService.playSfx('buy'); setHud(h => ({...h, alert: `+${amount} ${l.name?.toUpperCase()}`})); } else if (l.type === 'missile') { s.missiles += qty; audioService.playSfx('buy'); setHud(h => ({...h, alert: `+${qty} MISSILES`})); } else if (l.type === 'mine') { s.mines += qty; audioService.playSfx('buy'); setHud(h => ({...h, alert: `+${qty} MINES`})); } else { const existing = s.cargo.find(c => c.type === l.type && c.id === l.id); if (existing) existing.quantity += qty; else s.cargo.push({ instanceId: Date.now().toString(), type: l.type as any, id: l.id, name: l.name || l.type, quantity: qty, weight: 1 }); audioService.playSfx('buy'); setHud(h => ({...h, alert: `GOT ${l.name || l.type.toUpperCase()}`})); } } } else { l.isBeingPulled = false; l.y += 2; } });
+        s.loot.forEach(l => { const d = Math.hypot(l.x - s.px, l.y - s.py); if (d < 200 && !s.rescueMode) { l.isBeingPulled = true; l.x += (s.px - l.x) * 0.05; l.y += (s.py - l.y) * 0.05; if (d < 40) { l.isPulled = true; const qty = l.quantity || 1; if (l.type === 'ammo') { const amount = qty > 1 ? qty : 50; s.magazineCurrent = Math.min(1000, s.magazineCurrent + amount); s.ammo[s.selectedAmmo] += amount; audioService.playSfx('buy'); setHud(h => ({...h, alert: `+${amount} ${l.name?.toUpperCase()}`})); } else if (l.type === 'missile') { s.missiles += qty; audioService.playSfx('buy'); setHud(h => ({...h, alert: `+${qty} MISSILES`})); } else if (l.type === 'mine') { s.mines += qty; audioService.playSfx('buy'); setHud(h => ({...h, alert: `+${qty} MINES`})); } else { const existing = s.cargo.find(c => c.type === l.type && c.id === l.id); if (existing) existing.quantity += qty; else s.cargo.push({ instanceId: Date.now().toString(), type: l.type as any, id: l.id, name: l.name || l.type, quantity: qty, weight: 1 }); audioService.playSfx('buy'); setHud(h => ({...h, alert: `GOT ${l.name || l.type.toUpperCase()}`})); } } } else { l.isBeingPulled = false; l.y += 2; } });
         s.loot = s.loot.filter(l => !l.isPulled && l.y < height + 100);
 
         ctx.fillStyle = '#000'; ctx.fillRect(0, 0, width, height);
@@ -1668,10 +1668,30 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         {hud.boss && (
             <div className="absolute top-4 left-1/2 transform -translate-x-1/2 w-1/3 z-20 pointer-events-none">
                 <div className={`flex justify-between ${hudLabel} font-black text-purple-400 mb-1`}><span>BOSS INTEGRITY</span><span>{Math.floor(hud.boss.hp)}/{hud.boss.maxHp}</span></div>
-                <div className="h-4 bg-zinc-900 border border-purple-500/50 relative overflow-hidden">
+                <div className="h-4 bg-zinc-900 border border-purple-500/50 relative overflow-hidden mb-2">
                     <div className="absolute inset-0 bg-purple-900/30" />
                     <div className="h-full bg-purple-600 transition-all duration-200" style={{width: `${Math.max(0, (hud.boss.hp/hud.boss.maxHp)*100)}%`}} />
                 </div>
+                
+                {(() => {
+                    // Calculate Total Shield Status
+                    const shieldCurrent = hud.boss.shieldLayers.reduce((acc: number, l: any) => acc + l.current, 0);
+                    const shieldMax = hud.boss.shieldLayers.reduce((acc: number, l: any) => acc + l.max, 0);
+                    if (shieldMax <= 0) return null;
+                    
+                    return (
+                        <>
+                            <div className={`flex justify-between ${hudLabel} font-black text-cyan-400 mb-1`}>
+                                <span>SHIELD MATRIX</span>
+                                <span>{Math.floor(shieldCurrent)}/{Math.floor(shieldMax)}</span>
+                            </div>
+                            <div className="h-2 bg-zinc-900 border border-cyan-500/50 relative overflow-hidden">
+                                <div className="absolute inset-0 bg-cyan-900/30" />
+                                <div className="h-full bg-cyan-500 transition-all duration-200" style={{width: `${Math.max(0, (shieldCurrent/shieldMax)*100)}%`}} />
+                            </div>
+                        </>
+                    );
+                })()}
             </div>
         )}
     </div>
