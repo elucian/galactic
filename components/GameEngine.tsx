@@ -616,6 +616,27 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   });
                   s.energy -= mainDef.energyCost;
               }
+          } else if (mainDef?.id === 'exotic_octo_burst') {
+              const spread = 12 * (Math.PI / 180);
+              const angle = (Math.random() - 0.5) * spread; // -6 to +6 degrees relative to forward
+              const baseAngle = -Math.PI / 2; // Forward
+              const finalAngle = baseAngle + angle;
+              const speed = 20;
+              s.bullets.push({
+                  x: s.px, y: s.py - 24,
+                  vx: Math.cos(finalAngle) * speed,
+                  vy: Math.sin(finalAngle) * speed,
+                  damage: mainDef.damage,
+                  color: '#a855f7',
+                  type: 'plasma_jet',
+                  life: 60,
+                  isEnemy: false,
+                  width: 12,
+                  height: 40,
+                  glow: true, glowIntensity: 15,
+                  isMain: true, weaponId: mainDef.id
+              });
+              s.energy -= mainDef.energyCost;
           } else {
               // Standard Logic
               const baseDamage = mainDef ? mainDef.damage : (activeShip.config.noseGunDamage || 45);
@@ -682,17 +703,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   const damage = wDef.damage;
                   const color = wDef.beamColor || '#fff';
                   const bulletSpeed = w.id.includes('exotic') ? 12 : 18;
-                  const angleRad = 0; // Forward -90 deg logically, but 0 rad in this ref frame
+                  const angleRad = 0; // Forward -90 deg logically, but 0 rad in this ref frame (relative to ship, which is 0 rad forward here for alien?)
+                  // Wait, alien ship logic doesn't rotate bullets usually, they just fly straight up (vy < 0).
+                  // So angleRad 0 implies straight up in firing logic logic usually means cos(0) or sin(0).
+                  // For aliens, angleRad = 0 usually means straight forward in bullet creation loop below.
 
                   // EXOTIC LOGIC (Reuse from loop)
                   if (w.id === 'exotic_star_shatter') {
-                      // 10 to 45 degree spread (Left/Right)
-                      // Range: -45..-10 AND 10..45
-                      const count = 7;
+                      const count = 12;
+                      const arc = Math.PI / 2; // 90 degrees
+                      const startAngle = angleRad - (arc / 2);
+                      const step = arc / (count - 1);
                       for(let k=0; k<count; k++) {
-                          const side = k % 2 === 0 ? 1 : -1;
-                          const deg = 10 + Math.random() * 35; // Random between 10 and 45
-                          const a = angleRad + (side * deg * (Math.PI/180));
+                          const a = startAngle + (k * step);
                           s.bullets.push({ x: startX, y: startY, vx: Math.sin(a) * bulletSpeed, vy: -Math.cos(a) * bulletSpeed, damage: damage/3, color, type: 'star', life: 60, isEnemy: false, width: 8, height: 8, weaponId: w.id, angleOffset: Math.random()*Math.PI });
                       }
                   } else if (w.id === 'exotic_flamer') {
@@ -730,13 +753,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                           weaponId: w.id 
                       });
                   } else if (w.id === 'exotic_octo_burst') {
-                      // 10-45 spread L/R
-                      for(let k=0; k<8; k++) { 
-                          const side = k % 2 === 0 ? 1 : -1;
-                          const deg = 10 + Math.random() * 35;
-                          const a = angleRad + (side * deg * (Math.PI/180));
-                          s.bullets.push({ x: startX, y: startY, vx: Math.sin(a) * bulletSpeed, vy: -Math.cos(a) * bulletSpeed, damage: damage, color: '#a855f7', type: 'projectile', life: 60, isEnemy: false, width: 6, height: 6, weaponId: w.id }); 
-                      }
+                      const spread = 12 * (Math.PI / 180);
+                      const angle = (Math.random() - 0.5) * spread; // -6 to +6 degrees relative to forward
+                      const a = angleRad + angle;
+                      s.bullets.push({
+                          x: startX, y: startY,
+                          vx: Math.sin(a) * (bulletSpeed * 1.5), 
+                          vy: -Math.cos(a) * (bulletSpeed * 1.5),
+                          damage: damage,
+                          color: '#a855f7',
+                          type: 'plasma_jet',
+                          life: 60,
+                          isEnemy: false,
+                          width: 12, height: 40,
+                          weaponId: w.id,
+                          glow: true, glowIntensity: 15
+                      });
                   } else if (w.id === 'exotic_wave') {
                       s.bullets.push({ x: startX, y: startY, vx: Math.sin(angleRad) * bulletSpeed, vy: -Math.cos(angleRad) * bulletSpeed, damage: damage, color: '#8b5cf6', type: 'ring', life: 60, isEnemy: false, width: 10, height: 10, weaponId: w.id, growthRate: 1.5, originalSize: 10 });
                   } else if (w.id === 'exotic_gravity_wave') {
@@ -941,8 +973,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             
                             // STANDARD EXOTIC LOGIC (Same as Alien Fire Logic, reused)
                             if (w.id === 'exotic_star_shatter') {
-                                const count = 7;
-                                for(let k=0; k<count; k++) { const side = k % 2 === 0 ? 1 : -1; const deg = 10 + Math.random() * 35; const a = angleRad + (side * deg * (Math.PI/180)); s.bullets.push({ x: startX, y: startY, vx: Math.sin(a) * bulletSpeed, vy: -Math.cos(a) * bulletSpeed, damage: damage/3, color, type: 'star', life: 60, isEnemy: false, width: 8, height: 8, weaponId: w.id, angleOffset: Math.random()*Math.PI }); }
+                                const count = 12;
+                                const arc = Math.PI / 2; // 90 degrees
+                                const startAngle = angleRad - (arc / 2);
+                                const step = arc / (count - 1);
+                                for(let k=0; k<count; k++) {
+                                    const a = startAngle + (k * step);
+                                    s.bullets.push({ x: startX, y: startY, vx: Math.sin(a) * bulletSpeed, vy: -Math.cos(a) * bulletSpeed, damage: damage/3, color, type: 'star', life: 60, isEnemy: false, width: 8, height: 8, weaponId: w.id, angleOffset: Math.random()*Math.PI });
+                                }
                             } else if (w.id === 'exotic_flamer') {
                                 const spread = 30 * (Math.PI/180); const a = angleRad + (Math.random()-0.5) * spread; 
                                 s.bullets.push({ x: startX, y: startY, vx: Math.sin(a) * (bulletSpeed*0.6), vy: -Math.cos(a) * (bulletSpeed*0.6), damage: damage, color: Math.random()>0.5 ? '#ef4444' : '#facc15', type: 'flame', life: 100, isEnemy: false, width: 12, height: 12, weaponId: w.id });
@@ -972,7 +1010,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                     weaponId: w.id 
                                 });
                             } else if (w.id === 'exotic_octo_burst') {
-                                for(let k=0; k<8; k++) { const side = k % 2 === 0 ? 1 : -1; const deg = 10 + Math.random() * 35; const a = angleRad + (side * deg * (Math.PI/180)); s.bullets.push({ x: startX, y: startY, vx: Math.sin(a) * bulletSpeed, vy: -Math.cos(a) * bulletSpeed, damage: damage, color: '#a855f7', type: 'projectile', life: 60, isEnemy: false, width: 6, height: 6, weaponId: w.id }); }
+                                const spread = 12 * (Math.PI / 180);
+                                const angle = (Math.random() - 0.5) * spread; // -6 to +6 degrees relative to forward
+                                const a = angleRad + angle; // Add to existing mount angle (usually 0 for straight)
+                                s.bullets.push({
+                                    x: startX, y: startY,
+                                    vx: Math.sin(a) * (bulletSpeed * 1.5), 
+                                    vy: -Math.cos(a) * (bulletSpeed * 1.5),
+                                    damage: damage,
+                                    color: '#a855f7',
+                                    type: 'plasma_jet',
+                                    life: 60,
+                                    isEnemy: false,
+                                    width: 12, height: 40,
+                                    weaponId: w.id,
+                                    glow: true, glowIntensity: 15
+                                });
                             } else if (w.id === 'exotic_wave') {
                                 s.bullets.push({ x: startX, y: startY, vx: Math.sin(angleRad) * bulletSpeed, vy: -Math.cos(angleRad) * bulletSpeed, damage: damage, color: '#8b5cf6', type: 'ring', life: 60, isEnemy: false, width: 10, height: 10, weaponId: w.id, growthRate: 1.5, originalSize: 10 });
                             } else if (w.id === 'exotic_gravity_wave') {
@@ -1078,11 +1131,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     
                     // Enemy Firing Logic for Exotics (UPDATED SPREAD)
                     if (wDef.id === 'exotic_star_shatter') { 
-                        const count = 5; 
+                        const count = 12; 
+                        const arc = Math.PI / 2; // 90 degrees
+                        const baseAngle = Math.PI / 2;
+                        const startAngle = baseAngle - (arc / 2);
+                        const step = arc / (count - 1);
+                        
                         for(let k=0; k<count; k++) { 
-                            const side = k % 2 === 0 ? 1 : -1; 
-                            const deg = 10 + Math.random() * 35; // 10-45 deg
-                            const a = Math.PI/2 + (side * deg * (Math.PI/180)); 
+                            const a = startAngle + (k * step);
                             s.bullets.push({ x: sx, y: sy, vx: Math.cos(a)*6, vy: Math.sin(a)*6, damage, color, type: 'star', life: 60, isEnemy: true, width: 8, height: 8, weaponId: wDef.id, angleOffset: Math.random() }); 
                         } 
                     }
@@ -1102,12 +1158,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         } 
                     }
                     else if (wDef.id === 'exotic_octo_burst') { 
-                        for(let k=0; k<8; k++) { 
-                            const side = k % 2 === 0 ? 1 : -1;
-                            const deg = 10 + Math.random() * 35;
-                            const a = Math.PI/2 + (side * deg * (Math.PI/180)); 
-                            s.bullets.push({ x: sx, y: sy, vx: Math.cos(a)*6, vy: Math.sin(a)*6, damage, color: '#a855f7', type: 'projectile', life: 60, isEnemy: true, width: 6, height: 6, weaponId: wDef.id }); 
-                        } 
+                        const spread = 12 * (Math.PI / 180);
+                        const angle = (Math.random() - 0.5) * spread; // -6 to +6 degrees relative to forward
+                        const a = (Math.PI/2) + angle; 
+                        s.bullets.push({ x: sx, y: sy, vx: Math.cos(a)*12, vy: Math.sin(a)*12, damage, color: '#a855f7', type: 'plasma_jet', life: 60, isEnemy: true, width: 12, height: 40, weaponId: wDef.id, glow: true }); 
                     }
                     else if (wDef.id === 'exotic_electric') {
                         // Short arcs for enemy
@@ -1354,6 +1408,24 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 
                 ctx.stroke();
                 ctx.shadowBlur = 0;
+            } else if (b.type === 'plasma_jet') {
+                const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;
+                ctx.rotate(angle);
+                // Core
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                // Draw a diamond/spindle shape: Fat middle, thin ends
+                // b.width is the fat middle, b.height is the length
+                ctx.moveTo(0, -b.height/2); // Tip (Top)
+                ctx.quadraticCurveTo(b.width/2, 0, 0, b.height/2); // Right side to bottom
+                ctx.quadraticCurveTo(-b.width/2, 0, 0, -b.height/2); // Left side to top
+                ctx.fill();
+                
+                // Outer glow stroke to define shape clearly
+                ctx.shadowBlur = 0; 
+                ctx.strokeStyle = b.color;
+                ctx.lineWidth = 2;
+                ctx.stroke();
                 
             } else if (b.type === 'wave') {
                 const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;

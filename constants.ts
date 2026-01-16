@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 22
-// VERSION: Beta 22 - Exotic Weapons Overhaul
+// CHECKPOINT: Beta 23
+// VERSION: Beta 23 - Octo Burst Update
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -248,8 +248,8 @@ export const WEAPONS: Weapon[] = [
 
 // 9 DISTINCT EXOTIC WEAPONS
 export const EXOTIC_WEAPONS: Weapon[] = [
-  // 1. Star Shatter: Spread of energy small stars, 90 deg angle
-  { id: 'exotic_star_shatter', name: 'Star Shatter', type: WeaponType.PROJECTILE, price: 450000, damage: 120, fireRate: 6, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 1 },
+  // 1. Star Shatter: 12 stars, 90 deg arc, 4 shots/sec, +20% dmg/star
+  { id: 'exotic_star_shatter', name: 'Star Shatter', type: WeaponType.PROJECTILE, price: 450000, damage: 144, fireRate: 4, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 1 },
   
   // 2. Dragon Breath: Spreading fire flames on a 30 deg angle range half of screen
   { id: 'exotic_flamer', name: 'Dragon Breath', type: WeaponType.PROJECTILE, price: 120000, damage: 35, fireRate: 15, energyCost: 2, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 3 },
@@ -260,8 +260,8 @@ export const EXOTIC_WEAPONS: Weapon[] = [
   // 4. Zeus Thunderbolt: Electricity bolts (Renamed)
   { id: 'exotic_electric', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 600000, damage: 600, fireRate: 4, energyCost: 6, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff', barrelCount: 3 },
   
-  // 5. Octo Burst: Spreading little balls all at once in 8 directions ahead
-  { id: 'exotic_octo_burst', name: 'Octo Burst', type: WeaponType.PROJECTILE, price: 380000, damage: 150, fireRate: 6, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7', barrelCount: 8 },
+  // 5. Octo Burst: Plasma Jet Stream, random spread 12 deg, 8 shots/sec
+  { id: 'exotic_octo_burst', name: 'Octo Burst', type: WeaponType.PROJECTILE, price: 380000, damage: 180, fireRate: 8, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7', barrelCount: 1 },
   
   // 6. Sonic Ring: Shooting rings of plasma that grow
   { id: 'exotic_wave', name: 'Sonic Ring', type: WeaponType.PROJECTILE, price: 320000, damage: 280, fireRate: 5, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#8b5cf6', barrelCount: 1 },
