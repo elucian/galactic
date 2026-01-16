@@ -38,7 +38,8 @@ const ToolButton = ({ onClick, disabled, icon, vertical = false, sizeClass }: { 
 );
 
 const getCategory = (item: CargoItem) => {
-    const t = item.type?.toLowerCase() || '';
+    if (!item || !item.type) return 'RESOURCES';
+    const t = item.type.toLowerCase();
     if (['weapon', 'gun', 'projectile', 'laser'].includes(t)) return 'WEAPONRY';
     if (['shield'].includes(t)) return 'DEFENSE';
     if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
@@ -83,12 +84,13 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
   const canMoveAllToShip = reserves.length > 0;
 
   const renderList = (items: CargoItem[], selectedIdx: number | null, onSelect: (idx: number | null) => void, side: 'ship' | 'reserve') => {
-      if (items.length === 0) {
+      if (!items || items.length === 0) {
           return <div className="text-center p-10 opacity-30 text-[9px] uppercase font-black text-zinc-500">Empty Storage</div>;
       }
 
       const grouped: Record<string, { item: CargoItem, originalIdx: number }[]> = {};
       items.forEach((item, idx) => {
+          if (!item) return; // Safety check for null/undefined items
           const cat = getCategory(item);
           if (!grouped[cat]) grouped[cat] = [];
           grouped[cat].push({ item, originalIdx: idx });
@@ -124,7 +126,7 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                                   }
 
                                   return (
-                                      <div key={item.instanceId} onClick={() => onSelect(originalIdx)} 
+                                      <div key={item.instanceId || `idx_${originalIdx}`} onClick={() => onSelect(originalIdx)} 
                                            className={`flex justify-between items-center p-2 sm:p-3 border cursor-pointer rounded group transition-all select-none ${isSelected ? activeClass : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-600'}`}>
                                           <div className={`flex items-center gap-3 ${side === 'reserve' ? 'w-full justify-end' : ''}`}>
                                               {side === 'ship' && <ItemSVG type={item.type} color={iconColor} size={iconSize}/>}
