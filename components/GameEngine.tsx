@@ -218,14 +218,12 @@ class Enemy {
     if (this.stunnedUntil > 0) this.stunnedUntil--;
     if (this.shieldDisabledUntil > 0) this.shieldDisabledUntil--;
 
-    // Dynamic vertical speed based on player throttle (worldSpeedFactor)
-    // Base speed is around 2.8. 
     const verticalSpeed = 2.8 * worldSpeedFactor;
 
     if (this.stunnedUntil > 0) {
         this.vx *= 0.9;
         this.vy *= 0.9;
-        this.vy += 0.5 * worldSpeedFactor; // Gravity affects stun drift
+        this.vy += 0.5 * worldSpeedFactor; 
     } else {
         if (this.type === 'boss') {
             if (this.shieldLayers.length > 0 && this.shieldRegen > 0 && this.shieldDisabledUntil <= 0) {
@@ -275,9 +273,8 @@ class Enemy {
               this.hp -= dmg;
               actualDamage = dmg;
           } else {
-              // EMP shot just breaks shields, minor hull dmg
               this.vibration = 30;
-              this.shieldDisabledUntil = 120; // 2 seconds disabled
+              this.shieldDisabledUntil = 120; 
               this.hp -= 50; 
               actualDamage = 50;
           }
@@ -311,10 +308,10 @@ class Enemy {
           let shieldDmg = amount;
           if (isMain) {
               if (isOvercharge) { 
-                  shieldDmg *= 3.0; // Bonus vs Shield for Power Shots
+                  shieldDmg *= 3.0; 
                   this.vibration = 20; 
               } else { 
-                  shieldDmg *= 0.5; // Penalty vs Shield for Rapid Fire
+                  shieldDmg *= 0.5; 
               }
           }
           else if (type === 'laser' || type === 'bolt') shieldDmg *= 1.5;
@@ -331,9 +328,9 @@ class Enemy {
           let dmg = amount;
           if (isMain) {
               if (isOvercharge) {
-                  dmg *= 1.0; // Standard damage vs Hull for Power Shots
+                  dmg *= 1.0; 
               } else {
-                  dmg *= 3.0; // Increased Bonus vs Hull for Rapid Fire
+                  dmg *= 3.0; 
               }
           } else if (type === 'projectile' || type === 'star') dmg *= 2.0;
           else if (type === 'flame') dmg *= 1.2; 
@@ -379,24 +376,22 @@ interface GameEngineProps {
 }
 
 const LEDMeter = ({ value, max, colorStart, label, vertical = false, reverseColor = false }: { value: number, max: number, colorStart: string, label: string, vertical?: boolean, reverseColor?: boolean }) => {
-    const segments = 20; // 20 segments for the bar
+    const segments = 20; 
     const pct = Math.max(0, Math.min(1, value / max));
     const filled = Math.ceil(pct * segments);
 
     let activeColor = colorStart;
     
     if (reverseColor) {
-        // Reverse Logic (e.g. Heat/Load)
-        if (pct > 0.9) activeColor = '#ef4444'; // Red
-        else if (pct > 0.7) activeColor = '#facc15'; // Yellow
+        if (pct > 0.9) activeColor = '#ef4444'; 
+        else if (pct > 0.7) activeColor = '#facc15'; 
     } else {
-        // Standard Logic (Depleting Resource like Fuel/Energy)
-        if (pct < 0.1) activeColor = '#ef4444'; // Red
-        else if (pct < 0.3) activeColor = '#facc15'; // Yellow
+        if (pct < 0.1) activeColor = '#ef4444'; 
+        else if (pct < 0.3) activeColor = '#facc15'; 
     }
 
     return (
-        <div className={`flex ${vertical ? 'flex-col items-center h-40' : 'flex-col items-center'} gap-1`}>
+        <div className={`flex ${vertical ? 'flex-col items-center h-40' : 'flex-row items-center w-full'} gap-1`}>
             {vertical ? (
                 <>
                     <div className="flex flex-col-reverse gap-[1px] bg-black p-[2px] border border-zinc-800 rounded h-full w-5 shadow-inner">
@@ -415,64 +410,67 @@ const LEDMeter = ({ value, max, colorStart, label, vertical = false, reverseColo
                             );
                         })}
                     </div>
-                    {/* Compact Single Letter Label */}
                     <div className="w-5 h-5 flex items-center justify-center bg-zinc-900 border border-zinc-800 rounded mt-1">
                         <span className="text-[10px] font-black text-white">{label}</span>
                     </div>
                 </>
-            ) : null}
+            ) : (
+                <>
+                    <div className="w-5 h-5 flex items-center justify-center bg-zinc-900 border border-zinc-800 rounded mr-1">
+                        <span className="text-[10px] font-black text-white">{label}</span>
+                    </div>
+                    <div className="flex flex-row gap-[1px] bg-black p-[2px] border border-zinc-800 rounded w-24 sm:w-32 h-4 shadow-inner">
+                        {Array.from({ length: segments }).map((_, i) => {
+                            const isActive = i < filled;
+                            return (
+                                <div
+                                    key={i}
+                                    className="h-full flex-1 rounded-[1px] transition-colors duration-150"
+                                    style={{
+                                        backgroundColor: isActive ? activeColor : '#18181b',
+                                        boxShadow: isActive ? `0 0 6px ${activeColor}` : 'none',
+                                        opacity: isActive ? 1 : 0.5
+                                    }}
+                                />
+                            );
+                        })}
+                    </div>
+                </>
+            )}
         </div>
     );
 };
 
 const RoundCadran = ({ value, max }: { value: number, max: number }) => {
     const percentage = Math.min(1, Math.max(0, value / max));
-    
-    // Color Logic: Full=Green, <30%=Yellow, <10%=Red
-    let color = '#10b981'; // Green
-    if (percentage < 0.1) color = '#ef4444'; // Red
-    else if (percentage < 0.3) color = '#facc15'; // Yellow
+    let color = '#10b981'; 
+    if (percentage < 0.1) color = '#ef4444'; 
+    else if (percentage < 0.3) color = '#facc15'; 
 
     const segments = 10;
     const activeSegments = Math.ceil(percentage * segments);
-    
-    // Config for arc (Increased 25% again per request)
     const radius = 25; 
     const center = { x: 30, y: 30 };
     const strokeWidth = 5; 
     const paths = [];
 
-    // Draw 10 segments in a 180 degree arc (from -180 to 0 degrees)
     for(let i=0; i<segments; i++) {
-        // Start from -180 (left) going to 0 (right)
         const startAngle = -180 + (i * (180/segments));
-        const endAngle = startAngle + (180/segments) - 4; // -4 gap
-        
+        const endAngle = startAngle + (180/segments) - 4; 
         const startRad = (startAngle * Math.PI) / 180;
         const endRad = (endAngle * Math.PI) / 180;
-        
         const x1 = center.x + radius * Math.cos(startRad);
         const y1 = center.y + radius * Math.sin(startRad);
         const x2 = center.x + radius * Math.cos(endRad);
         const y2 = center.y + radius * Math.sin(endRad);
-        
         const d = `M ${x1} ${y1} A ${radius} ${radius} 0 0 1 ${x2} ${y2}`;
         const isActive = i < activeSegments;
         
         paths.push(
-            <path 
-                key={i} 
-                d={d} 
-                fill="none" 
-                stroke={isActive ? color : '#334155'} 
-                strokeWidth={strokeWidth} 
-                strokeLinecap="round"
-                className="transition-colors duration-200"
-            />
+            <path key={i} d={d} fill="none" stroke={isActive ? color : '#334155'} strokeWidth={strokeWidth} strokeLinecap="round" className="transition-colors duration-200" />
         );
     }
 
-    // Angular Indicator (Needle)
     const needleAngle = -180 + (percentage * 180);
     const needleRad = (needleAngle * Math.PI) / 180;
     const nx = center.x + (radius - 2) * Math.cos(needleRad);
@@ -489,10 +487,9 @@ const RoundCadran = ({ value, max }: { value: number, max: number }) => {
     );
 };
 
-// Utility Button for HUD
 const HudButton = ({ label, subLabel, onClick, onDown, onUp, colorClass, borderClass, active = false, count, maxCount }: any) => {
     return (
-        <div className="flex flex-col items-center">
+        <div className="flex flex-col items-center pointer-events-auto">
             {count !== undefined && <RoundCadran value={count} max={maxCount || 10} />}
             <button 
                 onMouseDown={onDown} onMouseUp={onUp} onMouseLeave={onUp} onTouchStart={onDown} onTouchEnd={onUp} onClick={onClick}
@@ -521,7 +518,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const hasGuns = activeShip?.fitting.weapons.some(w => !!w);
 
   const hudLabel = fontSize === 'small' ? 'text-[8px]' : (fontSize === 'large' ? 'text-[12px]' : 'text-[10px]');
-  const hudScore = fontSize === 'small' ? 'text-xl' : (fontSize === 'large' ? 'text-4xl' : 'text-3xl');
+  // Reduced font sizes by ~50% as requested
+  const hudScore = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-lg' : 'text-sm');
+  const hudTimer = fontSize === 'small' ? 'text-xs' : (fontSize === 'large' ? 'text-xl' : 'text-base');
   const hudAlertText = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[16px]' : 'text-[12px]');
 
   const [hud, setHud] = useState({ 
@@ -541,6 +540,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const inputRef = useRef({ main: false, secondary: false });
   const tiltRef = useRef({ beta: 0, gamma: 0 }); 
   const hasTiltRef = useRef(false);
+  const targetRef = useRef<{x: number, y: number} | null>(null);
 
   const state = useRef({
     px: window.innerWidth/2, py: window.innerHeight*0.8, hp: 100, fuel: 0, water: 0, energy: maxEnergy, 
@@ -578,16 +578,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     overload: 0,
     overdrive: false,
     overdriveFirstShot: false,
-    charging: false, // New flag for manual shift charge
+    charging: false, 
     shakeX: 0,
     shakeY: 0,
     shakeDecay: 0.9,
-    // NEW CAPACITOR LOGIC
     capacitor: 0,
     isCapacitorCharging: false,
     salvoTimer: 0,
     lastSalvoFire: 0,
-    // NEW MOVEMENT LOGIC
     currentThrottle: 0, // -1.0 to 1.0 (smooth)
     shipVy: 0,
   });
@@ -640,6 +638,31 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       };
   }, []);
 
+  const handlePointerDown = (e: React.PointerEvent) => {
+      // Check if clicking a HUD button
+      const target = e.target as HTMLElement;
+      if (target.closest('button') || target.tagName === 'BUTTON') return;
+      
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      
+      // Calculate position relative to canvas
+      // e.clientX is viewport x.
+      // If canvas is full screen, this is usually accurate unless css scaling.
+      targetRef.current = { x: e.clientX, y: e.clientY };
+      
+      // Permission hack for iOS Motion (first interaction)
+      if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
+          (DeviceMotionEvent as any).requestPermission()
+              .then((response: string) => {
+                  if (response === 'granted') {
+                      // listeners are already added in useEffect, this just grants access
+                  }
+              })
+              .catch(console.error);
+      }
+  };
+
   const handleTabReload = () => {
       const s = state.current;
       if (s.ammo[s.selectedAmmo] > 0 && s.magazineCurrent < 1000) {
@@ -659,7 +682,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     const k = state.current.keys;
     const kd = (e: KeyboardEvent) => { 
         if(e.repeat) return;
-        
         if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.code === 'NumpadAdd' || e.code === 'NumpadSubtract')) { e.preventDefault(); }
         if (e.code === 'Tab' || e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Backspace') e.preventDefault();
         
@@ -677,7 +699,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if(e.code === 'KeyN' || e.code === 'NumpadEnter' || e.code === 'Enter') fireMine();
             if(e.code === 'KeyB') fireRedMine(); 
             if (e.code === 'Tab') handleTabReload();
-            // Removed CapsLock trigger for swivel
             if (e.code === 'Space') inputRef.current.main = true;
             if (e.code === 'ControlLeft' || e.code === 'ControlRight') inputRef.current.secondary = true;
         }
@@ -695,10 +716,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const s = state.current;
       const mainWeapon = activeShip.fitting.weapons[0];
       const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null;
-      const dmg = (mainDef ? mainDef.damage : 45) * 3.0; // 3x Damage for Salvo Shot
+      const dmg = (mainDef ? mainDef.damage : 45) * 3.0; 
       const color = mainDef ? mainDef.beamColor : '#fff';
       
-      // Powerful single shot with spread effect
       const angle = (Math.random() - 0.5) * 0.1;
       s.bullets.push({
           x: s.px, y: s.py - 24, 
@@ -708,7 +728,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           type: 'laser', 
           life: 50, 
           isEnemy: false, 
-          width: 12, height: 60, // Larger visual
+          width: 12, height: 60, 
           glow: true, glowIntensity: 30, 
           isMain: true, 
           weaponId: mainWeapon?.id || 'gun_pulse',
@@ -843,20 +863,67 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         let right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
 
         if (hasTiltRef.current) {
-            if (tiltRef.current.gamma < -10) left = true;
-            if (tiltRef.current.gamma > 10) right = true;
+            // Determine Orientation: Portrait vs Landscape
+            const isLandscape = window.innerWidth > window.innerHeight;
             
-            // TILT LOGIC:
-            // Beta < 25 (Flat/Forward): Accelerate (Throttle 1)
-            // Beta > 35 (Upright/Back): Brake (Throttle -1)
-            // Beta 25-35: Deadzone (Throttle 0)
-            if (tiltRef.current.beta < 25) targetThrottle = 1;
-            else if (tiltRef.current.beta > 35) targetThrottle = -1;
-            else targetThrottle = 0;
-        } else {
-            // DESKTOP KEYS
-            if (s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8')) targetThrottle = 1;
-            else if (s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2')) targetThrottle = -1;
+            // Use Gamma for Portrait (Roll: Left/Right tilt)
+            // Use Beta for Landscape (Pitch: effectively Left/Right tilt in landscape)
+            let tiltVal = 0;
+            if (isLandscape) {
+                // In landscape, beta is the "up/down" relative to device, but left/right relative to user view
+                // Beta ranges -180 to 180. Usually 0 is flat on table.
+                tiltVal = tiltRef.current.beta;
+            } else {
+                // Portrait
+                tiltVal = tiltRef.current.gamma;
+            }
+
+            // Deadzone of 5 degrees
+            if (tiltVal < -5) {
+                left = true;
+                // Add velocity based on tilt angle
+                s.px -= Math.abs(tiltVal) * 0.2; 
+            } else if (tiltVal > 5) {
+                right = true;
+                s.px += Math.abs(tiltVal) * 0.2;
+            }
+            
+            // Override Tap Target if tilting
+            if (Math.abs(tiltVal) > 5) {
+                targetRef.current = null;
+            }
+        }
+
+        // DESKTOP KEYS
+        if (s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8')) targetThrottle = 1;
+        else if (s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2')) targetThrottle = -1;
+
+        // TAP NAVIGATION LOGIC
+        if (targetRef.current) {
+            const dx = targetRef.current.x - s.px;
+            const dy = targetRef.current.y - s.py;
+            const dist = Math.hypot(dx, dy);
+            
+            if (dist < 10) {
+                targetRef.current = null;
+                targetThrottle = 0;
+            } else {
+                const angle = Math.atan2(dy, dx);
+                const approachSpeed = 12; // Brisk pace
+                
+                // Move Ship
+                s.px += Math.cos(angle) * approachSpeed;
+                s.py += Math.sin(angle) * approachSpeed;
+                
+                // Set Visuals based on movement vector
+                const xComp = Math.cos(angle);
+                const yComp = Math.sin(angle);
+                
+                if (xComp < -0.5) left = true;
+                if (xComp > 0.5) right = true;
+                if (yComp < -0.5) targetThrottle = 1; // Moving UP screen is throttle forward
+                if (yComp > 0.5) targetThrottle = -1; // Moving DOWN screen is braking
+            }
         }
 
         // Interpolate current throttle towards target (Smoothness)
@@ -871,19 +938,25 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         // Throttle < 0: Move Down (Screen Y increases)
         // Max vertical speed ~8px/frame
         const verticalSpeed = -s.currentThrottle * 8; 
-        s.py += verticalSpeed;
+        
+        // Only apply vertical speed if not navigating by touch (touch handles Y directly)
+        if (!targetRef.current) {
+            s.py += verticalSpeed;
+        }
         
         // Clamp Y
         s.py = Math.max(50, Math.min(height - 150, s.py));
 
-        // Horizontal Movement
-        if (left) s.px -= speed;
-        if (right) s.px += speed;
+        // Horizontal Movement (Keys)
+        if (s.keys.has('ArrowLeft') || s.keys.has('KeyA')) s.px -= speed;
+        if (s.keys.has('ArrowRight') || s.keys.has('KeyD')) s.px += speed;
+        
+        // Clamp X
         s.px = Math.max(30, Math.min(width-30, s.px));
 
         s.movement = { 
-            up: s.currentThrottle > 0.1, 
-            down: s.currentThrottle < -0.1, 
+            up: s.currentThrottle > 0.2, 
+            down: s.currentThrottle < -0.2, 
             left, 
             right 
         };
@@ -896,7 +969,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         // Brake (Throttle < 0) -> Slower World
         let worldSpeedFactor = 1.0;
         if (s.currentThrottle > 0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); // Max 1.5x
-        if (s.currentThrottle < -0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); // Min 0.5x (since throttle is negative)
+        if (s.currentThrottle < -0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); // Min 0.5x
 
         if (s.rescueMode) {
             const driftSpeed = 3;
@@ -906,11 +979,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                if (s.currentThrottle < 0) s.py += driftSpeed;
                s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
             }
-            if (s.frame % 3 === 0) s.particles.push({ x: s.px, y: s.py + 10, vx: (Math.random()-0.5)*2, vy: 2 + Math.random()*2, life: 1.0, color: '#555', size: 4 });
+            // Modified Smoke (Bufs behind jets)
+            if (s.frame % 8 === 0) { // Periodic puffs
+                 s.particles.push({ 
+                     x: s.px, 
+                     y: s.py + 60, // Behind the jet (approx cy+28+30)
+                     vx: (Math.random()-0.5)*1, 
+                     vy: 2 + Math.random(), 
+                     life: 1.2, 
+                     color: '#9ca3af', // Smoke gray
+                     size: 5 + Math.random()*5 
+                 });
+            }
         } else {
             if (isMoving) {
                 let consumption = 0.005; 
-                // Higher consumption for acceleration
                 if (s.currentThrottle > 0.1) consumption += 0.002 * s.currentThrottle;
                 
                 if (s.fuel > 0) { s.fuel = Math.max(0, s.fuel - consumption); s.usingWater = false; } else if (s.water > 0) { s.water = Math.max(0, s.water - (consumption * 0.5)); s.usingWater = true; } else { isMoving = false; }
@@ -924,25 +1007,17 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         
         const isFiring = s.keys.has('Space') || inputRef.current.main;
 
-        // Passive Energy Recharge (Slow)
         if (!s.isCapacitorCharging) {
-            s.energy = Math.min(maxEnergy, s.energy + 1.0); // Reduced regeneration
+            s.energy = Math.min(maxEnergy, s.energy + 1.0); 
         }
         
         if (!s.rescueMode) {
-            // --- MAIN GUN LOGIC ---
-            // Passive Charging when NOT firing
             if (!isFiring && s.capacitor < 100) {
                 if (s.energy > 0) {
                     s.capacitor = Math.min(100, s.capacitor + 0.5); 
-                    
-                    // Determine drain based on weapon price
                     const mainWeapon = activeShip.fitting.weapons[0];
                     const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null;
                     const price = mainDef?.price || 2000;
-                    // Formula: Expensive guns drain less energy to charge capacitor.
-                    // Base drain: 1.5. Min drain: 0.2. Max Price ~100k.
-                    // Price 2k -> Drain ~1.46. Price 100k -> Drain 0.2.
                     const drainRate = Math.max(0.2, 1.5 - (price / 80000));
 
                     s.energy = Math.max(0, s.energy - drainRate);
@@ -960,7 +1035,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             }
 
-            // Auto-Refill Energy from Cargo
             if (s.energy < maxEnergy * 0.1) {
                 const energyIdx = s.cargo.findIndex(c => c.type === 'energy');
                 if (energyIdx >= 0) {
@@ -976,20 +1050,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (activeShip.config.isAlien) { 
                 if (isFiring) fireAlienWeapons();
             } else {
-                // New Firing Logic
-                // Priority: Salvo (>20 charge) -> Rapid (Empty/Low Charge)
                 if (isFiring) {
                     const salvoCost = 20;
                     if (s.capacitor >= salvoCost) {
-                        // Rate limiter for Salvo (slower than rapid)
-                        // e.g., 4 shots/sec = 15 frames @ 60fps
                         if (s.frame - s.lastSalvoFire > 15) {
                             fireSalvoShot();
                             s.capacitor = Math.max(0, s.capacitor - salvoCost);
                             s.lastSalvoFire = s.frame;
                         }
                     } else {
-                        // Fallback to Rapid Fire (Normal rate)
                         fireRapidShot();
                     }
                 }
@@ -998,7 +1067,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (firingSecondary && !activeShip.config.isAlien) { fireWingWeapons(); }
         }
 
-        // SCREEN SHAKE UPDATE
         if (s.shakeX > 0) s.shakeX *= s.shakeDecay;
         if (s.shakeY > 0) s.shakeY *= s.shakeDecay;
         if (s.shakeX < 0.5) s.shakeX = 0;
@@ -1090,7 +1158,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 s.asteroids.forEach(a => {
                     if (Math.hypot(b.x-a.x, b.y-a.y) < a.size + 10) {
                         let dmg = b.damage;
-                        if (b.isOvercharge) dmg *= 5.0; // Bonus vs Asteroids (Up from 3.0)
+                        if (b.isOvercharge) dmg *= 5.0; 
                         a.hp -= dmg;
                         if (a.hp <= 0 && a.loot) spawnLoot(a.x, a.y, a.z, a.loot.type, a.loot.id, a.loot.name, a.loot.quantity || 1);
                         hit = true; createExplosion(b.x, b.y, '#888', 5, 'asteroid');
@@ -1126,12 +1194,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             // Attraction (Increased radius from 150 to 175)
             if (dist < 175) {
                 l.isBeingPulled = true;
-                // Stronger pull (0.08) and NO gravity to avoid equilibrium trap below ship
                 l.x += dx * 0.08;
                 l.y += dy * 0.08;
             } else {
                 l.isBeingPulled = false;
-                // Only apply gravity/drift if NOT being pulled
                 l.y += 2 * worldSpeedFactor; 
                 l.x += l.vx; 
                 l.y += l.vy;
@@ -1139,7 +1205,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             
             // Collection
             if (dist < 30) {
-                l.isPulled = true; // Mark for deletion
+                l.isPulled = true; 
                 audioService.playSfx('buy');
                 
                 // Refill Logic
@@ -1161,13 +1227,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         s.particles = s.particles.filter(p => p.life > 0);
 
         // DRAWING
-        // Apply Screen Shake transform globally
         const shakeX = (Math.random() - 0.5) * s.shakeX;
         const shakeY = (Math.random() - 0.5) * s.shakeY;
         ctx.save();
         ctx.translate(shakeX, shakeY);
 
-        ctx.fillStyle = '#000'; ctx.fillRect(-shakeX, -shakeY, width, height); // Fill slightly larger to cover shake edges
+        ctx.fillStyle = '#000'; ctx.fillRect(-shakeX, -shakeY, width, height); 
         ctx.fillStyle = '#fff'; s.stars.forEach(st => { st.y += st.s * 0.5 * worldSpeedFactor; if(st.y > height) st.y = 0; ctx.globalAlpha = Math.random() * 0.5 + 0.3; ctx.beginPath(); ctx.arc(st.x, st.y, st.s, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1;
 
         const entities = [...s.asteroids.map(a => ({type: 'ast', z: a.z, obj: a})), ...s.enemies.map(e => ({type: 'enemy', z: e.z, obj: e})), ...s.loot.map(l => ({type: 'loot', z: l.z, obj: l})), {type: 'player', z: 0, obj: null}].sort((a,b) => a.z - b.z);
@@ -1203,7 +1268,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 ctx.translate(s.px, s.py);
                 drawShip(ctx, { config: activeShip.config, fitting: activeShip.fitting, color: activeShip.color, wingColor: activeShip.wingColor, cockpitColor: activeShip.cockpitColor, gunColor: activeShip.gunColor, secondaryGunColor: activeShip.secondaryGunColor, gunBodyColor: activeShip.gunBodyColor, engineColor: activeShip.engineColor, nozzleColor: activeShip.nozzleColor, equippedWeapons: activeShip.fitting.weapons }, true, s.movement, s.usingWater, s.rescueMode);
                 if ((s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) {
-                    // Player Shields Reduced 20% (70->56, 80->64)
                     if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
                     if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
                 }
@@ -1213,15 +1277,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 ctx.translate(e.x + vibX, e.y + vibY); ctx.scale(scale, scale); ctx.rotate(Math.PI);
                 const alienCols = getAlienColors(quadrant);
                 drawShip(ctx, { config: e.config, fitting: null, color: e.type==='boss'?'#a855f7':alienCols.hull, wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, gunColor: '#ef4444', equippedWeapons: e.equippedWeapons }, false);
-                // Enemy Shields Reduced 20% (Base 60->48)
                 if (e.shieldLayers.length > 0) { e.shieldLayers.forEach((layer, idx) => { if (layer.current <= 0) return; const radius = 48 + (idx * 8); const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); }
             } else if (item.type === 'loot') {
                 const l = item.obj as Loot;
                 ctx.translate(l.x, l.y); ctx.scale(scale, scale);
 
-                // --- TRACTOR BEAM HIGHLIGHT START ---
                 if (l.isBeingPulled) {
-                    // Silver Highlight Circle
                     ctx.strokeStyle = 'rgba(192, 210, 255, 0.8)';
                     ctx.lineWidth = 2;
                     ctx.shadowColor = '#fff';
@@ -1231,14 +1292,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     ctx.stroke();
                     ctx.shadowBlur = 0;
 
-                    // Arcs
                     ctx.save();
                     const dx = s.px - l.x;
                     const dy = s.py - l.y;
                     const dist = Math.hypot(dx, dy);
                     const angle = Math.atan2(dy, dx);
                     
-                    ctx.rotate(angle); // X axis points to Ship
+                    ctx.rotate(angle); 
                     
                     const spacing = 15;
                     const count = Math.ceil(dist / spacing);
@@ -1260,20 +1320,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     }
                     ctx.restore();
                 }
-                // --- TRACTOR BEAM HIGHLIGHT END ---
 
-                // Draw Loot Box
                 ctx.fillStyle = '#fbbf24'; ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10;
                 ctx.beginPath(); ctx.rect(-8, -8, 16, 16); ctx.fill(); ctx.shadowBlur = 0;
                 
-                // Specific Type Colors
                 if (l.type === 'water') { 
                     ctx.fillStyle = '#3b82f6'; ctx.fillRect(-8,-8,16,16); 
                 } else if (l.type === 'energy') { 
                     ctx.fillStyle = '#22d3ee'; ctx.fillRect(-8,-8,16,16); 
                 }
 
-                // Letters (Restored & Centered)
                 ctx.font = "900 10px monospace";
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
@@ -1295,54 +1351,145 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             ctx.save(); ctx.translate(b.x, b.y); 
             
             if (b.type === 'missile' || b.type === 'missile_emp') {
-                // CYLINDRICAL MISSILE
                 ctx.scale(1.2, 1.2);
-                ctx.rotate(b.vy > 0 ? Math.PI : 0); // Rotate if moving down (enemy)
+                ctx.rotate(b.vy > 0 ? Math.PI : 0); 
                 
-                // Fins
                 ctx.fillStyle = b.finsColor || '#ef4444';
                 ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill();
                 ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill();
                 
-                // Body
                 ctx.fillStyle = '#94a3b8';
                 ctx.fillRect(-3, -6, 6, 14);
                 
-                // Head
                 ctx.fillStyle = b.headColor || '#ef4444';
                 ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill();
                 
-                // Engine flame
                 ctx.fillStyle = '#facc15';
                 ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill();
 
             } else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red') {
-                // SPIKED MINE
                 const radius = b.width / 2;
                 ctx.fillStyle = b.color;
-                
-                // Central Body
                 ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
-                
-                // Pulse Core
                 ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5;
                 ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill();
                 ctx.globalAlpha = 1;
-
-                // Spikes
                 ctx.strokeStyle = b.color; ctx.lineWidth = 2;
                 const spikeCount = 8;
                 const spikeLen = radius + 4;
                 for (let i = 0; i < spikeCount; i++) {
-                    const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); // Spin
+                    const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); 
                     const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius;
                     const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen;
                     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
                 }
 
+            } else if (b.weaponId === 'exotic_star_shatter') {
+                // EXOTIC: Star Shatter (Spinning Star)
+                ctx.fillStyle = b.color;
+                ctx.shadowColor = b.color; ctx.shadowBlur = 10;
+                const rot = s.frame * 0.15 + (b.x * 0.01);
+                ctx.rotate(rot);
+                ctx.beginPath();
+                const spikes = 5; const outer = b.width; const inner = b.width * 0.4;
+                for(let i=0; i<spikes; i++) {
+                    let x = Math.cos((18+i*72)/180*Math.PI) * outer;
+                    let y = -Math.sin((18+i*72)/180*Math.PI) * outer;
+                    ctx.lineTo(x, y);
+                    x = Math.cos((54+i*72)/180*Math.PI) * inner;
+                    y = -Math.sin((54+i*72)/180*Math.PI) * inner;
+                    ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+            } else if (b.weaponId === 'exotic_flamer') {
+                // EXOTIC: Dragon Breath (Fire Particles)
+                ctx.globalCompositeOperation = 'screen';
+                const pulse = Math.sin(s.frame * 0.5 + b.y) * 0.2 + 0.8;
+                const fireGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, b.width);
+                fireGrad.addColorStop(0, '#ffff00');
+                fireGrad.addColorStop(0.4, '#ef4444');
+                fireGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+                ctx.fillStyle = fireGrad;
+                ctx.globalAlpha = 0.8;
+                ctx.beginPath(); ctx.arc(0, 0, b.width * pulse, 0, Math.PI*2); ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.globalCompositeOperation = 'source-over';
+
+            } else if (b.weaponId === 'exotic_electric') {
+                // EXOTIC: Zeus Thunderbolt (Jagged Line)
+                ctx.strokeStyle = '#00ffff';
+                ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(0, -b.height/2);
+                let ly = -b.height/2;
+                while(ly < b.height/2) {
+                    ly += 5;
+                    ctx.lineTo((Math.random()-0.5)*10, ly);
+                }
+                ctx.stroke();
+                ctx.shadowBlur = 0;
+
+            } else if (b.weaponId === 'exotic_wave') {
+                // EXOTIC: Sonic Ring (Expanding Ring)
+                ctx.strokeStyle = b.color;
+                ctx.lineWidth = 3;
+                ctx.shadowColor = b.color; ctx.shadowBlur = 5;
+                ctx.beginPath(); 
+                ctx.arc(0, 0, b.width, 0, Math.PI*2); 
+                ctx.stroke();
+                // Inner Echo
+                ctx.globalAlpha = 0.5;
+                ctx.beginPath(); ctx.arc(0, 0, b.width * 0.6, 0, Math.PI*2); ctx.stroke();
+                ctx.globalAlpha = 1;
+                ctx.shadowBlur = 0;
+
+            } else if (b.weaponId === 'exotic_gravity_wave') {
+                // EXOTIC: Gravity Wave (Crescent Arcs)
+                ctx.strokeStyle = b.color;
+                ctx.lineWidth = 4;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                // Arc 1
+                ctx.arc(0, 10, b.width, Math.PI * 1.2, Math.PI * 1.8);
+                ctx.stroke();
+                // Arc 2 (Trailing)
+                ctx.globalAlpha = 0.5;
+                ctx.beginPath();
+                ctx.arc(0, -5, b.width * 0.8, Math.PI * 1.2, Math.PI * 1.8);
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+
+            } else if (b.weaponId === 'exotic_octo_burst') {
+                // EXOTIC: Octo Burst (Plasma Blob)
+                ctx.fillStyle = b.color;
+                ctx.shadowColor = b.color; ctx.shadowBlur = 10;
+                ctx.beginPath();
+                // Draw a wobbly circle
+                for(let i=0; i<=8; i++) {
+                    const angle = (i/8) * Math.PI * 2;
+                    const r = b.width * (0.8 + Math.sin(angle * 3 + s.frame * 0.5) * 0.2);
+                    const x = Math.cos(angle) * r;
+                    const y = Math.sin(angle) * r;
+                    if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+                }
+                ctx.fill();
+                ctx.shadowBlur = 0;
+
+            } else if (b.weaponId === 'exotic_plasma_orb') {
+                // EXOTIC: Plasma Orb (Big Core)
+                const grad = ctx.createRadialGradient(0,0, b.width*0.2, 0,0, b.width);
+                grad.addColorStop(0, '#fff');
+                grad.addColorStop(0.5, b.color);
+                grad.addColorStop(1, 'transparent');
+                ctx.fillStyle = grad;
+                ctx.beginPath(); ctx.arc(0,0, b.width, 0, Math.PI*2); ctx.fill();
+                
             } else if (b.type === 'laser') { 
                 ctx.fillStyle = b.color;
-                // Overloaded shots are wider with rounded ends
                 if (b.isOvercharge) {
                     ctx.lineCap = 'round';
                     ctx.lineWidth = b.width;
@@ -1350,7 +1497,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     ctx.shadowBlur = b.glowIntensity || 10;
                     ctx.shadowColor = b.color;
                     ctx.beginPath(); ctx.moveTo(0, -b.height/2); ctx.lineTo(0, b.height/2); ctx.stroke();
-                    // Core
                     ctx.lineWidth = b.width/2;
                     ctx.strokeStyle = '#fff';
                     ctx.shadowBlur = 0;
@@ -1359,7 +1505,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     ctx.fillRect(-b.width/2, -b.height/2, b.width, b.height); 
                 }
             } else { 
-                // Basic Projectiles
+                // Default Projectile
                 ctx.fillStyle = b.color;
                 ctx.beginPath(); ctx.arc(0,0, b.width/2, 0, Math.PI*2); ctx.fill(); 
             }
@@ -1387,6 +1533,34 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             ctx.fillText(ft.text, ft.x, ft.y);
             ctx.restore();
         });
+
+        // DRAW TARGET MARKER (TAP NAVIGATION)
+        if (targetRef.current) {
+            ctx.save();
+            ctx.strokeStyle = '#10b981';
+            ctx.lineWidth = 2;
+            const tSize = 15;
+            const tx = targetRef.current.x;
+            const ty = targetRef.current.y;
+            
+            // Rotating brackets
+            const rot = s.frame * 0.1;
+            ctx.translate(tx, ty);
+            ctx.rotate(rot);
+            
+            ctx.beginPath();
+            ctx.moveTo(-tSize, -tSize/2); ctx.lineTo(-tSize, -tSize); ctx.lineTo(-tSize/2, -tSize);
+            ctx.moveTo(tSize, -tSize/2); ctx.lineTo(tSize, -tSize); ctx.lineTo(tSize/2, -tSize);
+            ctx.moveTo(-tSize, tSize/2); ctx.lineTo(-tSize, tSize); ctx.lineTo(-tSize/2, tSize);
+            ctx.moveTo(tSize, tSize/2); ctx.lineTo(tSize, tSize); ctx.lineTo(tSize/2, tSize);
+            ctx.stroke();
+            
+            // Pulse center
+            ctx.fillStyle = `rgba(16, 185, 129, ${0.5 + Math.sin(s.frame * 0.2) * 0.3})`;
+            ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
+            
+            ctx.restore();
+        }
 
         ctx.restore(); // Restore from shake translation
 
@@ -1424,6 +1598,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               const s = state.current;
               s.hp = 0; s.rescueMode = true; 
               s.asteroids = []; s.bullets = [];
+              
+              // CRITICAL FIX: Stop reactor sound on death
+              audioService.stopCapacitorCharge();
+              s.isCapacitorCharging = false;
+
               createExplosion(s.px, s.py, '#ef4444', 50, 'boss'); 
               audioService.playExplosion(0, 2.0);
               setHud(h => ({...h, alert: "CRITICAL FAILURE - CAPSULE EJECTED", alertType: 'alert'}));
@@ -1440,6 +1619,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     const { wingStyle, hullShapeType } = config; 
     const engineLocs = getEngineCoordinates(config); 
     
+    // --- DRAW RETRO THRUSTERS (BRAKING JETS) ---
+    // Forward-facing jets (45 degrees outward from center line)
+    // Left Wing: -45 deg (Up-Right? No. Up is -90. Left is 180. Forward-Left is -135? Or is it 45 deg from Vertical?)
+    // "45 degree forward from axel".
+    // Ship points UP (-Y).
+    // Left Retro: Fires UP-LEFT (-135 degrees relative to Right 0?)
+    // Let's use simple rotation: Left Wing (-45 deg), Right Wing (+45 deg).
+    if (isPlayer && movement && movement.down && !isRescue) {
+        const mounts = getWingMounts(config); 
+        // Left Retro: Fires Up-Left (-45 deg from vertical -90 => -135 deg total, or just rotate context -45)
+        drawRetro(ctx, mounts[0].x, mounts[0].y, -45, usingWater);
+        // Right Retro: Fires Up-Right (+45 deg from vertical -90 => -45 deg total, or just rotate context +45)
+        drawRetro(ctx, mounts[1].x, mounts[1].y, 45, usingWater);
+    }
+
     if (!isRescue) {
         const baseColor = wingColor || config.defaultColor || '#64748b'; ctx.fillStyle = baseColor; ctx.strokeStyle = baseColor; 
         ctx.beginPath(); 
@@ -1492,26 +1686,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (isPlayer && movement) {
                 const nozzleEnd = y + eh + nozzleH;
 
-                // 1. REVERSE THRUSTERS (Braking) - Side Vents firing FORWARD (Up)
-                if (movement.down) {
-                    ctx.save(); ctx.translate(x, y); 
-                    ctx.beginPath();
-                    // Left Retro (Firing Up/Left) - Increased size for visibility
-                    ctx.moveTo(-ew/2, 2); 
-                    ctx.lineTo(-ew * 1.5, -20 - Math.random()*8); 
-                    ctx.lineTo(-ew/2, -4);
-                    // Right Retro (Firing Up/Right)
-                    ctx.moveTo(ew/2, 2); 
-                    ctx.lineTo(ew * 1.5, -20 - Math.random()*8); 
-                    ctx.lineTo(ew/2, -4);
-                    ctx.fillStyle = usingWater ? '#60a5fa' : '#fbbf24'; 
-                    ctx.fill(); 
-                    ctx.restore();
-                }
-
-                // 2. MAIN / IDLE THRUSTER
+                // MAIN THRUSTER
                 if (movement.up) {
-                    // MAIN THRUST
                     const thrustLen = 40 + Math.random() * 15;
                     const grad = ctx.createLinearGradient(x, nozzleEnd, x, nozzleEnd + thrustLen);
                     if (usingWater) { 
@@ -1526,7 +1702,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     ctx.lineTo(x, nozzleEnd + thrustLen); 
                     ctx.fill();
                 } else if (!movement.down) {
-                    // IDLE THRUST (Only visible if not thrusting AND not braking)
+                    // IDLE THRUST (Only visible if NOT accelerating AND NOT braking)
                     const idleLen = 12 + Math.random() * 3;
                     const idleColor = config.isAlien ? '#a855f7' : (usingWater ? '#93c5fd' : '#60a5fa');
                     
@@ -1540,7 +1716,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     ctx.globalAlpha = 1.0;
                 }
 
-                // 3. STRAFE THRUSTERS
+                // STRAFE THRUSTERS
                 const strafeLen = 12 + Math.random() * 6;
                 ctx.fillStyle = usingWater ? '#93c5fd' : '#fbbf24';
                 if (movement.left) { 
@@ -1568,23 +1744,43 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         };
         engineLocs.forEach(eng => drawEngine(eng.x, eng.y, eng.w, eng.h));
     } else {
-        if (isPlayer && movement && (movement.up || movement.down || movement.left || movement.right)) {
-            ctx.save();
-            const cy = (config.isAlien && wingStyle === 'alien-a') ? 65 : (config.isAlien ? 45 : 38);
-            ctx.translate(50, cy + 15);
-            ctx.fillStyle = '#fbbf24'; // Gold thruster
-            ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(0, 18 + Math.random()*6); ctx.lineTo(4, 0); ctx.fill();
-            ctx.restore();
-        }
+        // RESCUE CAPSULE MODE
         const cy = (config.isAlien && wingStyle === 'alien-a') ? 65 : (config.isAlien ? 45 : 38);
-        ctx.beginPath(); ctx.arc(50, cy, 33, 0, Math.PI*2); 
-        ctx.strokeStyle='#ef4444'; ctx.lineWidth = 2.5; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 10; ctx.stroke();
-        ctx.fillStyle = 'rgba(239, 68, 68, 0.2)'; ctx.fill(); ctx.shadowBlur = 0;
+
+        // 1. Capsule Body (Blue Transparent) - DASHED SHIELD
+        ctx.save();
+        ctx.beginPath(); 
+        ctx.arc(50, cy, 33, 0, Math.PI*2); 
+        ctx.strokeStyle='#3b82f6'; 
+        ctx.lineWidth = 3; 
+        ctx.shadowColor = '#3b82f6'; 
+        ctx.shadowBlur = 20; 
+        ctx.setLineDash([8, 6]); // Dashed Effect
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; 
+        ctx.fill(); 
+        ctx.restore();
+
+        // 2. Jet (Idle + Moving) - ABOVE SHIELD (Drawn After)
+        // "tail out" means extending down.
+        // Always visible (idle).
+        const isThrusting = isPlayer && movement && (movement.up || movement.down || movement.left || movement.right);
+        const jetLen = isThrusting ? 55 + Math.random()*10 : 35 + Math.random()*5; 
+        
+        ctx.save();
+        ctx.translate(50, cy + 28); // Start near bottom
+        ctx.fillStyle = '#f97316'; // Orange
+        ctx.shadowColor = '#f97316'; ctx.shadowBlur = 20;
+        ctx.beginPath(); 
+        ctx.moveTo(-6, 0); 
+        ctx.lineTo(0, jetLen); 
+        ctx.lineTo(6, 0); 
+        ctx.fill();
+        ctx.restore();
     }
     
     // COCKPIT RENDERING
-    // If Rescue: Use COCKPIT COLOR and COCKPIT SHAPE from config
-    const finalCockpitColor = cockpitColor || '#0ea5e9'; // Use specific ship color or default
+    const finalCockpitColor = cockpitColor || '#0ea5e9'; 
 
     ctx.fillStyle = finalCockpitColor; 
     ctx.beginPath();
@@ -1593,7 +1789,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     else { ctx.ellipse(50, 40, 8, 12, 0, 0, Math.PI * 2); }
     ctx.fill();
     
-    // Glare
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath(); 
     if (wingStyle === 'x-wing') { ctx.ellipse(48, 52, 3, 5, -0.2, 0, Math.PI * 2); } 
@@ -1649,33 +1844,64 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     ctx.restore();
   };
 
+  // Helper for drawing Retro Thrusters
+  const drawRetro = (ctx: CanvasRenderingContext2D, x: number, y: number, angleDeg: number, usingWater: boolean) => {
+      ctx.save();
+      ctx.translate(x, y);
+      const rad = (angleDeg * Math.PI) / 180;
+      ctx.rotate(rad);
+      
+      const flicker = 0.8 + Math.random() * 0.4;
+      const len = 30 * flicker; 
+      const w = 6; 
+
+      ctx.beginPath();
+      ctx.moveTo(-w/2, 0);
+      ctx.lineTo(0, -len); // Draw UP relative to rotation
+      ctx.lineTo(w/2, 0);
+      ctx.closePath();
+
+      const grad = ctx.createLinearGradient(0, 0, 0, -len);
+      if (usingWater) {
+          grad.addColorStop(0, '#e0f2fe'); 
+          grad.addColorStop(0.4, '#3b82f6'); 
+          grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); 
+      } else {
+          grad.addColorStop(0, '#fff'); 
+          grad.addColorStop(0.2, '#fbbf24'); 
+          grad.addColorStop(1, 'rgba(251, 191, 36, 0)');
+      }
+      ctx.fillStyle = grad;
+      ctx.globalAlpha = 0.9;
+      ctx.fill();
+      
+      ctx.restore();
+  };
+
   return (
-    <div className="w-full h-full relative overflow-hidden bg-black select-none">
+    <div 
+        className="relative w-full h-full bg-black overflow-hidden cursor-crosshair touch-none select-none"
+        onPointerDown={handlePointerDown}
+    >
         <canvas ref={canvasRef} className="block w-full h-full" />
         
+        {/* HUD LAYOUT */}
         <div className="absolute inset-0 pointer-events-none p-2 sm:p-4 flex flex-col justify-between z-10">
+            {/* TOP BAR */}
             <div className="flex justify-between items-start pointer-events-auto relative">
                 <div className="flex flex-col gap-1 w-32 sm:w-48">
-                    <div className="flex items-center gap-2">
-                        <span className={`font-black ${hudLabel} w-8`}>HULL</span>
-                        <div className="flex-grow h-2 bg-zinc-800 border border-zinc-700 rounded overflow-hidden">
-                            <div className="h-full bg-emerald-500 transition-all duration-300" style={{ width: `${Math.max(0, hud.hp)}%` }} />
-                        </div>
+                    <div className="flex flex-col gap-1">
+                        {/* HP BAR (HORIZONTAL) */}
+                        <LEDMeter value={hud.hp} max={100} colorStart="#10b981" label="H" vertical={false} />
+                        {/* SHIELD BARS (HORIZONTAL) */}
+                        {hud.sh1 > 0 && <LEDMeter value={hud.sh1} max={shield?.capacity || 100} colorStart={shield?.color || '#3b82f6'} label="S" vertical={false} />}
+                        {hud.sh2 > 0 && <LEDMeter value={hud.sh2} max={secondShield?.capacity || 100} colorStart={secondShield?.color || '#a855f7'} label="S" vertical={false} />}
                     </div>
-                    {(hud.sh1 > 0 || hud.sh2 > 0) && (
-                        <div className="flex items-center gap-2">
-                            <span className={`font-black ${hudLabel} w-8`}>SHLD</span>
-                            <div className="flex-grow h-2 bg-zinc-800 border border-zinc-700 rounded overflow-hidden flex">
-                                {hud.sh1 > 0 && <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${Math.min(100, (hud.sh1/500)*50)}%` }} />}
-                                {hud.sh2 > 0 && <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${Math.min(100, (hud.sh2/500)*50)}%` }} />}
-                            </div>
-                        </div>
-                    )}
                 </div>
 
                 {!hud.boss && (
                     <div className="absolute left-1/2 -translate-x-1/2 top-0 flex flex-col items-center bg-black/60 px-6 py-2 rounded-b-xl border-x border-b border-zinc-800/50 backdrop-blur-sm pointer-events-none">
-                        <div className="text-3xl font-mono font-black text-red-500 tabular-nums tracking-widest drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] leading-none">
+                        <div className={`${hudTimer} font-mono font-black text-red-500 tabular-nums tracking-widest drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] leading-none`}>
                             {Math.floor(hud.timer / 60).toString().padStart(2, '0')}:{Math.floor(hud.timer % 60).toString().padStart(2, '0')}
                         </div>
                         <div className={`${hudScore} font-black text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)] tabular-nums mt-1 leading-none`}>
@@ -1723,13 +1949,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 </div>
             )}
 
-            {/* LEFT HUD: LOAD & ENERGY - Now labeled L & E */}
+            {/* LEFT HUD: CAPACITOR (C) & ENERGY (E) */}
             <div className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
-                <LEDMeter value={hud.overload} max={100} colorStart="#10b981" label="L" vertical={true} reverseColor={true} />
+                {!hud.rescueMode && <LEDMeter value={hud.overload} max={100} colorStart="#10b981" label="C" vertical={true} reverseColor={true} />}
                 <LEDMeter value={hud.energy} max={maxEnergy} colorStart="#22d3ee" label="E" vertical={true} />
             </div>
 
-            {/* RIGHT HUD: FUEL & WATER - Now labeled F & W */}
+            {/* RIGHT HUD: FUEL & WATER - F & W */}
             <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
                 <LEDMeter value={hud.fuel} max={maxFuel} colorStart="#f97316" label="F" vertical={true} />
                 <LEDMeter value={hud.water} max={maxWater} colorStart="#3b82f6" label="W" vertical={true} />
@@ -1737,7 +1963,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
             {/* BOTTOM BAR - Mobile Optimization: Allow wrap if needed, shrink padding/gap */}
             <div className="absolute bottom-2 sm:bottom-4 left-0 right-0 flex justify-center items-end pointer-events-auto">
-                <div className="flex flex-wrap sm:flex-nowrap justify-between items-end w-full px-2 sm:px-4 gap-2">
+                <div className="flex justify-between items-end w-full px-2 sm:px-4 gap-2">
                     
                     {/* LEFT CORNER: MAIN GUN */}
                     <div className="flex items-end gap-2 shrink-0">
@@ -1754,8 +1980,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         )}
                     </div>
 
-                    {/* CENTER: ALERT MESSAGE (Can wrap if needed) */}
-                    <div className="flex-1 flex justify-center pb-2 order-first sm:order-none w-full sm:w-auto">
+                    {/* CENTER: ALERT MESSAGE */}
+                    <div className="flex-1 flex justify-center pb-2 w-full sm:w-auto">
                         {hud.alert && (
                             <div className="text-center bg-black/60 border-y border-zinc-500/30 backdrop-blur-sm px-4 py-1 sm:px-6 sm:py-2 max-w-[200px] sm:max-w-none">
                                 <span className={`${hudAlertText} font-black uppercase tracking-[0.1em] leading-tight whitespace-pre-wrap ${hud.alertType === 'alert' ? 'text-red-500 animate-pulse' : (hud.alertType === 'warning' ? 'text-amber-500' : 'text-emerald-400')}`}>
@@ -1834,8 +2060,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         </div>
 
         {hud.isPaused && (
-            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-40 pointer-events-none">
-                <div className="text-4xl font-black text-white tracking-[0.5em] border-y-4 border-white py-4 px-12">PAUSED</div>
+            <div 
+                onClick={() => { state.current.paused = false; setHud(h => ({...h, isPaused: false})); }}
+                className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-40 cursor-pointer"
+            >
+                <div className="text-center">
+                    <div className="text-4xl font-black text-white tracking-[0.5em] border-y-4 border-white py-4 px-12 animate-pulse">PAUSED</div>
+                    <div className="text-sm text-zinc-400 mt-4 uppercase tracking-widest">Tap to Resume</div>
+                </div>
             </div>
         )}
     </div>
