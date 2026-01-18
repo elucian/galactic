@@ -35,23 +35,37 @@ export const StoryScene = () => {
     // Enhanced Stars
     const starColors = ['#ffffff', '#ffffff', '#ffffff', '#facc15', '#fb923c', '#ef4444', '#60a5fa'];
     
-    const stars = Array.from({ length: 450 }).map(() => {
-        const isWanderer = Math.random() < 0.1;
-        return {
-            x: Math.random(),
-            y: Math.random(),
-            // Wanderers are significantly larger (2.0 - 4.0), others are smaller (0.2 - 1.0)
-            size: isWanderer ? (Math.random() * 2.0 + 2.0) : (Math.random() * 0.8 + 0.2),
-            baseAlpha: Math.random() * 0.6 + 0.2,
-            color: starColors[Math.floor(Math.random() * starColors.length)],
-            // Shimmer properties
-            twinkleSpeed: Math.random() * 0.08 + 0.02,
-            twinklePhase: Math.random() * Math.PI * 2,
-            // Wanderer properties
-            vx: isWanderer ? (Math.random() - 0.5) * 0.0002 : 0, 
-            vy: isWanderer ? (Math.random() - 0.5) * 0.0002 : 0
-        };
-    });
+    // Specific Palette for Wanderers: Green, Blue, Silver, Gray, Brown
+    const wandererColors = ['#10b981', '#3b82f6', '#cbd5e1', '#6b7280', '#a16207'];
+
+    // 1. Static Background Stars (Small)
+    const staticStars = Array.from({ length: 450 }).map(() => ({
+        x: Math.random(),
+        y: Math.random(),
+        size: Math.random() * 0.8 + 0.2,
+        baseAlpha: Math.random() * 0.6 + 0.2,
+        color: starColors[Math.floor(Math.random() * starColors.length)],
+        twinkleSpeed: Math.random() * 0.08 + 0.02,
+        twinklePhase: Math.random() * Math.PI * 2,
+        vx: 0,
+        vy: 0
+    }));
+
+    // 2. Wanderers (Exactly 5)
+    // Size: Diameter 3px to 6px -> Radius 1.5px to 3.0px
+    const wanderers = Array.from({ length: 5 }).map(() => ({
+        x: Math.random(),
+        y: Math.random(),
+        size: 1.5 + Math.random() * 1.5, 
+        baseAlpha: 0.9, 
+        color: wandererColors[Math.floor(Math.random() * wandererColors.length)],
+        twinkleSpeed: Math.random() * 0.05 + 0.01,
+        twinklePhase: Math.random() * Math.PI * 2,
+        vx: (Math.random() - 0.5) * 0.0003, // Slight movement
+        vy: (Math.random() - 0.5) * 0.0003
+    }));
+
+    const stars = [...staticStars, ...wanderers];
 
     let time = 0;
     let animId: number;
@@ -100,6 +114,14 @@ export const StoryScene = () => {
         ctx.beginPath();
         ctx.arc(s.x * w, s.y * h, s.size, 0, Math.PI * 2);
         ctx.fill();
+        
+        // Add glow for wanderers (size > 1.4 radius implies diameter > 2.8)
+        if (s.size > 1.4) {
+            ctx.shadowColor = s.color;
+            ctx.shadowBlur = 10;
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
       });
       ctx.globalAlpha = 1;
 

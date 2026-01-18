@@ -212,16 +212,20 @@ class Enemy {
     }
   }
 
-  update(px: number, py: number, w: number, h: number, incomingFire: Projectile[]) {
+  update(px: number, py: number, w: number, h: number, incomingFire: Projectile[], worldSpeedFactor: number = 1.0) {
     if (this.vibration > 0) this.vibration = Math.max(0, this.vibration - 1);
     
     if (this.stunnedUntil > 0) this.stunnedUntil--;
     if (this.shieldDisabledUntil > 0) this.shieldDisabledUntil--;
 
+    // Dynamic vertical speed based on player throttle (worldSpeedFactor)
+    // Base speed is around 2.8. 
+    const verticalSpeed = 2.8 * worldSpeedFactor;
+
     if (this.stunnedUntil > 0) {
         this.vx *= 0.9;
         this.vy *= 0.9;
-        this.vy += 0.5;
+        this.vy += 0.5 * worldSpeedFactor; // Gravity affects stun drift
     } else {
         if (this.type === 'boss') {
             if (this.shieldLayers.length > 0 && this.shieldRegen > 0 && this.shieldDisabledUntil <= 0) {
@@ -231,7 +235,7 @@ class Enemy {
             this.vx = (this.vx + (px - this.x) * 0.002) * 0.96;
             this.vy = (this.vy + (150 - this.y) * 0.01) * 0.92;
         } else {
-            this.y += 2.8; 
+            this.y += verticalSpeed; 
             this.vx = (this.vx + (Math.random() - 0.5) * 0.5) * 0.95; 
             const dx = px - this.x;
             
@@ -492,7 +496,7 @@ const HudButton = ({ label, subLabel, onClick, onDown, onUp, colorClass, borderC
             {count !== undefined && <RoundCadran value={count} max={maxCount || 10} />}
             <button 
                 onMouseDown={onDown} onMouseUp={onUp} onMouseLeave={onUp} onTouchStart={onDown} onTouchEnd={onUp} onClick={onClick}
-                className={`flex flex-col items-center justify-center p-1 sm:p-2 min-w-[50px] sm:min-w-[70px] h-12 sm:h-14 rounded border-2 select-none transition-all active:scale-95 ${active ? 'bg-zinc-800' : 'bg-zinc-900/80'} ${borderClass}`}
+                className={`flex flex-col items-center justify-center p-1 sm:p-2 min-w-[50px] sm:min-w-[60px] h-12 sm:h-14 rounded border-2 select-none transition-all active:scale-95 ${active ? 'bg-zinc-800' : 'bg-zinc-900/80'} ${borderClass}`}
             >
                 <span className={`text-[8px] sm:text-[10px] font-black uppercase ${colorClass}`}>{label}</span>
                 {subLabel && <span className="text-[6px] sm:text-[8px] font-mono text-zinc-500">{subLabel}</span>}
@@ -536,6 +540,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   
   const inputRef = useRef({ main: false, secondary: false });
   const tiltRef = useRef({ beta: 0, gamma: 0 }); 
+  const hasTiltRef = useRef(false);
 
   const state = useRef({
     px: window.innerWidth/2, py: window.innerHeight*0.8, hp: 100, fuel: 0, water: 0, energy: maxEnergy, 
@@ -581,7 +586,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     capacitor: 0,
     isCapacitorCharging: false,
     salvoTimer: 0,
-    lastSalvoFire: 0
+    lastSalvoFire: 0,
+    // NEW MOVEMENT LOGIC
+    currentThrottle: 0, // -1.0 to 1.0 (smooth)
+    shipVy: 0,
   });
 
   useEffect(() => {
@@ -615,8 +623,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       };
 
       const handleOrientation = (e: DeviceOrientationEvent) => {
-          tiltRef.current.beta = e.beta || 0; 
-          tiltRef.current.gamma = e.gamma || 0; 
+          if (e.beta !== null) {
+              hasTiltRef.current = true;
+              tiltRef.current.beta = e.beta || 0; 
+              tiltRef.current.gamma = e.gamma || 0; 
+          }
       };
 
       window.addEventListener('resize', handleResize);
@@ -734,11 +745,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               audioService.playWeaponFire('cannon', 0, activeShip.config.id);
           }
           
-          // Note: Rapid shot costs near zero or is just standard fire when capacitor is empty.
-          // Optional small cost? User said "normal shots are shut at normal rate" implies free or low cost.
-          // Let's make it free if using the "Overcharge" mechanic logic, or extremely cheap.
-          // Keeping it free for now to ensure continuous fire when empty.
-          
           s.weaponFireTimes[0] = Date.now();
           s.weaponHeat[0] = Math.min(100, (s.weaponHeat[0] || 0) + 1.0);
           s.lastRapidFire = Date.now();
@@ -830,37 +836,85 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         s.frame++;
 
         const speed = 9;
-        let up = s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8');
-        let down = s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2');
+        
+        // --- INPUT & MOVEMENT LOGIC (SMOOTHING) ---
+        let targetThrottle = 0;
         let left = s.keys.has('ArrowLeft') || s.keys.has('KeyA') || s.keys.has('Numpad4');
         let right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
-        
-        if (tiltRef.current.gamma < -10) left = true;
-        if (tiltRef.current.gamma > 10) right = true;
-        if (tiltRef.current.beta < 35) down = true; 
-        if (tiltRef.current.beta > 55) up = true; 
 
-        s.movement = { up, down, left, right };
+        if (hasTiltRef.current) {
+            if (tiltRef.current.gamma < -10) left = true;
+            if (tiltRef.current.gamma > 10) right = true;
+            
+            // TILT LOGIC:
+            // Beta < 25 (Flat/Forward): Accelerate (Throttle 1)
+            // Beta > 35 (Upright/Back): Brake (Throttle -1)
+            // Beta 25-35: Deadzone (Throttle 0)
+            if (tiltRef.current.beta < 25) targetThrottle = 1;
+            else if (tiltRef.current.beta > 35) targetThrottle = -1;
+            else targetThrottle = 0;
+        } else {
+            // DESKTOP KEYS
+            if (s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8')) targetThrottle = 1;
+            else if (s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2')) targetThrottle = -1;
+        }
+
+        // Interpolate current throttle towards target (Smoothness)
+        // Lerp factor 0.1 for nice weight
+        s.currentThrottle = s.currentThrottle * 0.9 + targetThrottle * 0.1;
         
-        let isMoving = up || down || left || right;
+        // Snap to 0 if very close
+        if (Math.abs(s.currentThrottle) < 0.01) s.currentThrottle = 0;
+
+        // Apply Movement Y based on throttle
+        // Throttle > 0: Move Up (Screen Y decreases)
+        // Throttle < 0: Move Down (Screen Y increases)
+        // Max vertical speed ~8px/frame
+        const verticalSpeed = -s.currentThrottle * 8; 
+        s.py += verticalSpeed;
+        
+        // Clamp Y
+        s.py = Math.max(50, Math.min(height - 150, s.py));
+
+        // Horizontal Movement
+        if (left) s.px -= speed;
+        if (right) s.px += speed;
+        s.px = Math.max(30, Math.min(width-30, s.px));
+
+        s.movement = { 
+            up: s.currentThrottle > 0.1, 
+            down: s.currentThrottle < -0.1, 
+            left, 
+            right 
+        };
+        
+        let isMoving = s.currentThrottle !== 0 || left || right;
         s.usingWater = false; 
+
+        // World Speed Multiplier (Stars/Enemies relative speed)
+        // Forward (Throttle > 0) -> Faster World
+        // Brake (Throttle < 0) -> Slower World
+        let worldSpeedFactor = 1.0;
+        if (s.currentThrottle > 0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); // Max 1.5x
+        if (s.currentThrottle < -0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); // Min 0.5x (since throttle is negative)
 
         if (s.rescueMode) {
             const driftSpeed = 3;
             if (isMoving) {
-                if (up) s.py -= driftSpeed; if (down) s.py += driftSpeed; if (left) s.px -= driftSpeed; if (right) s.px += driftSpeed;
-                s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
+               // Drift logic overrides normal physics
+               if (s.currentThrottle > 0) s.py -= driftSpeed;
+               if (s.currentThrottle < 0) s.py += driftSpeed;
+               s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
             }
             if (s.frame % 3 === 0) s.particles.push({ x: s.px, y: s.py + 10, vx: (Math.random()-0.5)*2, vy: 2 + Math.random()*2, life: 1.0, color: '#555', size: 4 });
         } else {
             if (isMoving) {
-                let consumption = 0.005; if (up) consumption += 0.002;
+                let consumption = 0.005; 
+                // Higher consumption for acceleration
+                if (s.currentThrottle > 0.1) consumption += 0.002 * s.currentThrottle;
+                
                 if (s.fuel > 0) { s.fuel = Math.max(0, s.fuel - consumption); s.usingWater = false; } else if (s.water > 0) { s.water = Math.max(0, s.water - (consumption * 0.5)); s.usingWater = true; } else { isMoving = false; }
                 if (s.water > 0) s.water = Math.max(0, s.water - 0.01);
-            }
-            if (isMoving) {
-                if (up) s.py -= speed; if (down) s.py += speed; if (left) s.px -= speed; if (right) s.px += speed;
-                s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
             }
             if (s.hp < 30) {
                 if (s.frame % 5 === 0) s.particles.push({ x: s.px + (Math.random()-0.5)*20, y: s.py + 10, vx: (Math.random()-0.5)*1, vy: 2, life: 0.8, color: '#777', size: 3 + Math.random()*3 });
@@ -973,7 +1027,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
 
         s.asteroids.forEach(a => { 
-            a.x += a.vx; a.y += a.vy; a.z += a.vz; 
+            a.x += a.vx; a.y += a.vy * worldSpeedFactor; a.z += a.vz; 
             a.ax += a.vax; a.ay += a.vay; a.az += a.vaz;
             if (Math.abs(a.z) < 50 && Math.hypot(a.x-s.px, a.y-s.py) < a.size + 30 && !s.rescueMode) {
                 takeDamage(20, 'collision');
@@ -986,7 +1040,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         s.enemies.forEach(e => { 
             if (s.rescueMode) { e.y += 3; if (e.type === 'boss') e.y += 2; } 
             else {
-                e.update(s.px, s.py, width, height, s.bullets); 
+                e.update(s.px, s.py, width, height, s.bullets, worldSpeedFactor); 
                 if (difficulty >= 2 && e.type !== 'boss') {
                     const fireInterval = e.config.isAlien ? 120 : 180;
                     if (s.frame % fireInterval === 0 && Math.abs(e.x - s.px) < 300) {
@@ -1065,18 +1119,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         // Update Loot
         s.loot.forEach(l => {
-            l.y += 2; // Basic drift down
-            l.x += l.vx; 
-            l.y += l.vy;
             const dx = s.px - l.x;
             const dy = s.py - l.y;
             const dist = Math.hypot(dx, dy);
             
-            // Attraction
-            if (dist < 150) {
+            // Attraction (Increased radius from 150 to 175)
+            if (dist < 175) {
                 l.isBeingPulled = true;
-                l.x += dx * 0.05;
-                l.y += dy * 0.05;
+                // Stronger pull (0.08) and NO gravity to avoid equilibrium trap below ship
+                l.x += dx * 0.08;
+                l.y += dy * 0.08;
+            } else {
+                l.isBeingPulled = false;
+                // Only apply gravity/drift if NOT being pulled
+                l.y += 2 * worldSpeedFactor; 
+                l.x += l.vx; 
+                l.y += l.vy;
             }
             
             // Collection
@@ -1097,7 +1155,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             }
         });
-        s.loot = s.loot.filter(l => !l.isPulled && l.y < height + 100);
+        s.loot = s.loot.filter(l => !l.isPulled && (l.y < height + 100 || l.isBeingPulled));
 
         s.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; });
         s.particles = s.particles.filter(p => p.life > 0);
@@ -1110,7 +1168,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         ctx.translate(shakeX, shakeY);
 
         ctx.fillStyle = '#000'; ctx.fillRect(-shakeX, -shakeY, width, height); // Fill slightly larger to cover shake edges
-        ctx.fillStyle = '#fff'; s.stars.forEach(st => { st.y += st.s * 0.5; if(st.y > height) st.y = 0; ctx.globalAlpha = Math.random() * 0.5 + 0.3; ctx.beginPath(); ctx.arc(st.x, st.y, st.s, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1;
+        ctx.fillStyle = '#fff'; s.stars.forEach(st => { st.y += st.s * 0.5 * worldSpeedFactor; if(st.y > height) st.y = 0; ctx.globalAlpha = Math.random() * 0.5 + 0.3; ctx.beginPath(); ctx.arc(st.x, st.y, st.s, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1;
 
         const entities = [...s.asteroids.map(a => ({type: 'ast', z: a.z, obj: a})), ...s.enemies.map(e => ({type: 'enemy', z: e.z, obj: e})), ...s.loot.map(l => ({type: 'loot', z: l.z, obj: l})), {type: 'player', z: 0, obj: null}].sort((a,b) => a.z - b.z);
         const lightVec = { x: 0.8, y: -0.8, z: 0.8 }; const len = Math.hypot(lightVec.x, lightVec.y, lightVec.z); lightVec.x /= len; lightVec.y /= len; lightVec.z /= len;
@@ -1145,8 +1203,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 ctx.translate(s.px, s.py);
                 drawShip(ctx, { config: activeShip.config, fitting: activeShip.fitting, color: activeShip.color, wingColor: activeShip.wingColor, cockpitColor: activeShip.cockpitColor, gunColor: activeShip.gunColor, secondaryGunColor: activeShip.secondaryGunColor, gunBodyColor: activeShip.gunBodyColor, engineColor: activeShip.engineColor, nozzleColor: activeShip.nozzleColor, equippedWeapons: activeShip.fitting.weapons }, true, s.movement, s.usingWater, s.rescueMode);
                 if ((s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) {
-                    if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 70, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
-                    if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 80, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+                    // Player Shields Reduced 20% (70->56, 80->64)
+                    if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
+                    if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
                 }
             } else if (item.type === 'enemy') {
                 const e = item.obj as Enemy;
@@ -1154,19 +1213,80 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 ctx.translate(e.x + vibX, e.y + vibY); ctx.scale(scale, scale); ctx.rotate(Math.PI);
                 const alienCols = getAlienColors(quadrant);
                 drawShip(ctx, { config: e.config, fitting: null, color: e.type==='boss'?'#a855f7':alienCols.hull, wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, gunColor: '#ef4444', equippedWeapons: e.equippedWeapons }, false);
-                if (e.shieldLayers.length > 0) { e.shieldLayers.forEach((layer, idx) => { if (layer.current <= 0) return; const radius = 60 + (idx * 8); const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); }
+                // Enemy Shields Reduced 20% (Base 60->48)
+                if (e.shieldLayers.length > 0) { e.shieldLayers.forEach((layer, idx) => { if (layer.current <= 0) return; const radius = 48 + (idx * 8); const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); }
             } else if (item.type === 'loot') {
                 const l = item.obj as Loot;
                 ctx.translate(l.x, l.y); ctx.scale(scale, scale);
+
+                // --- TRACTOR BEAM HIGHLIGHT START ---
+                if (l.isBeingPulled) {
+                    // Silver Highlight Circle
+                    ctx.strokeStyle = 'rgba(192, 210, 255, 0.8)';
+                    ctx.lineWidth = 2;
+                    ctx.shadowColor = '#fff';
+                    ctx.shadowBlur = 5;
+                    ctx.beginPath();
+                    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.shadowBlur = 0;
+
+                    // Arcs
+                    ctx.save();
+                    const dx = s.px - l.x;
+                    const dy = s.py - l.y;
+                    const dist = Math.hypot(dx, dy);
+                    const angle = Math.atan2(dy, dx);
+                    
+                    ctx.rotate(angle); // X axis points to Ship
+                    
+                    const spacing = 15;
+                    const count = Math.ceil(dist / spacing);
+                    const speed = 4;
+                    const offset = (s.frame * speed) % spacing;
+
+                    ctx.lineWidth = 2;
+                    
+                    for (let i = 0; i <= count; i++) {
+                        const d = i * spacing + offset;
+                        if (d > 0 && d < dist) {
+                            const alpha = Math.min(1, Math.sin((d/dist)*Math.PI)) * 0.6;
+                            ctx.strokeStyle = `rgba(135, 206, 250, ${alpha})`;
+                            ctx.beginPath();
+                            ctx.moveTo(d, -7);
+                            ctx.quadraticCurveTo(d - 5, 0, d, 7);
+                            ctx.stroke();
+                        }
+                    }
+                    ctx.restore();
+                }
+                // --- TRACTOR BEAM HIGHLIGHT END ---
+
                 // Draw Loot Box
                 ctx.fillStyle = '#fbbf24'; ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10;
                 ctx.beginPath(); ctx.rect(-8, -8, 16, 16); ctx.fill(); ctx.shadowBlur = 0;
-                // Icon
-                ctx.fillStyle = '#000';
-                if (l.type === 'fuel') ctx.fillText("F", -3, 3);
-                else if (l.type === 'water') { ctx.fillStyle = '#3b82f6'; ctx.fillRect(-8,-8,16,16); ctx.fillStyle='#fff'; ctx.fillText("W", -3, 3); }
-                else if (l.type === 'energy') { ctx.fillStyle = '#22d3ee'; ctx.fillRect(-8,-8,16,16); ctx.fillStyle='#000'; ctx.fillText("E", -3, 3); }
-                else ctx.fillText("?", -3, 3);
+                
+                // Specific Type Colors
+                if (l.type === 'water') { 
+                    ctx.fillStyle = '#3b82f6'; ctx.fillRect(-8,-8,16,16); 
+                } else if (l.type === 'energy') { 
+                    ctx.fillStyle = '#22d3ee'; ctx.fillRect(-8,-8,16,16); 
+                }
+
+                // Letters (Restored & Centered)
+                ctx.font = "900 10px monospace";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = (l.type === 'water' || l.type === 'energy') ? '#000' : '#000';
+                if (l.type === 'water') ctx.fillStyle = '#fff';
+
+                let letter = "?";
+                if (l.type === 'fuel') letter = "F";
+                else if (l.type === 'water') letter = "W";
+                else if (l.type === 'energy') letter = "E";
+                else if (l.type === 'repair' || l.type === 'nanite') letter = "+";
+                
+                ctx.fillText(letter, 0, 1);
             }
             ctx.setTransform(1, 0, 0, 1, shakeX, shakeY); 
         });
@@ -1370,27 +1490,75 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             ctx.fill();
             
             if (isPlayer && movement) {
+                const nozzleEnd = y + eh + nozzleH;
+
+                // 1. REVERSE THRUSTERS (Braking) - Side Vents firing FORWARD (Up)
                 if (movement.down) {
-                    ctx.save(); ctx.translate(x, y); ctx.beginPath();
-                    ctx.moveTo(-15, 0); ctx.lineTo(-25, -15); ctx.lineTo(-35, 0);
-                    ctx.moveTo(15, 0); ctx.lineTo(25, -15); ctx.lineTo(35, 0);
-                    ctx.fillStyle = usingWater ? '#60a5fa' : '#fbbf24'; ctx.fill(); ctx.restore();
+                    ctx.save(); ctx.translate(x, y); 
+                    ctx.beginPath();
+                    // Left Retro (Firing Up/Left) - Increased size for visibility
+                    ctx.moveTo(-ew/2, 2); 
+                    ctx.lineTo(-ew * 1.5, -20 - Math.random()*8); 
+                    ctx.lineTo(-ew/2, -4);
+                    // Right Retro (Firing Up/Right)
+                    ctx.moveTo(ew/2, 2); 
+                    ctx.lineTo(ew * 1.5, -20 - Math.random()*8); 
+                    ctx.lineTo(ew/2, -4);
+                    ctx.fillStyle = usingWater ? '#60a5fa' : '#fbbf24'; 
+                    ctx.fill(); 
+                    ctx.restore();
                 }
+
+                // 2. MAIN / IDLE THRUSTER
                 if (movement.up) {
-                    const thrustLen = 40 + Math.random() * 10;
-                    const grad = ctx.createLinearGradient(x, y + eh + nozzleH, x, y + eh + nozzleH + thrustLen);
-                    if (usingWater) { grad.addColorStop(0, '#fff'); grad.addColorStop(0.3, '#3b82f6'); grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); } else { grad.addColorStop(0, '#fff'); grad.addColorStop(0.3, '#f97316'); grad.addColorStop(1, 'rgba(249, 115, 22, 0)'); }
-                    ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(drawX + inset, y + eh + nozzleH); ctx.lineTo(drawX + ew - inset, y + eh + nozzleH); ctx.lineTo(x, y + eh + nozzleH + thrustLen); ctx.fill();
-                } else if (!movement.down && !movement.left && !movement.right) {
-                    const idleLen = 10 + Math.random() * 2;
-                    ctx.fillStyle = config.isAlien ? '#a855f7' : '#60a5fa';
-                    ctx.globalAlpha = 0.6;
-                    ctx.beginPath(); ctx.moveTo(drawX + inset + 1, y + eh + nozzleH); ctx.lineTo(drawX + ew - inset - 1, y + eh + nozzleH); ctx.lineTo(x, y + eh + nozzleH + idleLen); ctx.fill(); ctx.globalAlpha = 1.0;
+                    // MAIN THRUST
+                    const thrustLen = 40 + Math.random() * 15;
+                    const grad = ctx.createLinearGradient(x, nozzleEnd, x, nozzleEnd + thrustLen);
+                    if (usingWater) { 
+                        grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(0.3, '#3b82f6'); grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); 
+                    } else { 
+                        grad.addColorStop(0, '#ffedd5'); grad.addColorStop(0.3, '#f97316'); grad.addColorStop(1, 'rgba(249, 115, 22, 0)'); 
+                    }
+                    ctx.fillStyle = grad; 
+                    ctx.beginPath(); 
+                    ctx.moveTo(drawX + inset, nozzleEnd); 
+                    ctx.lineTo(drawX + ew - inset, nozzleEnd); 
+                    ctx.lineTo(x, nozzleEnd + thrustLen); 
+                    ctx.fill();
+                } else if (!movement.down) {
+                    // IDLE THRUST (Only visible if not thrusting AND not braking)
+                    const idleLen = 12 + Math.random() * 3;
+                    const idleColor = config.isAlien ? '#a855f7' : (usingWater ? '#93c5fd' : '#60a5fa');
+                    
+                    ctx.fillStyle = idleColor;
+                    ctx.globalAlpha = 0.8;
+                    ctx.beginPath(); 
+                    ctx.moveTo(drawX + inset + 1, nozzleEnd); 
+                    ctx.lineTo(drawX + ew - inset - 1, nozzleEnd); 
+                    ctx.lineTo(x, nozzleEnd + idleLen); 
+                    ctx.fill(); 
+                    ctx.globalAlpha = 1.0;
                 }
-                const strafeLen = 15 + Math.random() * 8;
-                ctx.fillStyle = usingWater ? '#93c5fd' : '#fcd34d';
-                if (movement.left) { ctx.beginPath(); ctx.moveTo(drawX + ew, y + eh/2 - 3); ctx.lineTo(drawX + ew + strafeLen, y + eh/2); ctx.lineTo(drawX + ew, y + eh/2 + 3); ctx.fill(); }
-                if (movement.right) { ctx.beginPath(); ctx.moveTo(drawX, y + eh/2 - 3); ctx.lineTo(drawX - strafeLen, y + eh/2); ctx.lineTo(drawX, y + eh/2 + 3); ctx.fill(); }
+
+                // 3. STRAFE THRUSTERS
+                const strafeLen = 12 + Math.random() * 6;
+                ctx.fillStyle = usingWater ? '#93c5fd' : '#fbbf24';
+                if (movement.left) { 
+                    // Right engine fires right to push left
+                    ctx.beginPath(); 
+                    ctx.moveTo(drawX + ew, y + eh/2 - 3); 
+                    ctx.lineTo(drawX + ew + strafeLen, y + eh/2); 
+                    ctx.lineTo(drawX + ew, y + eh/2 + 3); 
+                    ctx.fill(); 
+                }
+                if (movement.right) { 
+                    // Left engine fires left to push right
+                    ctx.beginPath(); 
+                    ctx.moveTo(drawX, y + eh/2 - 3); 
+                    ctx.lineTo(drawX - strafeLen, y + eh/2); 
+                    ctx.lineTo(drawX, y + eh/2 + 3); 
+                    ctx.fill(); 
+                }
             } else if (!isPlayer) {
                const idleLen = 10 + Math.random() * 2;
                ctx.fillStyle = config.isAlien ? '#a855f7' : '#60a5fa';
@@ -1420,30 +1588,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
     ctx.fillStyle = finalCockpitColor; 
     ctx.beginPath();
-    
-    // Logic matches original cockpit shape definitions
-    if (config.isAlien) { 
-        const cy = wingStyle === 'alien-a' ? 65 : 45; 
-        ctx.ellipse(50, cy, 8, 20, 0, 0, Math.PI * 2); 
-    } 
-    else if (wingStyle === 'x-wing') { 
-        ctx.ellipse(50, 55, 8, 12, 0, 0, Math.PI * 2); 
-    } 
-    else { 
-        ctx.ellipse(50, 40, 8, 12, 0, 0, Math.PI * 2); 
-    }
-    ctx.fill(); 
+    if (config.isAlien) { const cy = wingStyle === 'alien-a' ? 65 : 45; ctx.ellipse(50, cy, 8, 20, 0, 0, Math.PI * 2); } 
+    else if (wingStyle === 'x-wing') { ctx.ellipse(50, 55, 8, 12, 0, 0, Math.PI * 2); } 
+    else { ctx.ellipse(50, 40, 8, 12, 0, 0, Math.PI * 2); }
+    ctx.fill();
     
     // Glare
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'; 
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath(); 
-    if (wingStyle === 'x-wing') { 
-        ctx.ellipse(48, 52, 3, 5, -0.2, 0, Math.PI * 2); 
-    } 
-    else { 
-        const cy = (config.isAlien && wingStyle === 'alien-a') ? 65 : (config.isAlien ? 45 : 38); 
-        ctx.ellipse(48, cy - 2, 3, 5, -0.2, 0, Math.PI * 2); 
-    }
+    if (wingStyle === 'x-wing') { ctx.ellipse(48, 52, 3, 5, -0.2, 0, Math.PI * 2); } 
+    else { const cy = (config.isAlien && wingStyle === 'alien-a') ? 65 : (config.isAlien ? 45 : 38); ctx.ellipse(48, cy - 2, 3, 5, -0.2, 0, Math.PI * 2); }
     ctx.fill();
 
     if (!isRescue) {
@@ -1499,9 +1653,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     <div className="w-full h-full relative overflow-hidden bg-black select-none">
         <canvas ref={canvasRef} className="block w-full h-full" />
         
-        <div className="absolute inset-0 pointer-events-none p-4 flex flex-col justify-between">
+        <div className="absolute inset-0 pointer-events-none p-2 sm:p-4 flex flex-col justify-between z-10">
             <div className="flex justify-between items-start pointer-events-auto relative">
-                <div className="flex flex-col gap-1 w-48">
+                <div className="flex flex-col gap-1 w-32 sm:w-48">
                     <div className="flex items-center gap-2">
                         <span className={`font-black ${hudLabel} w-8`}>HULL</span>
                         <div className="flex-grow h-2 bg-zinc-800 border border-zinc-700 rounded overflow-hidden">
@@ -1520,7 +1674,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 </div>
 
                 {!hud.boss && (
-                    <div className="absolute left-1/2 -translate-x-1/2 top-0 flex flex-col items-center bg-black/60 px-6 py-2 rounded-b-xl border-x border-b border-zinc-800/50 backdrop-blur-sm">
+                    <div className="absolute left-1/2 -translate-x-1/2 top-0 flex flex-col items-center bg-black/60 px-6 py-2 rounded-b-xl border-x border-b border-zinc-800/50 backdrop-blur-sm pointer-events-none">
                         <div className="text-3xl font-mono font-black text-red-500 tabular-nums tracking-widest drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] leading-none">
                             {Math.floor(hud.timer / 60).toString().padStart(2, '0')}:{Math.floor(hud.timer % 60).toString().padStart(2, '0')}
                         </div>
@@ -1530,20 +1684,20 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     </div>
                 )}
 
-                <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-700 p-2 rounded-lg flex flex-col items-end gap-2 shadow-lg min-w-[140px]">
-                    <div className="flex gap-2 w-full">
+                <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-700 p-2 rounded-lg flex flex-col items-end gap-2 shadow-lg min-w-[100px]">
+                    <div className="flex flex-col sm:flex-row gap-2 w-full">
                         <button onClick={(e) => {
                             e.currentTarget.blur();
                             state.current.paused = !state.current.paused;
                             setHud(h => ({...h, isPaused: state.current.paused}));
-                        }} className="flex-1 py-2 bg-zinc-800 border border-zinc-600 text-white text-[10px] font-bold hover:bg-zinc-700 hover:border-white transition-colors">
+                        }} className="flex-1 py-2 sm:px-4 bg-zinc-800 border border-zinc-600 text-white text-[10px] font-bold hover:bg-zinc-700 hover:border-white transition-colors uppercase">
                             {hud.isPaused ? "RESUME" : "PAUSE"}
                         </button>
                         <button onClick={(e) => {
                             e.currentTarget.blur();
                             const s = state.current;
                             onGameOver(false, hud.score, true, { health: s.hp, fuel: s.fuel, water: s.water });
-                        }} className="flex-1 py-2 bg-red-900/50 border border-red-600 text-red-200 text-[10px] font-bold hover:bg-red-800 transition-colors">
+                        }} className="flex-1 py-2 sm:px-4 bg-red-900/50 border border-red-600 text-red-200 text-[10px] font-bold hover:bg-red-800 transition-colors uppercase">
                             ABORT
                         </button>
                     </div>
@@ -1570,22 +1724,23 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             )}
 
             {/* LEFT HUD: LOAD & ENERGY - Now labeled L & E */}
-            <div className="absolute left-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
+            <div className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
                 <LEDMeter value={hud.overload} max={100} colorStart="#10b981" label="L" vertical={true} reverseColor={true} />
                 <LEDMeter value={hud.energy} max={maxEnergy} colorStart="#22d3ee" label="E" vertical={true} />
             </div>
 
             {/* RIGHT HUD: FUEL & WATER - Now labeled F & W */}
-            <div className="absolute right-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
+            <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
                 <LEDMeter value={hud.fuel} max={maxFuel} colorStart="#f97316" label="F" vertical={true} />
                 <LEDMeter value={hud.water} max={maxWater} colorStart="#3b82f6" label="W" vertical={true} />
             </div>
 
-            <div className="absolute bottom-4 left-0 right-0 flex justify-center items-end pointer-events-auto">
-                <div className="flex items-end w-full px-4 justify-between">
+            {/* BOTTOM BAR - Mobile Optimization: Allow wrap if needed, shrink padding/gap */}
+            <div className="absolute bottom-2 sm:bottom-4 left-0 right-0 flex justify-center items-end pointer-events-auto">
+                <div className="flex flex-wrap sm:flex-nowrap justify-between items-end w-full px-2 sm:px-4 gap-2">
                     
                     {/* LEFT CORNER: MAIN GUN */}
-                    <div className="flex items-end gap-2">
+                    <div className="flex items-end gap-2 shrink-0">
                         {hasGuns && !hud.rescueMode && (
                             <HudButton 
                                 label="MAIN" 
@@ -1599,9 +1754,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         )}
                     </div>
 
-                    <div className="flex-1 flex justify-center pb-6">
+                    {/* CENTER: ALERT MESSAGE (Can wrap if needed) */}
+                    <div className="flex-1 flex justify-center pb-2 order-first sm:order-none w-full sm:w-auto">
                         {hud.alert && (
-                            <div className="text-center bg-black/60 border-y border-zinc-500/30 backdrop-blur-sm px-6 py-2">
+                            <div className="text-center bg-black/60 border-y border-zinc-500/30 backdrop-blur-sm px-4 py-1 sm:px-6 sm:py-2 max-w-[200px] sm:max-w-none">
                                 <span className={`${hudAlertText} font-black uppercase tracking-[0.1em] leading-tight whitespace-pre-wrap ${hud.alertType === 'alert' ? 'text-red-500 animate-pulse' : (hud.alertType === 'warning' ? 'text-amber-500' : 'text-emerald-400')}`}>
                                     {hud.alert}
                                 </span>
@@ -1609,9 +1765,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         )}
                     </div>
 
-                    {/* RIGHT ORDNANCE CLUSTER - Replaced MiniMeter with RoundCadran */}
+                    {/* RIGHT ORDNANCE CLUSTER - Shrink gaps on mobile */}
                     {!hud.rescueMode && (
-                        <div className="flex gap-2 items-end">
+                        <div className="flex gap-1 sm:gap-2 items-end shrink-0 justify-end flex-wrap sm:flex-nowrap max-w-[220px] sm:max-w-none">
                             {hud.missiles > 0 && (
                                 <HudButton 
                                     label="MISSILE" 
