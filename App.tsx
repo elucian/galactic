@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry } from './types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG } from './constants.ts';
@@ -19,7 +20,7 @@ import WarpSequence from './components/WarpSequence.tsx';
 import GameEngine from './components/GameEngine.tsx';
 import LandingScene from './components/LandingScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_21'; 
+const SAVE_KEY = 'galactic_defender_beta_24'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -64,6 +65,7 @@ export default function App() {
           redMineCount: 0, 
           hullPacks: 0, wingWeaponId: null, 
           health: 100, ammoPercent: 100, lives: 1, fuel: config.maxFuel, cargo: [],
+          water: 100, // Initial water
           ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 },
           magazineCurrent: 200, 
           reloadTimer: 0,
@@ -120,7 +122,8 @@ export default function App() {
             }
             if (fit.magazineCurrent === undefined) fit.magazineCurrent = 200;
             if (fit.reloadTimer === undefined) fit.reloadTimer = 0;
-            if (fit.redMineCount === undefined) fit.redMineCount = 0; 
+            if (fit.redMineCount === undefined) fit.redMineCount = 0;
+            if (fit.water === undefined) fit.water = 100;
         });
 
         if (parsed.pilotZoom === undefined) parsed.pilotZoom = 1.0;
@@ -150,6 +153,11 @@ export default function App() {
       newState.pilotZoom = gameState.pilotZoom;
       
       setGameState(newState);
+      setScreen('hangar');
+      audioService.playTrack('command');
+  };
+
+  const resumeGame = () => {
       setScreen('hangar');
       audioService.playTrack('command');
   };
@@ -240,6 +248,16 @@ export default function App() {
     else audioService.stop();
   }, [screen]);
 
+  // Calculate Dynamic Font Sizes for Intro Screen UI Elements (Buttons, Footer), NOT the Title
+  const uiStyles = useMemo(() => {
+      const s = gameState.settings.fontSize;
+      if (s === 'small') return { btn: 'text-xs', beta: 'text-[8px]', container: 'w-64', spacing: 'gap-3' };
+      if (s === 'large') return { btn: 'text-base', beta: 'text-[10px]', container: 'w-80', spacing: 'gap-5' };
+      if (s === 'extra-large') return { btn: 'text-lg', beta: 'text-xs', container: 'w-96', spacing: 'gap-6' };
+      // Default / Medium
+      return { btn: 'text-sm', beta: 'text-[9px]', container: 'w-72', spacing: 'gap-4' };
+  }, [gameState.settings.fontSize]);
+
   // [Helper Functions]
   const repairSelected = () => {
     if (!gameState.selectedShipInstanceId) return;
@@ -280,26 +298,94 @@ export default function App() {
     if (!gameState.selectedShipInstanceId || !selectedShipConfig) return;
     const sId = gameState.selectedShipInstanceId;
     const fit = gameState.shipFittings[sId];
-    if (fit.fuel >= selectedShipConfig.maxFuel) { audioService.playSfx('denied'); triggerSystemMessage("FUEL TANKS AT MAXIMUM CAPACITY", 'neutral'); return; }
+    
+    // Check if fully topped up
+    if (fit.fuel >= selectedShipConfig.maxFuel && fit.water >= (selectedShipConfig.maxWater || 100)) { 
+        audioService.playSfx('denied'); 
+        triggerSystemMessage("ALL SYSTEMS AT MAXIMUM CAPACITY", 'neutral'); 
+        return; 
+    }
+
     setGameState(prev => {
         const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; const newCargo = [...fit.cargo]; const newReserve = [...(prev.reserveByPlanet[dockedId] || [])];
-        let currentFuel = fit.fuel; const maxFuel = selectedShipConfig.maxFuel; let fueled = false; const FUEL_PER_ITEM = 5.0;
-        const consumeFuel = (list: CargoItem[]) => {
+        
+        let currentFuel = fit.fuel; const maxFuel = selectedShipConfig.maxFuel; 
+        let currentWater = fit.water; const maxWater = selectedShipConfig.maxWater || 100;
+        
+        let fueled = false; 
+        const FUEL_PER_ITEM = 5.0;
+        const WATER_PER_ITEM = 50.0;
+
+        const processList = (list: CargoItem[]) => {
             for (let i = 0; i < list.length; i++) {
-                if (currentFuel >= maxFuel) break;
+                if (currentFuel >= maxFuel && currentWater >= maxWater) break;
                 const item = list[i];
-                if (item.type === 'fuel') { item.quantity--; currentFuel = Math.min(maxFuel, currentFuel + FUEL_PER_ITEM); fueled = true; if (item.quantity <= 0) { list.splice(i, 1); i--; } while (currentFuel < maxFuel && i >= 0 && i < list.length && list[i].type === 'fuel') { if (list[i].quantity > 0) { list[i].quantity--; currentFuel = Math.min(maxFuel, currentFuel + FUEL_PER_ITEM); fueled = true; if (list[i].quantity <= 0) { list.splice(i, 1); i--; } } } }
+                
+                // Fuel Logic
+                if (item.type === 'fuel' && currentFuel < maxFuel) { 
+                    item.quantity--; 
+                    currentFuel = Math.min(maxFuel, currentFuel + FUEL_PER_ITEM); 
+                    fueled = true; 
+                    if (item.quantity <= 0) { list.splice(i, 1); i--; } 
+                    // Continue consuming if needed
+                    while (currentFuel < maxFuel && i >= 0 && i < list.length && list[i].type === 'fuel') { 
+                        if (list[i].quantity > 0) { 
+                            list[i].quantity--; 
+                            currentFuel = Math.min(maxFuel, currentFuel + FUEL_PER_ITEM); 
+                            fueled = true; 
+                            if (list[i].quantity <= 0) { list.splice(i, 1); i--; } 
+                        } 
+                    } 
+                }
+                
+                // Water Logic
+                if (item.type === 'water' && currentWater < maxWater) {
+                    item.quantity--; 
+                    currentWater = Math.min(maxWater, currentWater + WATER_PER_ITEM); 
+                    fueled = true; 
+                    if (item.quantity <= 0) { list.splice(i, 1); i--; } 
+                    while (currentWater < maxWater && i >= 0 && i < list.length && list[i].type === 'water') { 
+                        if (list[i].quantity > 0) { 
+                            list[i].quantity--; 
+                            currentWater = Math.min(maxWater, currentWater + WATER_PER_ITEM); 
+                            fueled = true; 
+                            if (list[i].quantity <= 0) { list.splice(i, 1); i--; } 
+                        } 
+                    } 
+                }
             }
         };
-        consumeFuel(newReserve); if (currentFuel < maxFuel) consumeFuel(newCargo);
-        if (fueled) { audioService.playSfx('buy'); triggerSystemMessage("REFUELING COMPLETE", 'success'); return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: currentFuel, cargo: newCargo } }, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newReserve } }; } else { audioService.playSfx('denied'); triggerSystemMessage("REFUEL FAILED: NO FUEL CANISTERS DETECTED", 'error'); return prev; }
+        
+        processList(newReserve); 
+        if (currentFuel < maxFuel || currentWater < maxWater) processList(newCargo);
+        
+        if (fueled) { 
+            audioService.playSfx('buy'); 
+            triggerSystemMessage("REPLENISHMENT COMPLETE", 'success'); 
+            return { 
+                ...prev, 
+                shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: currentFuel, water: currentWater, cargo: newCargo } }, 
+                reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newReserve } 
+            }; 
+        } else { 
+            audioService.playSfx('denied'); 
+            triggerSystemMessage("REPLENISH FAILED: NO FUEL OR WATER CANISTERS", 'error'); 
+            return prev; 
+        }
     });
   };
 
   const handleLaunch = () => {
     if (!selectedFitting || !selectedShipConfig) return;
     const launchCost = 1.0;
-    if (selectedFitting.fuel < launchCost) { audioService.playSfx('denied'); triggerSystemMessage("LAUNCH ABORTED: INSUFFICIENT FUEL RESERVES", 'error'); return; }
+    if (selectedFitting.fuel < launchCost && selectedFitting.water < launchCost) { // Allow launch if either has resource? Or require fuel for launch?
+        // Usually rockets use fuel.
+        if (selectedFitting.fuel < launchCost) {
+             audioService.playSfx('denied'); 
+             triggerSystemMessage("LAUNCH ABORTED: INSUFFICIENT FUEL RESERVES", 'error'); 
+             return; 
+        }
+    }
     
     setLaunchDestination('map'); 
     
@@ -363,6 +449,7 @@ export default function App() {
            ...fitting, 
            health: payload?.health ?? 0, 
            fuel: payload?.fuel ?? 0, 
+           water: payload?.water ?? fitting.water, // Ensure water state is synced
            rocketCount: payload?.rockets ?? fitting.rocketCount, 
            mineCount: payload?.mines ?? fitting.mineCount, 
            redMineCount: payload?.redMineCount ?? fitting.redMineCount,
@@ -505,12 +592,12 @@ export default function App() {
           }
       }
 
-      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 2, mineCount: 2, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
+      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, water: shipConfig.maxWater || 100, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 2, mineCount: 2, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
       return { ...prev, credits: prev.credits - shipConfig.price, ownedShips: newOwned, shipFittings: newFittings, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: reserve }, shipColors: { ...prev.shipColors, [sId]: shipConfig.defaultColor || '#94a3b8' } };
     });
     setIsStoreOpen(false); audioService.playSfx('buy');
   };
-  const getTransferBatchSize = (type: string) => { if (['missile', 'mine', 'fuel', 'energy'].includes(type)) return 10; if (['gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium'].includes(type)) return 50; return 1; };
+  const getTransferBatchSize = (type: string) => { if (['missile', 'mine', 'fuel', 'energy', 'water'].includes(type)) return 10; if (['gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium'].includes(type)) return 50; return 1; };
   const moveAllItems = (direction: 'to_reserve' | 'to_ship') => { if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; const config = selectedShipConfig; if (!config) return; setGameState(prev => { const fit = prev.shipFittings[sId]; const reserves = [...(prev.reserveByPlanet[dockedId] || [])]; let cargo = [...fit.cargo]; if (direction === 'to_reserve') { cargo.forEach(item => { const resIdx = reserves.findIndex(r => r.id === item.id); if (resIdx >= 0) { reserves[resIdx] = { ...reserves[resIdx], quantity: reserves[resIdx].quantity + item.quantity }; } else { reserves.push({ ...item, instanceId: `res_${Date.now()}_${Math.random()}` }); } }); cargo = []; } else { let currentLoad = cargo.reduce((acc, i) => acc + i.quantity, 0); const max = config.maxCargo; for (let i = reserves.length - 1; i >= 0; i--) { if (currentLoad >= max) break; const item = reserves[i]; const space = max - currentLoad; const amount = Math.min(item.quantity, space); if (amount > 0) { const cargoIdx = cargo.findIndex(c => c.id === item.id); if (cargoIdx >= 0) { cargo[cargoIdx] = { ...cargo[cargoIdx], quantity: cargo[cargoIdx].quantity + amount }; } else { cargo.push({ ...item, quantity: amount, instanceId: `cargo_${Date.now()}_${Math.random()}` }); } if (item.quantity === amount) { reserves.splice(i, 1); } else { reserves[i] = { ...item, quantity: item.quantity - amount }; } currentLoad += amount; } } } const newFittings = { ...prev.shipFittings, [sId]: { ...fit, cargo } }; const newReserveByPlanet = { ...prev.reserveByPlanet, [dockedId]: reserves }; return { ...prev, shipFittings: newFittings, reserveByPlanet: newReserveByPlanet }; }); audioService.playSfx('click'); setSelectedCargoIdx(null); setSelectedReserveIdx(null); };
   const moveItems = (direction: 'to_reserve' | 'to_ship', all: boolean) => { if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; const config = selectedShipConfig; if (!config) return; let shouldNullCargo = false; let shouldNullReserve = false; const fit = gameState.shipFittings[sId]; const reserves = gameState.reserveByPlanet[dockedId] || []; const cargo = fit.cargo; if (direction === 'to_reserve') { if (selectedCargoIdx === null) return; const item = cargo[selectedCargoIdx]; if (item) { const batchSize = getTransferBatchSize(item.type); const amount = all ? item.quantity : Math.min(item.quantity, batchSize); if (item.quantity === amount) shouldNullCargo = true; } } else { if (selectedReserveIdx === null) return; const item = reserves[selectedReserveIdx]; if (item) { const currentLoad = cargo.reduce((acc, i) => acc + i.quantity, 0); const space = config.maxCargo - currentLoad; if (space > 0) { const batchSize = getTransferBatchSize(item.type); let amount = all ? item.quantity : Math.min(item.quantity, batchSize); amount = Math.min(amount, space); if (item.quantity === amount) shouldNullReserve = true; } } } setGameState(prev => { const fit = prev.shipFittings[sId]; const reserves = [...(prev.reserveByPlanet[dockedId] || [])]; const cargo = [...fit.cargo]; const newFittings = { ...prev.shipFittings }; const newReserveByPlanet = { ...prev.reserveByPlanet }; if (direction === 'to_reserve') { if (selectedCargoIdx === null) return prev; const item = cargo[selectedCargoIdx]; if (!item) return prev; const batchSize = getTransferBatchSize(item.type); const amount = all ? item.quantity : Math.min(item.quantity, batchSize); if (item.quantity === amount) { cargo.splice(selectedCargoIdx, 1); } else { cargo[selectedCargoIdx] = { ...item, quantity: item.quantity - amount }; } const resIdx = reserves.findIndex(r => r.id === item.id); if (resIdx >= 0) { reserves[resIdx] = { ...reserves[resIdx], quantity: reserves[resIdx].quantity + amount }; } else { reserves.push({ ...item, quantity: amount, instanceId: `res_${Date.now()}_${Math.random()}` }); } } else if (direction === 'to_ship') { if (selectedReserveIdx === null) return prev; const item = reserves[selectedReserveIdx]; if (!item) return prev; const currentLoad = cargo.reduce((acc, i) => acc + i.quantity, 0); const space = config.maxCargo - currentLoad; if (space <= 0) { return prev; } const batchSize = getTransferBatchSize(item.type); let amount = all ? item.quantity : Math.min(item.quantity, batchSize); amount = Math.min(amount, space); if (amount <= 0) return prev; if (item.quantity === amount) { reserves.splice(selectedReserveIdx, 1); } else { reserves[selectedReserveIdx] = { ...item, quantity: item.quantity - amount }; } const cargoIdx = cargo.findIndex(c => c.id === item.id); if (cargoIdx >= 0) { cargo[cargoIdx] = { ...cargo[cargoIdx], quantity: cargo[cargoIdx].quantity + amount }; } else { cargo.push({ ...item, quantity: amount, instanceId: `cargo_${Date.now()}_${Math.random()}` }); } } newFittings[sId] = { ...fit, cargo }; newReserveByPlanet[dockedId] = reserves; return { ...prev, shipFittings: newFittings, reserveByPlanet: newReserveByPlanet }; }); audioService.playSfx('click'); if (shouldNullCargo) setSelectedCargoIdx(null); if (shouldNullReserve) setSelectedReserveIdx(null); };
   
@@ -525,7 +612,7 @@ export default function App() {
       const fit = gameState.shipFittings[sId];
       if (gameState.credits < item.price) { audioService.playSfx('denied'); return; }
       
-      const qtyToBuy = item._buyAmount || 1;
+      const qtyToBuy = item._buyAmount || 1; // Use the configured batch size
       const currentCargoCount = fit.cargo.reduce((acc, c) => acc + c.quantity, 0);
       
       if (currentCargoCount >= config.maxCargo && !((item.type === 'missile' && fit.rocketCount < 10) || (item.type === 'mine' && fit.mineCount < 10) || (item.id === 'ord_mine_red' && (fit.redMineCount || 0) < 5))) {
@@ -539,7 +626,8 @@ export default function App() {
           let updatedFit = { ...fit };
           
           let itemType = item.type || 'goods'; 
-          if (item.damage || ['projectile', 'laser', 'gun'].includes(item.type?.toLowerCase())) itemType = 'weapon'; 
+          // Prevent 'gun' (personal weapon) from being converted to 'weapon' (ship weapon)
+          if (item.damage || ['projectile', 'laser'].includes(item.type?.toLowerCase())) itemType = 'weapon'; 
           if (item.capacity || ['shield'].includes(item.type?.toLowerCase())) itemType = 'shield'; 
           
           let purchased = false;
@@ -604,253 +692,403 @@ export default function App() {
       });
   };
 
-  const marketSell = (resIdx: number) => { setGameState(prev => { const newRes = [...(prev.reserveByPlanet[dockedId] || [])]; const item = newRes[resIdx]; const basePrice = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].find(x => x.id === item.id)?.price || 1000; const sellPrice = Math.floor(basePrice * 0.8); if (item.quantity > 1) item.quantity--; else newRes.splice(resIdx, 1); return { ...prev, credits: prev.credits + sellPrice, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newRes } }; }); audioService.playSfx('buy'); };
-  
-  const mountFromCargo = (cargoIdx: number, slotIdx: number, type: 'weapon' | 'shield') => { 
-    if (!gameState.selectedShipInstanceId) return; 
-    setGameState(prev => { 
-        const sId = prev.selectedShipInstanceId!; 
-        const fit = prev.shipFittings[sId]; 
-        let newCargo = [...fit.cargo]; 
-        const sourceItem = newCargo[cargoIdx];
-        if (!sourceItem) return prev; 
-        if (sourceItem.quantity > 1) { 
-            newCargo[cargoIdx] = { ...sourceItem, quantity: sourceItem.quantity - 1 }; 
-        } else { 
-            newCargo.splice(cargoIdx, 1); 
-        } 
-        let unmountId: string | null = null; 
-        if (type === 'weapon') { 
-            unmountId = fit.weapons[slotIdx]?.id || null; 
-        } else { 
-            unmountId = slotIdx === 0 ? fit.shieldId : fit.secondShieldId; 
-            if (unmountId === 'dev_god_mode') unmountId = null; 
-        } 
-        if (unmountId) { 
-            const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === unmountId); 
-            const existingCargoIdx = newCargo.findIndex(c => c.id === unmountId); 
-            if (existingCargoIdx >= 0) { 
-                newCargo[existingCargoIdx] = { ...newCargo[existingCargoIdx], quantity: newCargo[existingCargoIdx].quantity + 1 }; 
-            } else { 
-                newCargo.push({ 
-                    instanceId: `unmt_${Date.now()}_${Math.random()}`, 
-                    type: type, 
-                    id: unmountId, 
-                    name: def?.name || 'Item', 
-                    weight: 1, 
-                    quantity: 1 
-                }); 
-            } 
-        } 
-        const newFits = { ...prev.shipFittings }; 
-        if (type === 'weapon') { 
-            const newWeps = [...fit.weapons]; 
-            newWeps[slotIdx] = { id: sourceItem.id!, count: 1 }; 
-            newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; 
-        } else { 
-            const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; 
-            newFits[sId] = { ...fit, [key]: sourceItem.id!, cargo: newCargo }; 
-        } 
-        return { ...prev, shipFittings: newFits }; 
-    }); 
-    audioService.playSfx('click'); 
-  };
+  const marketSell = (resIdx: number) => { 
+      const planet = PLANETS.find(p => p.id === dockedId);
+      if (!planet) return;
 
-  const unmountSlot = (slotIdx: number, type: 'weapon' | 'shield') => { 
-    if (!gameState.selectedShipInstanceId) return; 
-    setGameState(prev => { 
-        const sId = prev.selectedShipInstanceId!; 
-        const fit = prev.shipFittings[sId], newCargo = [...fit.cargo]; 
-        const id = type === 'weapon' ? fit.weapons[slotIdx]?.id : (slotIdx === 0 ? fit.shieldId : fit.secondShieldId); 
-        if (!id) return prev; 
-        const def = [...WEAPONS, ...EXOTIC_WEAPONS, ...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === id); 
-        const existingIdx = newCargo.findIndex(c => c.id === id); 
-        if (existingIdx >= 0) { 
-            newCargo[existingIdx] = { ...newCargo[existingIdx], quantity: newCargo[existingIdx].quantity + 1 }; 
-        } else { 
-            newCargo.push({ 
-                instanceId: `unmt_${Date.now()}`, 
-                type: type, 
-                id, 
-                name: def?.name || 'Item', 
-                weight: 1, 
-                quantity: 1 
-            }); 
-        } 
-        const newFits = { ...prev.shipFittings }; 
-        if (type === 'weapon') { 
-            const newWeps = [...fit.weapons]; 
-            newWeps[slotIdx] = null; 
-            newFits[sId] = { ...fit, weapons: newWeps, cargo: newCargo }; 
-        } else { 
-            const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; 
-            newFits[sId] = { ...fit, [key]: null, cargo: newCargo }; 
-        } 
-        return { ...prev, shipFittings: newFits }; 
-    }); 
-    audioService.playSfx('click'); 
-  };
+      setGameState(prev => { 
+          const newRes = [...(prev.reserveByPlanet[dockedId] || [])]; 
+          const item = newRes[resIdx]; 
+          if (!item) return prev;
 
-  const setPartColor = (color: string) => { if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; let colorKey: keyof GameState | undefined; switch (activePart) { case 'hull': colorKey = 'shipColors'; break; case 'wings': colorKey = 'shipWingColors'; break; case 'cockpit': colorKey = 'shipCockpitColors'; break; case 'guns': colorKey = 'shipGunColors'; break; case 'secondary_guns': colorKey = 'shipSecondaryGunColors'; break; case 'gun_body': colorKey = 'shipGunBodyColors'; break; case 'engines': colorKey = 'shipEngineColors'; break; case 'nozzles': colorKey = 'shipNozzleColors'; break; default: return; } if (colorKey) { setGameState(prev => ({ ...prev, [colorKey!]: { ...((prev[colorKey!] as Record<string, string>) || {}), [sId]: color } })); audioService.playSfx('click'); } };
-  const updateCustomColor = (index: number, newColor: string) => { setGameState(prev => { const oldColor = prev.customColors[index]; const newCustomColors = [...prev.customColors]; newCustomColors[index] = newColor; const updateMap = (map: Record<string, string>) => { const newMap = { ...map }; let changed = false; Object.keys(newMap).forEach(key => { if (newMap[key] === oldColor) { newMap[key] = newColor; changed = true; } }); return changed ? newMap : map; }; return { ...prev, customColors: newCustomColors, shipColors: updateMap(prev.shipColors), shipWingColors: updateMap(prev.shipWingColors), shipCockpitColors: updateMap(prev.shipCockpitColors), shipGunColors: updateMap(prev.shipGunColors), shipSecondaryGunColors: updateMap(prev.shipSecondaryGunColors), shipGunBodyColors: updateMap(prev.shipGunBodyColors), shipEngineColors: updateMap(prev.shipEngineColors), shipNozzleColors: updateMap(prev.shipNozzleColors), }; }); };
-  const setGodMode = (slotIdx: number) => { if (!gameState.selectedShipInstanceId) return; setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; const newFits = { ...prev.shipFittings }; const key = slotIdx === 0 ? 'shieldId' : 'secondShieldId'; newFits[sId] = { ...fit, [key]: 'dev_god_mode' }; return { ...prev, shipFittings: newFits }; }); audioService.playSfx('click'); };
-  const buyAmmo = (type: AmmoType) => { if (!gameState.selectedShipInstanceId) return; const cost = AMMO_CONFIG[type].price; if (gameState.credits < cost) { audioService.playSfx('denied'); triggerSystemMessage(`INSUFFICIENT CREDITS FOR ${type.toUpperCase()}`, 'error'); return; } setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; const newAmmo = { ...fit.ammo, [type]: (fit.ammo[type] || 0) + 1000 }; return { ...prev, credits: prev.credits - cost, shipFittings: { ...prev.shipFittings, [sId]: { ...fit, ammo: newAmmo } } }; }); audioService.playSfx('buy'); };
-  const selectAmmo = (type: AmmoType) => { if (!gameState.selectedShipInstanceId) return; setGameState(prev => { const sId = prev.selectedShipInstanceId!; return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...prev.shipFittings[sId], selectedAmmo: type } } }; }); audioService.playSfx('click'); };
+          const basePrice = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].find(x => x.id === item.id)?.price || 1000; 
+          
+          let multiplier = 0.5; // Base sell is low
+          const isHabitable = ['#10b981', '#064e3b', '#60a5fa', '#3b82f6'].includes(planet.color);
+          const isBarren = !isHabitable;
+          const level = planet.difficulty;
+
+          // Selling Food/Water/Meds
+          if (['food', 'water', 'medicine', 'drug'].includes(item.type)) {
+              if (isHabitable) multiplier = 0.3; // Flood market (Supply)
+              if (isBarren) multiplier = 2.0 + (level * 0.5); // High Demand (Scarcity)
+          }
+          // Selling Resources (Minerals)
+          else if (['iron','copper','gold','platinum','tungsten','lithium'].includes(item.type)) {
+              if (isHabitable) multiplier = 1.5; // Needs materials
+              if (isBarren) multiplier = 0.4; // Source (Supply)
+          }
+          // Selling Weapons
+          else if (item.type === 'weapon' || item.type === 'shield') {
+              if (level > 8) multiplier = 1.2; // War zones pay more
+              else multiplier = 0.6;
+          }
+
+          const sellPrice = Math.floor(basePrice * multiplier); 
+
+          if (item.quantity > 1) item.quantity--; 
+          else newRes.splice(resIdx, 1); 
+          
+          return { ...prev, credits: prev.credits + sellPrice, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newRes } }; 
+      }); 
+      audioService.playSfx('buy'); 
+  };
 
   return (
-    <div className="w-full h-full bg-black text-white font-sans overflow-hidden select-none relative">
-      {screen !== 'intro' && screen !== 'hangar' && <StarBackground />}
-      
+    <>
+      <StarBackground />
       {screen === 'intro' && (
-        <div className="fixed inset-0 flex flex-col items-center justify-center p-6 z-10 text-center overflow-hidden">
-          <div className="fixed inset-0 z-0"><StoryScene /></div>
-          <div className="z-10 flex flex-col items-center">
-              <h1 className="retro-font text-3xl md:text-5xl text-emerald-500/50 uppercase tracking-widest mb-10 z-10 leading-tight drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]">GALACTIC<br/>FREELANCER</h1>
-              <div className="flex flex-col gap-4 z-10 w-64">
-                <button onClick={startNewGame} className="py-4 bg-black/50 backdrop-blur-sm border-2 border-emerald-500 text-emerald-500 font-black uppercase tracking-widest hover:bg-emerald-900/40 hover:text-white transition-all shadow-[0_0_20px_rgba(16,185,129,0.2)]">START MISSION</button>
-                <button onClick={() => { setScreen('hangar'); audioService.playTrack('command'); }} className="py-3 bg-black/50 backdrop-blur-sm border border-zinc-500 text-zinc-400 font-black uppercase hover:bg-zinc-800/60 hover:border-zinc-300 hover:text-white transition-all">RESUME MISSION</button>
-                <div className="flex gap-4">
-                    <button onClick={() => { setIsManualOpen(true); setManualPage(1); }} className="flex-1 py-3 bg-black/50 backdrop-blur-sm border border-zinc-600 text-zinc-500 font-black uppercase hover:bg-zinc-800/60 hover:text-white transition-all text-[10px]">MANUAL</button>
-                    <button onClick={() => setIsOptionsOpen(true)} className="flex-1 py-3 bg-black/50 backdrop-blur-sm border border-zinc-600 text-zinc-500 font-black uppercase hover:bg-zinc-800/60 hover:text-white transition-all text-[10px]">OPTIONS</button>
+        <div className="relative w-full h-full flex items-center justify-center">
+          <StoryScene />
+          {/* Main Overlay - Simplified Layout */}
+          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
+            
+            {/* Title Block - Static Responsive Sizing */}
+            <div className="mb-12 text-center pointer-events-auto">
+                <h1 className={`retro-font text-6xl md:text-8xl lg:text-9xl text-emerald-500 animate-pulse drop-shadow-[0_0_20px_rgba(16,185,129,0.6)] leading-none text-center flex flex-col items-center`}>
+                    GALACTIC
+                    <span className={`block mt-2 md:mt-4 text-3xl md:text-5xl lg:text-6xl text-orange-500 drop-shadow-[0_0_15px_rgba(249,115,22,0.8)]`}>FREELANCER</span>
+                </h1>
+                
+            </div>
+
+            {/* Controls - Dynamic UI Sizing based on settings */}
+            <div className={`flex flex-col ${uiStyles.spacing} pointer-events-auto ${uiStyles.container}`}>
+                {/* 1. START MISSION */}
+                <button 
+                  onClick={startNewGame}
+                  className={`w-full h-14 bg-zinc-900 border-2 border-emerald-500 text-emerald-400 font-black ${uiStyles.btn} tracking-[0.2em] uppercase overflow-hidden hover:bg-emerald-500 hover:text-black transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] flex items-center justify-center`}
+                >
+                  START MISSION
+                </button>
+
+                {/* 2. RESUME MISSION */}
+                <button 
+                  onClick={resumeGame}
+                  className={`w-full h-14 bg-zinc-900 border border-zinc-600 text-zinc-400 font-black ${uiStyles.btn} tracking-[0.15em] uppercase hover:border-emerald-500 hover:text-emerald-400 transition-all duration-300 flex items-center justify-center`}
+                >
+                  RESUME MISSION
+                </button>
+
+                {/* 3. ROW: STORY | OPTIONS */}
+                <div className="flex gap-4 w-full">
+                    <button 
+                      onClick={() => setIsManualOpen(true)}
+                      className={`flex-1 h-14 bg-zinc-900 border border-zinc-700 text-zinc-500 font-black ${uiStyles.btn} tracking-[0.1em] uppercase hover:border-zinc-400 hover:text-white transition-all duration-300 flex items-center justify-center`}
+                    >
+                      STORY
+                    </button>
+
+                    <button 
+                      onClick={() => setIsOptionsOpen(true)}
+                      className={`flex-1 h-14 bg-zinc-900 border border-zinc-700 text-zinc-500 font-black ${uiStyles.btn} tracking-[0.1em] uppercase hover:border-zinc-400 hover:text-white transition-all duration-300 flex items-center justify-center`}
+                    >
+                      OPTIONS
+                    </button>
                 </div>
-              </div>
+            </div>
+
+            <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 24 - January 2026</div>
+
           </div>
         </div>
       )}
 
       {screen === 'hangar' && (
         <CommandCenter 
-            gameState={gameState} 
-            setGameState={setGameState} 
-            dockedPlanetName={dockedPlanet?.name || "Unknown"} 
-            onLaunch={handleLaunch} 
-            onRepair={repairSelected} 
-            onRefuel={refuelSelected} 
-            setScreen={setScreen} 
-            setIsOptionsOpen={setIsOptionsOpen} 
-            setIsStoreOpen={setIsStoreOpen} 
-            setIsLoadoutOpen={setIsLoadoutOpen} 
-            setIsPaintOpen={setIsPaintOpen} 
-            setIsMessagesOpen={setIsMessagesOpen} 
-            setIsMarketOpen={setIsMarketOpen} 
-            setIsCargoOpen={setIsCargoOpen}
-            activeSlotIndex={activeSlotIndex}
-            setActiveSlotIndex={setActiveSlotIndex}
-            systemMessage={systemMessage}
+          gameState={gameState} 
+          setGameState={setGameState} 
+          dockedPlanetName={PLANETS.find(p => p.id === dockedId)?.name || 'Unknown'} 
+          onLaunch={handleLaunch} 
+          onRepair={repairSelected} 
+          onRefuel={refuelSelected}
+          setScreen={setScreen}
+          setIsOptionsOpen={setIsOptionsOpen}
+          setIsStoreOpen={setIsStoreOpen}
+          setIsLoadoutOpen={setIsLoadoutOpen}
+          setIsPaintOpen={setIsPaintOpen}
+          setIsMessagesOpen={setIsMessagesOpen}
+          setIsMarketOpen={setIsMarketOpen}
+          setIsCargoOpen={setIsCargoOpen}
+          activeSlotIndex={activeSlotIndex}
+          setActiveSlotIndex={(i) => { setActiveSlotIndex(i); setGameState(p => ({ ...p, selectedShipInstanceId: p.ownedShips[i].instanceId })); }}
+          systemMessage={systemMessage}
         />
       )}
-
-      <CargoDialog isOpen={isCargoOpen} onClose={() => setIsCargoOpen(false)} fitting={selectedFitting!} shipConfig={selectedShipConfig} reserves={currentReserves} selectedCargoIdx={selectedCargoIdx} selectedReserveIdx={selectedReserveIdx} setSelectedCargoIdx={setSelectedCargoIdx} setSelectedReserveIdx={setSelectedReserveIdx} onMoveItems={moveItems} onMoveAll={moveAllItems} fontSize={gameState.settings.fontSize} />
-      <MarketDialog isOpen={isMarketOpen} onClose={() => setIsMarketOpen(false)} marketTab={marketTab} setMarketTab={setMarketTab} currentReserves={currentReserves} credits={gameState.credits} testMode={!!gameState.settings.testMode} marketBuy={marketBuy} marketSell={marketSell} fontSize={gameState.settings.fontSize} />
-      <StoreDialog isOpen={isStoreOpen} onClose={() => setIsStoreOpen(false)} inspectedShipId={inspectedShipId} setInspectedShipId={setInspectedShipId} credits={gameState.credits} replaceShip={replaceShip} fontSize={gameState.settings.fontSize} testMode={!!gameState.settings.testMode} />
-      <LoadoutDialog isOpen={isLoadoutOpen} onClose={() => setIsLoadoutOpen(false)} fitting={selectedFitting!} shipConfig={selectedShipConfig} loadoutTab={loadoutTab} setLoadoutTab={setLoadoutTab} activeFittingSlot={activeFittingSlot} setActiveFittingSlot={setActiveFittingSlot} unmountSlot={unmountSlot} mountFromCargo={mountFromCargo} testMode={!!gameState.settings.testMode} setGodMode={setGodMode} buyAmmo={buyAmmo} selectAmmo={selectAmmo} fontSize={gameState.settings.fontSize} />
-      <PaintDialog isOpen={isPaintOpen} onClose={() => setIsPaintOpen(false)} selectedShipInstanceId={gameState.selectedShipInstanceId!} selectedShipConfig={selectedShipConfig} activePart={activePart} setActivePart={setActivePart} gameState={gameState} setPartColor={setPartColor} updateCustomColor={updateCustomColor} fontSize={gameState.settings.fontSize} />
-      <MessagesDialog isOpen={isMessagesOpen} onClose={() => setIsMessagesOpen(false)} messages={gameState.messages} leaderboard={gameState.leaderboard} fontSize={gameState.settings.fontSize} />
-      <OptionsDialog isOpen={isOptionsOpen} onClose={() => setIsOptionsOpen(false)} gameState={gameState} setGameState={setGameState} />
-      <ManualDialog isOpen={isManualOpen} onClose={() => setIsManualOpen(false)} manualPage={manualPage} setManualPage={setManualPage} fontSize={gameState.settings.fontSize} />
 
       {screen === 'map' && (
         <SectorMap 
-            currentQuadrant={gameState.currentQuadrant} 
-            orbitOffsets={gameState.planetOrbitOffsets} 
-            universeStartTime={gameState.universeStartTime} 
-            planetRegistry={gameState.planetRegistry}
-            onLaunch={handlePlanetSelection} 
-            onBack={() => setScreen('hangar')} 
-            testMode={!!gameState.settings.testMode}
-            onTestLanding={(planet) => {
-                setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: planet.quadrant }));
-                setScreen('landing');
-            }}
-        />
-      )}
-      
-      {screen === 'launch' && gameState.currentPlanet && (
-        <LaunchSequence 
-            planet={dockedPlanet || gameState.currentPlanet} 
-            shipConfig={selectedShipConfig || SHIPS[0]} 
-            shipColors={{ hull: gameState.shipColors[activeShipId], wings: gameState.shipWingColors[activeShipId], cockpit: gameState.shipCockpitColors[activeShipId], guns: gameState.shipGunColors[activeShipId], secondary_guns: gameState.shipSecondaryGunColors[activeShipId], gun_body: gameState.shipGunBodyColors[activeShipId], engines: gameState.shipEngineColors[activeShipId], nozzles: gameState.shipNozzleColors[activeShipId] }} 
-            onComplete={handleLaunchSequenceComplete}
-            testMode={!!gameState.settings.testMode}
-            weaponId={activeWeaponId}
-            equippedWeapons={selectedFitting?.weapons}
-            currentFuel={selectedFitting?.fuel || 0}
-            maxFuel={selectedShipConfig?.maxFuel || 100}
+          currentQuadrant={gameState.currentQuadrant} 
+          onLaunch={handlePlanetSelection} 
+          onBack={() => setScreen('hangar')}
+          orbitOffsets={gameState.planetOrbitOffsets}
+          universeStartTime={gameState.universeStartTime}
+          planetRegistry={gameState.planetRegistry}
+          testMode={gameState.settings.testMode}
+          onTestLanding={(planet) => {
+              setGameState(prev => ({ ...prev, currentPlanet: planet }));
+              setScreen('landing');
+          }}
         />
       )}
 
-      {screen === 'warp' && (
-        <WarpSequence
-            shipConfig={selectedShipConfig || SHIPS[0]}
-            shipColors={{ hull: gameState.shipColors[activeShipId], wings: gameState.shipWingColors[activeShipId], cockpit: gameState.shipCockpitColors[activeShipId], guns: gameState.shipGunColors[activeShipId], secondary_guns: gameState.shipSecondaryGunColors[activeShipId], gun_body: gameState.shipGunBodyColors[activeShipId], engines: gameState.shipEngineColors[activeShipId], nozzles: gameState.shipNozzleColors[activeShipId] }}
-            shieldColor={getActiveShieldColor()}
-            onComplete={handleWarpComplete}
+      {screen === 'launch' && gameState.currentPlanet && selectedShipConfig && (
+        <LaunchSequence 
+          planet={gameState.currentPlanet} 
+          shipConfig={selectedShipConfig} 
+          shipColors={{ 
+              hull: gameState.shipColors[activeShipId], 
+              wings: gameState.shipWingColors[activeShipId],
+              cockpit: gameState.shipCockpitColors[activeShipId],
+              guns: gameState.shipGunColors[activeShipId],
+              secondary_guns: gameState.shipSecondaryGunColors[activeShipId],
+              gun_body: gameState.shipGunBodyColors[activeShipId],
+              engines: gameState.shipEngineColors[activeShipId],
+              nozzles: gameState.shipNozzleColors[activeShipId]
+          }} 
+          onComplete={handleLaunchSequenceComplete} 
+          weaponId={activeWeaponId}
+          equippedWeapons={gameState.shipFittings[activeShipId].weapons}
+          currentFuel={gameState.shipFittings[activeShipId].fuel}
+          maxFuel={selectedShipConfig.maxFuel}
+        />
+      )}
+
+      {screen === 'warp' && selectedShipConfig && (
+        <WarpSequence 
+            shipConfig={selectedShipConfig} 
+            shipColors={{ 
+              hull: gameState.shipColors[activeShipId], 
+              wings: gameState.shipWingColors[activeShipId],
+              cockpit: gameState.shipCockpitColors[activeShipId],
+              guns: gameState.shipGunColors[activeShipId],
+              gun_body: gameState.shipGunBodyColors[activeShipId],
+              engines: gameState.shipEngineColors[activeShipId],
+              nozzles: gameState.shipNozzleColors[activeShipId]
+            }}
+            shieldColor={getActiveShieldColor()} 
+            onComplete={handleWarpComplete} 
             weaponId={activeWeaponId}
-            equippedWeapons={selectedFitting?.weapons}
+            equippedWeapons={gameState.shipFittings[activeShipId].weapons}
         />
       )}
 
       {screen === 'game' && gameState.currentPlanet && (
-        <GameEngine
-          ships={gameState.ownedShips.filter(os => os.instanceId === gameState.selectedShipInstanceId).map(os => ({
-             config: SHIPS.find(s => s.id === os.shipTypeId)!,
-             fitting: gameState.shipFittings[os.instanceId],
-             color: gameState.shipColors[os.instanceId],
-             wingColor: gameState.shipWingColors[os.instanceId],
-             cockpitColor: gameState.shipCockpitColors[os.instanceId],
-             gunColor: gameState.shipGunColors[os.instanceId],
-             secondaryGunColor: gameState.shipSecondaryGunColors[os.instanceId],
-             gunBodyColor: gameState.shipGunBodyColors[os.instanceId],
-             engineColor: gameState.shipEngineColors[os.instanceId],
-             nozzleColor: gameState.shipNozzleColors[os.instanceId]
-          }))}
-          shield={(() => {
-              const id = selectedFitting?.shieldId;
-              if (id === 'dev_god_mode') return { id: 'dev_god_mode', name: 'Developer Aegis', price: 0, capacity: 999999, regenRate: 1000, energyCost: 0, visualType: 'full', color: '#ffffff' } as Shield;
-              return id ? [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === id) || null : null;
-          })()}
-          secondShield={(() => {
-              const id = selectedFitting?.secondShieldId;
-              if (id === 'dev_god_mode') return { id: 'dev_god_mode', name: 'Developer Aegis', price: 0, capacity: 999999, regenRate: 1000, energyCost: 0, visualType: 'full', color: '#ffffff' } as Shield;
-              return id ? [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === id) || null : null;
-          })()}
+        <GameEngine 
+          ships={[...gameState.ownedShips]
+            .sort((a, b) => {
+                const selectedId = gameState.selectedShipInstanceId || gameState.ownedShips[0].instanceId;
+                if (a.instanceId === selectedId) return -1;
+                if (b.instanceId === selectedId) return 1;
+                return 0;
+            })
+            .map(s => {
+              const fit = gameState.shipFittings[s.instanceId];
+              const conf = SHIPS.find(x => x.id === s.shipTypeId)!;
+              return { 
+                  config: conf, 
+                  fitting: fit, 
+                  color: gameState.shipColors[s.instanceId], 
+                  wingColor: gameState.shipWingColors[s.instanceId],
+                  cockpitColor: gameState.shipCockpitColors[s.instanceId],
+                  gunColor: gameState.shipGunColors[s.instanceId],
+                  secondaryGunColor: gameState.shipSecondaryGunColors[s.instanceId],
+                  gunBodyColor: gameState.shipGunBodyColors[s.instanceId],
+                  engineColor: gameState.shipEngineColors[s.instanceId],
+                  nozzleColor: gameState.shipNozzleColors[s.instanceId]
+              };
+          })} 
+          shield={selectedFitting?.shieldId === 'dev_god_mode' ? { id: 'dev', capacity: 9999, color: '#fff', name: 'DEV', regenRate: 100, energyCost: 0, visualType: 'full', price: 0 } : (selectedFitting?.shieldId ? [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === selectedFitting.shieldId) || null : null)} 
+          secondShield={selectedFitting?.secondShieldId === 'dev_god_mode' ? { id: 'dev', capacity: 9999, color: '#fff', name: 'DEV', regenRate: 100, energyCost: 0, visualType: 'full', price: 0 } : (selectedFitting?.secondShieldId ? [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === selectedFitting.secondShieldId) || null : null)} 
+          onGameOver={handleGameOver} 
           difficulty={gameState.currentPlanet.difficulty}
           currentPlanet={gameState.currentPlanet}
           quadrant={gameState.currentQuadrant}
-          onGameOver={handleGameOver}
-          fontSize={gameState.settings.fontSize}
-          mode={gameMode} 
+          fontSize={gameState.settings.fontSize || 'medium'}
+          mode={gameMode}
           planetRegistry={gameState.planetRegistry}
         />
       )}
-      {screen === 'landing' && gameState.currentPlanet && (
-        <LandingScene 
-            planet={gameState.currentPlanet} 
-            shipShape={selectedShipConfig?.shape || 'arrow'} 
-            onComplete={() => { 
-                setGameState(prev => {
-                    const sId = prev.selectedShipInstanceId!;
-                    const fit = prev.shipFittings[sId];
-                    const newFuel = Math.max(0, fit.fuel - 0.3);
-                    
-                    return {
-                        ...prev, 
-                        dockedPlanetId: prev.currentPlanet!.id,
-                        shipFittings: {
-                            ...prev.shipFittings,
-                            [sId]: { ...fit, fuel: newFuel }
-                        }
-                    };
-                });
-                setScreen('hangar'); 
-                audioService.playTrack('command'); 
-            }}
-            weaponId={activeWeaponId}
-            equippedWeapons={selectedFitting?.weapons}
-            currentFuel={selectedFitting?.fuel || 0}
-            maxFuel={selectedShipConfig?.maxFuel || 100}
-        />
+
+      {screen === 'landing' && gameState.currentPlanet && selectedShipConfig && (
+          <LandingScene 
+              planet={gameState.currentPlanet} 
+              shipShape={selectedShipConfig.shape} 
+              onComplete={() => { 
+                  setScreen('hangar'); 
+                  setGameState(p => ({ ...p, dockedPlanetId: p.currentPlanet!.id })); 
+                  audioService.playTrack('command'); 
+              }} 
+              weaponId={activeWeaponId}
+              equippedWeapons={gameState.shipFittings[activeShipId].weapons}
+              currentFuel={gameState.shipFittings[activeShipId].fuel}
+              maxFuel={selectedShipConfig.maxFuel}
+          />
       )}
-    </div>
+
+      {/* DIALOGS */}
+      <OptionsDialog 
+          isOpen={isOptionsOpen} 
+          onClose={() => setIsOptionsOpen(false)} 
+          gameState={gameState} 
+          setGameState={setGameState} 
+      />
+      <StoreDialog 
+          isOpen={isStoreOpen} 
+          onClose={() => setIsStoreOpen(false)} 
+          inspectedShipId={inspectedShipId} 
+          setInspectedShipId={setInspectedShipId} 
+          credits={gameState.credits} 
+          replaceShip={replaceShip} 
+          fontSize={gameState.settings.fontSize || 'medium'}
+          testMode={gameState.settings.testMode}
+      />
+      {selectedFitting && (
+          <LoadoutDialog 
+              isOpen={isLoadoutOpen} 
+              onClose={() => setIsLoadoutOpen(false)} 
+              fitting={selectedFitting} 
+              shipConfig={selectedShipConfig} 
+              loadoutTab={loadoutTab} 
+              setLoadoutTab={setLoadoutTab} 
+              activeFittingSlot={activeFittingSlot} 
+              setActiveFittingSlot={setActiveFittingSlot}
+              unmountSlot={(slotIdx, type) => {
+                  setGameState(prev => {
+                      const sId = prev.selectedShipInstanceId!;
+                      const fit = prev.shipFittings[sId];
+                      const newCargo = [...fit.cargo];
+                      const newFit = { ...fit };
+                      
+                      if (type === 'weapon') {
+                          const w = newFit.weapons[slotIdx];
+                          if (w) {
+                              newCargo.push({ instanceId: `unmount_${Date.now()}`, type: 'weapon', id: w.id, name: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id)?.name || 'Weapon'), weight: 1, quantity: 1 });
+                              newFit.weapons[slotIdx] = null;
+                          }
+                      } else {
+                          const sIdVal = slotIdx === 0 ? newFit.shieldId : newFit.secondShieldId;
+                          if (sIdVal) {
+                              if (sIdVal !== 'dev_god_mode') {
+                                  const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === sIdVal);
+                                  newCargo.push({ instanceId: `unmount_${Date.now()}`, type: 'shield', id: sIdVal, name: sDef?.name || 'Shield', weight: 1, quantity: 1 });
+                              }
+                              if (slotIdx === 0) newFit.shieldId = null; else newFit.secondShieldId = null;
+                          }
+                      }
+                      
+                      return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...newFit, cargo: newCargo } } };
+                  });
+                  audioService.playSfx('click');
+              }}
+              mountFromCargo={(cargoIdx, slotIdx, type) => {
+                  setGameState(prev => {
+                      const sId = prev.selectedShipInstanceId!;
+                      const fit = prev.shipFittings[sId];
+                      const newCargo = [...fit.cargo];
+                      const item = newCargo[cargoIdx];
+                      const newFit = { ...fit };
+                      
+                      if (type === 'weapon') {
+                          const oldW = newFit.weapons[slotIdx];
+                          if (oldW) newCargo.push({ instanceId: `swap_${Date.now()}`, type: 'weapon', id: oldW.id, name: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === oldW.id)?.name || 'Weapon'), weight: 1, quantity: 1 });
+                          newFit.weapons[slotIdx] = { id: item.id!, count: 1 };
+                      } else {
+                          const oldS = slotIdx === 0 ? newFit.shieldId : newFit.secondShieldId;
+                          if (oldS && oldS !== 'dev_god_mode') {
+                              const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === oldS);
+                              newCargo.push({ instanceId: `swap_${Date.now()}`, type: 'shield', id: oldS, name: sDef?.name || 'Shield', weight: 1, quantity: 1 });
+                          }
+                          if (slotIdx === 0) newFit.shieldId = item.id || null; else newFit.secondShieldId = item.id || null;
+                      }
+                      
+                      if (item.quantity > 1) {
+                          newCargo[cargoIdx] = { ...item, quantity: item.quantity - 1 };
+                      } else {
+                          newCargo.splice(cargoIdx, 1);
+                      }
+                      
+                      return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...newFit, cargo: newCargo } } };
+                  });
+                  audioService.playSfx('buy');
+              }}
+              testMode={!!gameState.settings.testMode}
+              setGodMode={(slotIdx) => {
+                  setGameState(prev => {
+                      const sId = prev.selectedShipInstanceId!;
+                      const fit = prev.shipFittings[sId];
+                      const newFit = { ...fit };
+                      if (slotIdx === 0) newFit.shieldId = 'dev_god_mode'; else newFit.secondShieldId = 'dev_god_mode';
+                      return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: newFit } };
+                  });
+                  audioService.playSfx('buy');
+              }}
+              buyAmmo={() => {}}
+              selectAmmo={() => {}}
+              fontSize={gameState.settings.fontSize || 'medium'}
+          />
+      )}
+      <PaintDialog 
+          isOpen={isPaintOpen} 
+          onClose={() => setIsPaintOpen(false)} 
+          selectedShipInstanceId={gameState.selectedShipInstanceId || ''} 
+          selectedShipConfig={selectedShipConfig} 
+          activePart={activePart} 
+          setActivePart={setActivePart} 
+          gameState={gameState} 
+          setPartColor={(c) => {
+              const sId = gameState.selectedShipInstanceId!;
+              setGameState(p => {
+                  const key = activePart === 'hull' ? 'shipColors' : activePart === 'wings' ? 'shipWingColors' : activePart === 'cockpit' ? 'shipCockpitColors' : activePart === 'guns' ? 'shipGunColors' : activePart === 'secondary_guns' ? 'shipSecondaryGunColors' : activePart === 'gun_body' ? 'shipGunBodyColors' : activePart === 'engines' ? 'shipEngineColors' : activePart === 'nozzles' ? 'shipNozzleColors' : 'shipBarColors';
+                  return { ...p, [key]: { ...p[key as keyof GameState] as any, [sId]: c } };
+              });
+          }} 
+          updateCustomColor={(idx, c) => setGameState(p => { const n = [...p.customColors]; n[idx] = c; return { ...p, customColors: n }; })} 
+          fontSize={gameState.settings.fontSize || 'medium'} 
+      />
+      <MessagesDialog 
+          isOpen={isMessagesOpen} 
+          onClose={() => setIsMessagesOpen(false)} 
+          messages={gameState.messages} 
+          leaderboard={gameState.leaderboard}
+          fontSize={gameState.settings.fontSize || 'medium'} 
+      />
+      {selectedFitting && (
+          <CargoDialog 
+              isOpen={isCargoOpen} 
+              onClose={() => setIsCargoOpen(false)} 
+              fitting={selectedFitting} 
+              shipConfig={selectedShipConfig} 
+              reserves={currentReserves} 
+              selectedCargoIdx={selectedCargoIdx} 
+              selectedReserveIdx={selectedReserveIdx} 
+              setSelectedCargoIdx={setSelectedCargoIdx} 
+              setSelectedReserveIdx={setSelectedReserveIdx} 
+              onMoveItems={moveItems} 
+              onMoveAll={moveAllItems} 
+              fontSize={gameState.settings.fontSize || 'medium'}
+          />
+      )}
+      <MarketDialog 
+        isOpen={isMarketOpen} 
+        onClose={() => setIsMarketOpen(false)} 
+        marketTab={marketTab} 
+        setMarketTab={setMarketTab} 
+        currentReserves={currentReserves} 
+        credits={gameState.credits} 
+        testMode={!!gameState.settings.testMode} 
+        marketBuy={marketBuy} 
+        marketSell={marketSell} 
+        fontSize={gameState.settings.fontSize}
+        currentPlanet={dockedPlanet || PLANETS[0]} // Pass Planet
+      />
+      <ManualDialog 
+          isOpen={isManualOpen} 
+          onClose={() => setIsManualOpen(false)} 
+          manualPage={manualPage} 
+          setManualPage={setManualPage} 
+          fontSize={gameState.settings.fontSize || 'medium'} 
+      />
+    </>
   );
 }

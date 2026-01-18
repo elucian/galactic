@@ -419,7 +419,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           const celScale = 1 + (spaceRatio * 0.2); 
 
           if (environment.timeOfDay === 'day') {
-                  if (planet.quadrant === QuadrantType.DELTA) {
+                  if ((planet as Planet).quadrant === QuadrantType.DELTA) {
                       // BLACK HOLE (Delta Sector) with Occlusion Logic
                       
                       // Scale dimensions

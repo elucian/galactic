@@ -11,7 +11,7 @@ interface StoreDialogProps {
   setInspectedShipId: (id: string) => void;
   credits: number;
   replaceShip: (shipTypeId: string) => void;
-  fontSize: 'small' | 'medium' | 'large';
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large';
   testMode?: boolean; 
 }
 
@@ -100,41 +100,65 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                         );
                     })}
                 </div>
-                <div className="w-2/3 p-6 flex flex-col overflow-y-auto">
+                <div className="w-2/3 flex flex-col h-full bg-zinc-900/10">
                     {ship && (
                     <>
-                        <div className="flex-grow flex flex-col items-center justify-center py-6">
+                        <div className="flex-grow flex flex-col items-center justify-center relative p-6">
+                            
+                            {/* SHIP PREVIEW */}
                             <ShipIcon 
                                 config={ship} 
-                                className="w-32 h-32 sm:w-56 sm:h-56" 
+                                className="w-48 h-48 sm:w-72 sm:h-72 mb-8 drop-shadow-[0_0_30px_rgba(0,0,0,0.5)]" 
                                 showJets={false} 
                                 equippedWeapons={previewEquipped as any} 
                                 gunColor={currentWeaponColor}
                             />
-                            <div className="mt-12 grid grid-cols-2 sm:grid-cols-4 gap-6 w-full max-w-2xl px-4">
-                                <div className="flex flex-col items-center gap-2"><span className="text-[7px] text-zinc-500 font-black uppercase">Hold</span><span className={`${textClass} text-white font-black`}>{ship.maxCargo} SLOTS</span></div>
-                                <div className="flex flex-col items-center gap-2"><span className="text-[7px] text-zinc-500 font-black uppercase">Fuel</span><span className={`${textClass} text-white font-black`}>{ship.maxFuel}U</span></div>
-                                <div className="flex flex-col items-center gap-2"><span className="text-[7px] text-zinc-500 font-black uppercase">Core</span><span className={`${textClass} text-white font-black`}>{ship.maxEnergy}E</span></div>
-                                <div className="flex flex-col items-center gap-2">
-                                    <span className="text-[7px] text-zinc-500 font-black uppercase">Main Gun</span>
-                                    <span className={`${textClass} text-white font-black flex items-center gap-1`}>
-                                        <span className="w-2 h-2 rounded-full" style={{ background: currentWeaponColor || '#fff' }}></span>
-                                        {[...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === currentDefaultWeaponId)?.name || 'UNKNOWN'}
-                                    </span>
+                            
+                            {/* COMPACT STATS ROW */}
+                            <div className="flex flex-wrap justify-center gap-3 w-full max-w-2xl px-4">
+                                <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded flex flex-col items-center min-w-[80px] shadow-lg backdrop-blur-sm">
+                                    <span className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-1">Hold</span>
+                                    <span className="text-white font-black text-lg leading-none">{ship.maxCargo}</span>
+                                </div>
+                                <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded flex flex-col items-center min-w-[80px] shadow-lg backdrop-blur-sm">
+                                    <span className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-1">Fuel</span>
+                                    <span className="text-white font-black text-lg leading-none">{ship.maxFuel}U</span>
+                                </div>
+                                <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded flex flex-col items-center min-w-[80px] shadow-lg backdrop-blur-sm">
+                                    <span className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-1">Energy</span>
+                                    <span className="text-white font-black text-lg leading-none">{ship.maxEnergy}</span>
+                                </div>
+                                <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded flex flex-col items-center min-w-[80px] shadow-lg backdrop-blur-sm">
+                                    <span className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-1">Slots</span>
+                                    <span className="text-emerald-400 font-black text-lg leading-none">{ship.isAlien ? (ship.defaultGuns === 1 ? '1' : '2') : '3'}</span>
+                                </div>
+                                <div className="bg-zinc-950/80 border border-zinc-800 p-3 rounded flex flex-col items-center min-w-[140px] shadow-lg backdrop-blur-sm">
+                                    <span className="text-[8px] text-zinc-500 font-black uppercase tracking-widest mb-1">Primary System</span>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <div className="w-2 h-2 rounded-full shadow-[0_0_5px_currentColor]" style={{ backgroundColor: currentWeaponColor || '#fff', color: currentWeaponColor || '#fff' }}></div>
+                                        <span className="text-white font-black text-xs uppercase truncate max-w-[120px]">
+                                            {[...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === currentDefaultWeaponId)?.name || 'UNKNOWN'}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="mt-4 flex gap-4">
-                                 <div className="flex flex-col items-center"><span className="text-[7px] text-zinc-500 font-black uppercase">Fire Rate</span><span className="text-[10px] text-emerald-400 font-black">{Math.round(1000/ship.noseGunCooldown)}/s</span></div>
-                                 <div className="flex flex-col items-center"><span className="text-[7px] text-zinc-500 font-black uppercase">Gun Slots</span><span className="text-[10px] text-emerald-400 font-black">{ship.isAlien ? (ship.defaultGuns === 1 ? '1 (MAIN)' : '2 (WINGS)') : '3 (1 MAIN + 2 WING)'}</span></div>
-                            </div>
-                            <p className={`mt-10 ${textClass} text-zinc-400 text-center uppercase`}>{ship.description}</p>
+
                         </div>
-                        <div className="mt-auto border-t border-zinc-800 pt-6 flex justify-between items-center">
+
+                        {/* PURCHASE FOOTER */}
+                        <div className="mt-auto border-t border-zinc-800 p-6 bg-zinc-900/50 flex justify-between items-center shrink-0 shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-10">
                             <div className="flex flex-col">
-                                <span className="text-[8px] text-zinc-500 font-black">COST</span>
-                                <span className={`text-2xl font-black ${canAfford ? 'text-emerald-400' : 'text-red-500'}`}>${ship.price.toLocaleString()}</span>
+                                <span className="text-[9px] text-zinc-500 font-black uppercase tracking-[0.2em] mb-1">Requisition Cost</span>
+                                <span className={`text-4xl font-black tabular-nums tracking-tight ${canAfford ? 'text-emerald-400' : 'text-red-500'}`}>${ship.price.toLocaleString()}</span>
                             </div>
-                            <button onClick={() => replaceShip(ship.id)} disabled={!canAfford} className={`${btnPadding} bg-emerald-600 text-white font-black uppercase ${btnSize} rounded disabled:opacity-30`}>PURCHASE</button>
+                            <button 
+                                onClick={() => replaceShip(ship.id)} 
+                                disabled={!canAfford} 
+                                className={`${btnPadding} bg-emerald-600 text-white font-black uppercase ${btnSize} rounded-lg disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-500 hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center gap-2`}
+                            >
+                                <span>CONFIRM PURCHASE</span>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </button>
                         </div>
                     </>
                     )}

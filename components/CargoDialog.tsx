@@ -16,7 +16,7 @@ interface CargoDialogProps {
   setSelectedReserveIdx: (idx: number | null) => void;
   onMoveItems: (direction: 'to_reserve' | 'to_ship', all: boolean) => void;
   onMoveAll: (direction: 'to_reserve' | 'to_ship') => void;
-  fontSize: 'small' | 'medium' | 'large';
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large';
 }
 
 // Button Component for Toolbar
@@ -40,11 +40,11 @@ const ToolButton = ({ onClick, disabled, icon, vertical = false, sizeClass }: { 
 const getCategory = (item: CargoItem) => {
     if (!item || !item.type) return 'RESOURCES';
     const t = item.type.toLowerCase();
-    if (['weapon', 'gun', 'projectile', 'laser'].includes(t)) return 'WEAPONRY';
+    if (['weapon', 'projectile', 'laser'].includes(t)) return 'WEAPONRY'; // Excluded 'gun'
     if (['shield'].includes(t)) return 'DEFENSE';
     if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
     if (['fuel', 'energy', 'repair'].includes(t)) return 'SUPPLIES';
-    return 'RESOURCES';
+    return 'RESOURCES'; // Personal weapons (type: 'gun') fall here now
 };
 
 const CATEGORY_ORDER = ['WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
@@ -123,6 +123,30 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                                            if (wDef.type === 'LASER') iconColor = wDef.beamColor || '#3b82f6';
                                            else if (wDef.type === 'PROJECTILE') iconColor = '#9ca3af';
                                       }
+                                  }
+                                  
+                                  // Specific Resource Colors (Ingots)
+                                  if (cat === 'RESOURCES') {
+                                      const t = item.type?.toLowerCase();
+                                      if (t === 'chromium') iconColor = '#ef4444';
+                                      else if (t === 'gold') iconColor = '#facc15';
+                                      else if (t === 'iron') iconColor = '#9ca3af';
+                                      else if (t === 'copper') iconColor = '#fb923c';
+                                      else if (t === 'titanium') iconColor = '#22d3ee';
+                                      else if (t === 'platinum') iconColor = '#e2e8f0';
+                                      else if (t === 'lithium') iconColor = '#e879f9';
+                                      else if (t === 'tungsten') iconColor = '#475569';
+                                      else if (t === 'silver') iconColor = '#cbd5e1';
+                                      else if (t === 'gun') iconColor = '#ec4899'; // Personal Weapon
+                                      else iconColor = '#facc15';
+                                  }
+
+                                  // Specific Ordnance Colors
+                                  if (cat === 'ORDNANCE') {
+                                      if (item.id && item.id.includes('emp')) iconColor = "#3b82f6";
+                                      else if (item.type === 'missile') iconColor = "#ef4444";
+                                      else if (item.id && item.id.includes('red')) iconColor = "#ef4444";
+                                      else iconColor = "#fbbf24"; // Standard mine
                                   }
 
                                   return (

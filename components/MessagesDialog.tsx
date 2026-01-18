@@ -7,7 +7,7 @@ interface MessagesDialogProps {
   onClose: () => void;
   messages: GameMessage[];
   leaderboard: LeaderboardEntry[];
-  fontSize: 'small' | 'medium' | 'large';
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large';
 }
 
 export const MessagesDialog: React.FC<MessagesDialogProps> = ({ isOpen, onClose, messages, leaderboard, fontSize }) => {

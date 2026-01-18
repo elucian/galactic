@@ -6,7 +6,7 @@ interface ManualDialogProps {
   onClose: () => void;
   manualPage: number;
   setManualPage: (p: number) => void;
-  fontSize: 'small' | 'medium' | 'large';
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large';
 }
 
 export const ManualDialog: React.FC<ManualDialogProps> = ({ isOpen, onClose, manualPage, setManualPage, fontSize }) => {

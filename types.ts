@@ -28,13 +28,14 @@ export type AmmoType = 'iron' | 'titanium' | 'cobalt' | 'iridium' | 'tungsten' |
 
 export interface CargoItem {
   instanceId: string;
-  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'iron' | 'copper' | 'chromium' | 'titanium' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser' | 'ammo' | 'robot' | 'water';
+  type: 'missile' | 'mine' | 'fuel' | 'weapon' | 'repair' | 'gold' | 'platinum' | 'lithium' | 'iron' | 'copper' | 'chromium' | 'titanium' | 'tungsten' | 'shield' | 'energy' | 'goods' | 'gun' | 'projectile' | 'laser' | 'ammo' | 'robot' | 'water' | 'drug' | 'medicine' | 'food' | 'equipment' | 'part' | 'luxury';
   id?: string;
   name: string;
   weight: number;
   quantity: number;
   price?: number;
   status?: 'listed' | 'sold';
+  _buyAmount?: number; // Internal for batch buying
 }
 
 export interface Weapon {
@@ -82,6 +83,7 @@ export interface ShipConfig {
   noseGunDamage: number;
   noseGunCooldown: number;
   noseGunColor: string;
+  maxWater?: number; // New prop
 }
 
 export interface ShipFitting {
@@ -100,6 +102,7 @@ export interface ShipFitting {
   ammoPercent: number;
   lives: number;
   fuel: number;
+  water: number; // New prop
   cargo: CargoItem[];
   ammo: Record<AmmoType, number>;
   selectedAmmo: AmmoType;

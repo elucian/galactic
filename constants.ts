@@ -57,6 +57,7 @@ export interface ExtendedShipConfig extends ShipConfig {
   noseGunDamage: number;
   noseGunCooldown: number;
   noseGunColor: string;
+  maxWater?: number;
 }
 
 // --- LOCKED: SHIP DESIGNS (DO NOT MODIFY WITHOUT EXPLICIT REQUEST) ---
@@ -82,6 +83,7 @@ export const SHIPS: ExtendedShipConfig[] = [
     hullShapeType: 'triangle', 
     extraDetail: 'none', 
     maxFuel: 3.0,
+    maxWater: 100,
     landingGearType: 'skids',
     noseGunDamage: 40,
     noseGunCooldown: 300,
@@ -108,6 +110,7 @@ export const SHIPS: ExtendedShipConfig[] = [
     hullShapeType: 'rounded', 
     extraDetail: 'antenna', 
     maxFuel: 5.0,
+    maxWater: 120,
     landingGearType: 'mechanical',
     noseGunDamage: 60,
     noseGunCooldown: 250,
@@ -134,6 +137,7 @@ export const SHIPS: ExtendedShipConfig[] = [
     hullShapeType: 'finger', 
     extraDetail: 'reservoir', 
     maxFuel: 7.0,
+    maxWater: 150,
     landingGearType: 'telescopic',
     noseGunDamage: 80,
     noseGunCooldown: 200,
@@ -160,6 +164,7 @@ export const SHIPS: ExtendedShipConfig[] = [
     hullShapeType: 'needle', 
     extraDetail: 'both', 
     maxFuel: 9.0,
+    maxWater: 180,
     landingGearType: 'insect',
     noseGunDamage: 100,
     noseGunCooldown: 150,
@@ -186,6 +191,7 @@ export const SHIPS: ExtendedShipConfig[] = [
     hullShapeType: 'block', 
     extraDetail: 'both', 
     maxFuel: 12.0,
+    maxWater: 300,
     landingGearType: 'magnetic',
     noseGunDamage: 150,
     noseGunCooldown: 100,
@@ -198,28 +204,28 @@ export const SHIPS: ExtendedShipConfig[] = [
     price: 900000, maxEnergy: 20000, maxCargo: 2500, speed: 6, shape: 'block', canLayMines: true,
     defaultColor: '#3f6212', engines: 2, defaultGuns: 2, noseType: 'flat', wingConfig: 'balanced', gunMount: 'hull',
     wingStyle: 'alien-h', wingCurve: 'neutral', hullShapeType: 'none', maxFuel: 15.0, landingGearType: 'mechanical',
-    isAlien: true, noseGunDamage: 200, noseGunCooldown: 300, noseGunColor: '#84cc16'
+    isAlien: true, noseGunDamage: 200, noseGunCooldown: 300, noseGunColor: '#84cc16', maxWater: 200
   },
   {
     id: 'alien_w', name: 'Xenon W-Class', description: 'Aggressive assault fighter.',
     price: 1100000, maxEnergy: 25000, maxCargo: 2000, speed: 9, shape: 'wing', canLayMines: true,
     defaultColor: '#7c2d12', engines: 2, defaultGuns: 2, noseType: 'flat', wingConfig: 'front-heavy', gunMount: 'wing',
     wingStyle: 'alien-w', wingCurve: 'forward', hullShapeType: 'none', maxFuel: 12.0, landingGearType: 'insect',
-    isAlien: true, noseGunDamage: 250, noseGunCooldown: 150, noseGunColor: '#fb923c'
+    isAlien: true, noseGunDamage: 250, noseGunCooldown: 150, noseGunColor: '#fb923c', maxWater: 200
   },
   {
     id: 'alien_a', name: 'Xenon A-Class', description: 'Delta-wing interceptor.',
     price: 1300000, maxEnergy: 18000, maxCargo: 1500, speed: 11, shape: 'arrow', canLayMines: false,
     defaultColor: '#1e3a8a', engines: 2, defaultGuns: 1, noseType: 'flat', wingConfig: 'rear-heavy', gunMount: 'hull',
     wingStyle: 'alien-a', wingCurve: 'backward', hullShapeType: 'none', maxFuel: 10.0, landingGearType: 'skids',
-    isAlien: true, noseGunDamage: 220, noseGunCooldown: 120, noseGunColor: '#60a5fa'
+    isAlien: true, noseGunDamage: 220, noseGunCooldown: 120, noseGunColor: '#60a5fa', maxWater: 200
   },
   {
     id: 'alien_m', name: 'Xenon M-Class', description: 'Twin-peak heavy bomber.',
     price: 1500000, maxEnergy: 30000, maxCargo: 4000, speed: 5, shape: 'frigate', canLayMines: true,
     defaultColor: '#4c1d95', engines: 2, defaultGuns: 2, noseType: 'flat', wingConfig: 'balanced', gunMount: 'strut',
     wingStyle: 'alien-m', wingCurve: 'neutral', hullShapeType: 'none', maxFuel: 20.0, landingGearType: 'magnetic',
-    isAlien: true, noseGunDamage: 300, noseGunCooldown: 200, noseGunColor: '#d8b4fe'
+    isAlien: true, noseGunDamage: 300, noseGunCooldown: 200, noseGunColor: '#d8b4fe', maxWater: 200
   }
 ];
 // --- END LOCKED SHIP DESIGNS ---
@@ -234,16 +240,22 @@ export const BOSS_SHIPS: ExtendedShipConfig[] = [
 
 // WEAPONS UPDATED: Energy=Blue, Projectile=Red
 export const WEAPONS: Weapon[] = [
-  // Level 1 Standard Energy
-  { id: 'gun_pulse', name: 'Pulse Laser', type: WeaponType.LASER, price: 2000, damage: 25, fireRate: 4, energyCost: 3, cargoWeight: 3, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
-  // Level 4 High-End Energy
-  { id: 'gun_photon', name: 'Photon Emitter', type: WeaponType.LASER, price: 100000, damage: 60, fireRate: 8, energyCost: 5, cargoWeight: 5, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
+  // Level 1 Standard Energy: Cheap, Inefficient
+  // Buffed from 25 to 38
+  { id: 'gun_pulse', name: 'Pulse Laser', type: WeaponType.LASER, price: 2000, damage: 38, fireRate: 4, energyCost: 5, cargoWeight: 3, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
+  // Level 4 High-End Energy: Expensive, Efficient
+  // Buffed from 60 to 90
+  { id: 'gun_photon', name: 'Photon Emitter', type: WeaponType.LASER, price: 100000, damage: 90, fireRate: 8, energyCost: 2, cargoWeight: 5, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
   
   // Standard Projectile (UPDATED: gun_bolt became Ion Emitter / LASER)
-  { id: 'gun_bolt', name: 'Ion Emitter', type: WeaponType.LASER, price: 5000, damage: 45, fireRate: 2, energyCost: 10, cargoWeight: 4, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
-  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 35, fireRate: 4, energyCost: 0, cargoWeight: 10, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 3, defaultAmmo: 'titanium' }, 
-  { id: 'gun_heavy', name: 'Heavy Chaingun', type: WeaponType.PROJECTILE, price: 35000, damage: 30, fireRate: 6, energyCost: 0, cargoWeight: 25, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'cobalt' }, 
-  { id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 25, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' } 
+  // Buffed from 55 to 83
+  { id: 'gun_bolt', name: 'Ion Emitter', type: WeaponType.LASER, price: 5000, damage: 83, fireRate: 2, energyCost: 4, cargoWeight: 4, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
+  // Buffed from 35 to 53
+  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 53, fireRate: 4, energyCost: 0, cargoWeight: 10, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 3, defaultAmmo: 'titanium' }, 
+  // Buffed from 30 to 45
+  { id: 'gun_heavy', name: 'Heavy Chaingun', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 6, energyCost: 0, cargoWeight: 25, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'cobalt' }, 
+  // Buffed from 25 to 38
+  { id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 38, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' } 
 ];
 
 // 9 DISTINCT EXOTIC WEAPONS
@@ -310,19 +322,40 @@ export const EXPLODING_ORDNANCE = [
   { id: 'ord_mine_red', name: 'Omega Mine', price: 150000, count: 5 }
 ];
 
-export const COMMODITIES = [
+export const COMMODITIES: any[] = [
     { id: 'bot_repair', name: 'Repair Robot', price: 2000, type: 'robot', description: 'Auto-repair drone. Repairs hull using resources. If hull integrity drops below 90%, robots sacrifice themselves to block incoming fire.' },
     { id: 'can_fuel', name: 'Fuel Cell', price: 200, type: 'fuel' },
+    { id: 'water', name: 'Water Container', price: 50, type: 'water', _buyAmount: 50 },
     { id: 'batt_cell', name: 'Energy Cell', price: 300, type: 'energy' },
     { id: 'pack_repair', name: 'Nanite Pack', price: 500, type: 'repair' },
-    { id: 'water', name: 'Water Container', price: 50, type: 'water' },
+    
+    // RESOURCES
     { id: 'iron', name: 'Iron Ingot', price: 100, type: 'iron' },
     { id: 'copper', name: 'Copper Spool', price: 200, type: 'copper' },
     { id: 'chromium', name: 'Chromium', price: 500, type: 'chromium' },
     { id: 'titanium', name: 'Titanium', price: 800, type: 'titanium' },
+    { id: 'tungsten', name: 'Tungsten', price: 1500, type: 'tungsten' },
     { id: 'gold', name: 'Gold Bullion', price: 1000, type: 'gold' },
     { id: 'platinum', name: 'Platinum Ingot', price: 2500, type: 'platinum' },
-    { id: 'lithium', name: 'Lithium Crystal', price: 4000, type: 'lithium' }
+    { id: 'lithium', name: 'Lithium Crystal', price: 4000, type: 'lithium' },
+
+    // FOOD & PROVISIONS (NEW CATEGORY)
+    { id: 'com_food', name: 'Nutri-Paste', price: 50, type: 'food' },
+    { id: 'com_grain', name: 'Synth-Grain', price: 80, type: 'food' },
+    { id: 'com_fruit', name: 'Star Fruit', price: 150, type: 'food' },
+    { id: 'com_meat', name: 'Vat Meat', price: 200, type: 'food' },
+    { id: 'com_spice', name: 'Nebula Spice', price: 800, type: 'food' }, // Rare spice
+
+    // GOODS / COMMERCE
+    { id: 'com_drugs', name: 'Stardust Stim', price: 3000, type: 'drug' },
+    { id: 'com_meds', name: 'Medkit', price: 500, type: 'medicine' },
+    { id: 'com_air', name: 'O2 Scrubber', price: 800, type: 'equipment' },
+    { id: 'com_suit', name: 'EVA Suit', price: 1200, type: 'equipment' },
+    { id: 'com_pistol', name: 'Blaster Pistol', price: 600, type: 'gun' },
+    { id: 'com_rifle', name: 'Pulse Rifle', price: 1500, type: 'gun' },
+    { id: 'com_chip', name: 'Circuit Boards', price: 400, type: 'part' },
+    { id: 'com_valve', name: 'Thruster Valve', price: 700, type: 'part' },
+    { id: 'com_core', name: 'Core Rod', price: 2500, type: 'luxury' },
 ];
 
 export const ENGINES = [

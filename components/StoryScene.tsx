@@ -4,14 +4,15 @@ import React, { useEffect, useRef } from 'react';
 export const StoryScene = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
-  // State for orbital anomalies (angles)
-  const sunOrbitRef = useRef({ angle: Math.PI });
-  const cometOrbitRef = useRef({ angle: Math.PI * 0.8 }); 
-  const cometPrecessionRef = useRef({ angle: -Math.PI / 4 }); // Start with initial tilt
-  
-  // Physics based tail history
-  // Each node: x, y, velocity x, velocity y, life (0-1)
-  const tailRef = useRef<Array<{x: number, y: number, vx: number, vy: number, life: number}>>([]);
+  // Comet State
+  const cometRef = useRef({
+    x: -100,
+    y: 100,
+    vx: 0,
+    vy: 0,
+    active: false,
+    trail: [] as {x: number, y: number, life: number, size: number}[]
+  });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -31,206 +32,126 @@ export const StoryScene = () => {
     resize();
     window.addEventListener('resize', resize);
 
-    // Static Stars
-    const stars = Array.from({ length: 250 }).map(() => ({
-      x: Math.random(),
-      y: Math.random(),
-      size: Math.random() * 1.5 + 0.5,
-      alpha: Math.random() * 0.5 + 0.3,
-      twinkleSpeed: Math.random() * 0.05 + 0.01
-    }));
-
-    // Local Planets orbiting the Sun - SIZES REDUCED
-    const planets = [
-      { r: 25, speed: 0.1, size: 1.0, angle: Math.random() * 6.28, color: '#94a3b8' },
-      { r: 40, speed: 0.07, size: 1.5, angle: Math.random() * 6.28, color: '#38bdf8' }, 
-      { r: 60, speed: 0.04, size: 1.2, angle: Math.random() * 6.28, color: '#f87171' },
-      { r: 85, speed: 0.02, size: 2.0, angle: Math.random() * 6.28, color: '#fbbf24' },
-    ];
+    // Enhanced Stars
+    const starColors = ['#ffffff', '#ffffff', '#ffffff', '#facc15', '#fb923c', '#ef4444', '#60a5fa'];
+    
+    const stars = Array.from({ length: 450 }).map(() => {
+        const isWanderer = Math.random() < 0.1;
+        return {
+            x: Math.random(),
+            y: Math.random(),
+            // Wanderers are significantly larger (2.0 - 4.0), others are smaller (0.2 - 1.0)
+            size: isWanderer ? (Math.random() * 2.0 + 2.0) : (Math.random() * 0.8 + 0.2),
+            baseAlpha: Math.random() * 0.6 + 0.2,
+            color: starColors[Math.floor(Math.random() * starColors.length)],
+            // Shimmer properties
+            twinkleSpeed: Math.random() * 0.08 + 0.02,
+            twinklePhase: Math.random() * Math.PI * 2,
+            // Wanderer properties
+            vx: isWanderer ? (Math.random() - 0.5) * 0.0002 : 0, 
+            vy: isWanderer ? (Math.random() - 0.5) * 0.0002 : 0
+        };
+    });
 
     let time = 0;
     let animId: number;
 
-    // GLOBAL SPEED CONTROL: 89% Slower means ~11% speed
-    const SPEED_FACTOR = 0.11; 
+    const resetComet = (w: number, h: number) => {
+        const c = cometRef.current;
+        c.x = -100;
+        c.y = h * 0.3 + (Math.random() * h * 0.1); 
+        c.vx = 1.5 + Math.random() * 1.0; 
+        c.vy = -0.5 + Math.random() * 0.2; 
+        c.active = true;
+        c.trail = [];
+    };
 
     const loop = () => {
       const w = canvas.width;
       const h = canvas.height;
-      const cx = w / 2;
-      const cy = h / 2;
       
-      time += 1 * SPEED_FACTOR;
+      time += 1;
 
-      // Clear with deep space black
-      ctx.fillStyle = '#000000';
+      // Clear
+      ctx.fillStyle = '#050505'; 
       ctx.fillRect(0, 0, w, h);
 
       // --- STARS ---
       stars.forEach(s => {
-        ctx.fillStyle = '#ffffff';
-        const twinkle = Math.abs(Math.sin(time * s.twinkleSpeed));
-        ctx.globalAlpha = s.alpha * (0.5 + twinkle * 0.5); 
+        // Movement (Wanderers)
+        if (s.vx !== 0 || s.vy !== 0) {
+            s.x += s.vx;
+            s.y += s.vy;
+            // Wrap around screen
+            if (s.x < 0) s.x += 1;
+            if (s.x > 1) s.x -= 1;
+            if (s.y < 0) s.y += 1;
+            if (s.y > 1) s.y -= 1;
+        }
+
+        ctx.fillStyle = s.color;
+        
+        // Shimmer Calculation
+        const val = Math.sin((time * s.twinkleSpeed) + s.twinklePhase);
+        // Map sine (-1 to 1) to opacity multiplier (0.5 to 1.2)
+        const shimmer = 0.85 + (val * 0.35); 
+        
+        ctx.globalAlpha = Math.min(1, Math.max(0, s.baseAlpha * shimmer)); 
         ctx.beginPath();
         ctx.arc(s.x * w, s.y * h, s.size, 0, Math.PI * 2);
         ctx.fill();
       });
       ctx.globalAlpha = 1;
 
-      // --- BLACK HOLE (Focal Point) ---
-      const holeRadius = 25;
+      // --- PARABOLIC COMET ---
+      const c = cometRef.current;
       
-      // Accretion Disk / Hawking Radiation Glow
-      const glowGrad = ctx.createRadialGradient(cx, cy, holeRadius, cx, cy, holeRadius * 12);
-      glowGrad.addColorStop(0, '#000000');
-      glowGrad.addColorStop(0.1, 'rgba(139, 92, 246, 0.8)'); // Violet core
-      glowGrad.addColorStop(0.25, 'rgba(59, 130, 246, 0.3)'); // Blue spread
-      glowGrad.addColorStop(1, 'rgba(0,0,0,0)');
-      
-      ctx.fillStyle = glowGrad;
-      ctx.beginPath(); ctx.arc(cx, cy, holeRadius * 12, 0, Math.PI * 2); ctx.fill();
+      if (!c.active || c.x > w + 200 || c.y > h + 200) {
+          if (Math.random() < 0.005) resetComet(w, h);
+      }
 
-      // Event Horizon
-      ctx.fillStyle = '#000000';
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = '#8b5cf6';
-      ctx.beginPath(); ctx.arc(cx, cy, holeRadius, 0, Math.PI * 2); ctx.fill();
-      ctx.shadowBlur = 0;
-      
-      // Photon Ring
-      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(cx, cy, holeRadius + 2, 0, Math.PI*2); ctx.stroke();
+      if (c.active) {
+          c.x += c.vx;
+          c.y += c.vy;
+          c.vy += 0.002; 
 
+          if (time % 2 === 0) { 
+              for (let i = 0; i < 2; i++) {
+                  c.trail.push({
+                      x: c.x,
+                      y: c.y,
+                      life: 1.0,
+                      size: 2 + Math.random() * 2
+                  });
+              }
+          }
 
-      // --- SUN ORBIT (Fat Ellipse, Black Hole at Focus) ---
-      const sunA = Math.min(w, h) * 0.4; // Semi-major axis
-      const sunE = 0.3; // Low eccentricity (fat)
-      
-      // Keplerian Motion Approximation: d(angle) ~ 1/r^2
-      const sunTheta = sunOrbitRef.current.angle;
-      const sunR = (sunA * (1 - sunE*sunE)) / (1 + sunE * Math.cos(sunTheta));
-      
-      // Update angle (slower when far, faster when close)
-      // Scaled by SPEED_FACTOR
-      const sunSpeedBase = 1200 * SPEED_FACTOR; 
-      sunOrbitRef.current.angle += sunSpeedBase / (sunR * sunR); 
-
-      // Polar to Cartesian relative to Focus (0,0)
-      const sunLocalX = sunR * Math.cos(sunTheta);
-      const sunLocalY = sunR * Math.sin(sunTheta);
-
-      // Fixed Sun Orbit Tilt
-      const sunTilt = 0.2; 
-      const sunX = cx + (sunLocalX * Math.cos(sunTilt) - sunLocalY * Math.sin(sunTilt));
-      const sunY = cy + (sunLocalX * Math.sin(sunTilt) + sunLocalY * Math.cos(sunTilt));
-
-      // Draw Sun - MUCH SMALLER
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = '#fbbf24'; // Amber
-      ctx.fillStyle = '#f59e0b';
-      ctx.beginPath();
-      ctx.arc(sunX, sunY, 6, 0, Math.PI * 2); // Radius reduced from 14 to 6
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      // Draw Sun's Planets - SMALLER
-      planets.forEach(p => {
-        p.angle += p.speed * SPEED_FACTOR;
-        const px = sunX + Math.cos(p.angle) * p.r;
-        const py = sunY + Math.sin(p.angle) * p.r;
-        ctx.fillStyle = p.color;
-        ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI*2); ctx.fill();
-      });
-
-
-      // --- COMET ORBIT (Elongated Ellipse, Black Hole at Focus) ---
-      // Apsidal Precession: The orbit itself rotates around the focus
-      cometPrecessionRef.current.angle += 0.003 * SPEED_FACTOR;
-
-      const cometA = Math.min(w, h) * 0.8; // Large orbit
-      const cometE = 0.85; // High eccentricity (elongated)
-      
-      const cometTheta = cometOrbitRef.current.angle;
-      const cometR = (cometA * (1 - cometE*cometE)) / (1 + cometE * Math.cos(cometTheta));
-      
-      // Keplerian speed
-      const cometSpeedBase = 5000 * SPEED_FACTOR; 
-      cometOrbitRef.current.angle += cometSpeedBase / (cometR * cometR);
-
-      // Local ellipse coordinates
-      const cLocalX = cometR * Math.cos(cometTheta);
-      const cLocalY = cometR * Math.sin(cometTheta);
-
-      // Apply Precession Rotation (Orbit rotating around BH)
-      const precAngle = cometPrecessionRef.current.angle;
-      const cRotX = cLocalX * Math.cos(precAngle) - cLocalY * Math.sin(precAngle);
-      const cRotY = cLocalX * Math.sin(precAngle) + cLocalY * Math.cos(precAngle);
-
-      // Translate to screen center
-      const cometX = cx + cRotX;
-      const cometY = cy + cRotY;
-
-      // --- DYNAMIC TAIL SIMULATION ---
-      // Add current position to tail
-      tailRef.current.unshift({ x: cometX, y: cometY, vx: 0, vy: 0, life: 1.0 });
-      if (tailRef.current.length > 80) tailRef.current.pop();
-
-      // Physics Parameters
-      const windForce = 0.5 * SPEED_FACTOR; // Solar wind strength
-      const gravityForce = 2.0 * SPEED_FACTOR; // Black hole gravity strength
-      
-      if (tailRef.current.length > 1) {
-          for (let i = 1; i < tailRef.current.length; i++) {
-              const p = tailRef.current[i];
+          for (let i = c.trail.length - 1; i >= 0; i--) {
+              const p = c.trail[i];
+              p.life -= 0.005; 
               
-              // 1. Solar Wind: Repulsion from Sun
-              const dxSun = p.x - sunX;
-              const dySun = p.y - sunY;
-              const distSun = Math.sqrt(dxSun * dxSun + dySun * dySun);
-              const dirSunX = dxSun / distSun;
-              const dirSunY = dySun / distSun;
+              p.x -= c.vx * 0.05;
+              p.y -= c.vy * 0.05;
               
-              // 2. BH Gravity: Attraction to Black Hole
-              const dxBH = cx - p.x;
-              const dyBH = cy - p.y;
-              const distBH = Math.sqrt(dxBH * dxBH + dyBH * dyBH);
-              const dirBHX = dxBH / distBH;
-              const dirBHY = dyBH / distBH; 
-
-              // Gravity gets stronger when closer to BH, Wind constant-ish
-              const gStr = gravityForce * (500 / (distBH + 100)); 
-              
-              p.vx += (dirSunX * windForce) + (dirBHX * gStr);
-              p.vy += (dirSunY * windForce) + (dirBHY * gStr);
-              
-              p.x += p.vx;
-              p.y += p.vy;
-              p.life -= 0.005 * SPEED_FACTOR;
-
-              // --- DRAW GAS PARTICLE (Fuzzy Tail) ---
-              // Overlapping low-opacity circles create a gaseous effect
-              if (p.life > 0) {
-                  const age = 1 - p.life;
-                  const size = 2 + (age * 12); // Expands as it dissipates
-                  const opacity = p.life * 0.12; // Low opacity for soft overlap
-                  
+              if (p.life <= 0) {
+                  c.trail.splice(i, 1);
+              } else {
                   ctx.beginPath();
-                  ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
-                  ctx.fillStyle = `rgba(165, 243, 252, ${opacity})`;
+                  ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                  const colorMix = Math.floor(p.life * 255);
+                  ctx.fillStyle = `rgba(${255 - colorMix}, ${255}, ${255}, ${p.life * 0.4})`;
                   ctx.fill();
               }
           }
-      }
 
-      // Comet Head
-      ctx.fillStyle = '#fff';
-      ctx.shadowColor = '#a5f3fc';
-      ctx.shadowBlur = 15;
-      ctx.beginPath();
-      ctx.arc(cometX, cometY, 3, 0, Math.PI*2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+          ctx.shadowBlur = 15;
+          ctx.shadowColor = '#a5f3fc';
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+      }
 
       animId = requestAnimationFrame(loop);
     };
@@ -243,7 +164,7 @@ export const StoryScene = () => {
   }, []);
 
   return (
-      <div className="w-full h-full absolute inset-0 bg-black overflow-hidden pointer-events-none">
+      <div className="w-full h-full absolute inset-0 bg-black overflow-hidden pointer-events-none z-0">
           <canvas ref={canvasRef} className="w-full h-full block" />
       </div>
   );

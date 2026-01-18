@@ -13,6 +13,12 @@ class AudioService {
   private chargeGain: GainNode | null = null;
   private chargeFilter: BiquadFilterNode | null = null; // Track filter for cleanup
 
+  // Capacitor Sound State (Low Pulsing Reactor Hum)
+  private capOsc: OscillatorNode | null = null;
+  private capGain: GainNode | null = null;
+  private capFilter: BiquadFilterNode | null = null;
+  private capLfo: OscillatorNode | null = null;
+
   // Launch Sound State
   private launchGain: GainNode | null = null;
 
@@ -515,6 +521,71 @@ class AudioService {
     }
   }
 
+  // --- NEW CAPACITOR CHARGE SOUND (Low Pulsing Reactor Hum) ---
+  startCapacitorCharge() {
+    this.init();
+    if (!this.ctx || !this.enabled) return;
+    if (this.capOsc) return;
+
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    // "vou vou vou" - Low pulsing reactor hum
+    // Use a sawtooth for texture, filtered heavily
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(60, t); // Low base pitch
+
+    // Dynamic Filter
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(100, t); // Start very muffled
+    filter.frequency.linearRampToValueAtTime(300, t + 4.0); // Slow rise to signify filling
+    filter.Q.value = 1; // Mild resonance
+
+    // LFO for the "vou vou" (Wah effect)
+    const lfo = ctx.createOscillator();
+    lfo.type = 'sine';
+    lfo.frequency.value = 3; // 3Hz pulse speed
+
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 150; // Modulate filter by +/- 150Hz
+
+    // Volume Envelope
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.1, t + 0.5); // Very soft volume (0.1)
+
+    // Connect LFO -> Filter Freq
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.masterGain!);
+
+    osc.start();
+    lfo.start();
+
+    this.capOsc = osc;
+    this.capGain = gain;
+    this.capFilter = filter;
+    this.capLfo = lfo;
+  }
+
+  stopCapacitorCharge() {
+      if (this.capGain) {
+          const t = this.ctx!.currentTime;
+          this.capGain.gain.setTargetAtTime(0, t, 0.1);
+          setTimeout(() => {
+              if (this.capOsc) { try { this.capOsc.stop(); } catch(e){} this.capOsc.disconnect(); this.capOsc = null; }
+              if (this.capLfo) { try { this.capLfo.stop(); } catch(e){} this.capLfo.disconnect(); this.capLfo = null; }
+              if (this.capFilter) { this.capFilter.disconnect(); this.capFilter = null; }
+              if (this.capGain) { this.capGain.disconnect(); this.capGain = null; }
+          }, 150);
+      }
+  }
+
   private getShipSoundParams(id: string) {
     let hash = 0;
     for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
@@ -708,6 +779,7 @@ class AudioService {
       // We don't necessarily want to close the context, but stop everything
       this.stop();
       this.stopCharging();
+      this.stopCapacitorCharge();
       this.stopLaunchSequence();
       this.stopLandingThruster();
       this.stopAmbience();

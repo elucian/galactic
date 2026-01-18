@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { ShipIcon } from './ShipIcon.tsx';
 import { ShipPart, GameState } from '../types.ts';
@@ -13,7 +12,7 @@ interface PaintDialogProps {
   gameState: GameState;
   setPartColor: (color: string) => void;
   updateCustomColor: (index: number, color: string) => void;
-  fontSize: 'small' | 'medium' | 'large';
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large';
 }
 
 const STANDARD_COLORS = [
@@ -172,41 +171,28 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
 
                     <div className="space-y-2 pt-2 border-t border-zinc-800 bg-zinc-900/50 p-3 rounded mt-auto shrink-0">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-[9px] font-black text-emerald-500 uppercase">Spectrum Analyzer {selectedCustomIndex === null ? '(EDITING #1)' : ''}</span>
-                            <div className="w-4 h-4 rounded border border-zinc-600" style={{ backgroundColor: gameState.customColors[activeEditIndex] }} />
+                            <span className="text-[9px] font-black text-emerald-500 uppercase">Color Mixer</span>
+                            <div className="flex items-center gap-2">
+                                <div className="w-4 h-4 rounded-full shadow-sm border border-white/20" style={{ backgroundColor: `rgb(${rgb.r},${rgb.g},${rgb.b})` }} />
+                                <span className="text-[9px] font-mono text-zinc-400">{rgbToHex(rgb.r, rgb.g, rgb.b)}</span>
+                            </div>
                         </div>
                         
-                        {['r', 'g', 'b'].map(channel => {
-                            const val = rgb[channel as keyof typeof rgb];
-                            let trackColor = '';
-                            let thumbClass = '';
-                            
-                            if (channel === 'r') {
-                                trackColor = `linear-gradient(90deg, #000000 0%, #ef4444 100%)`;
-                                thumbClass = '[&::-webkit-slider-thumb]:bg-red-500';
-                            } else if (channel === 'g') {
-                                trackColor = `linear-gradient(90deg, #000000 0%, #22c55e 100%)`;
-                                thumbClass = '[&::-webkit-slider-thumb]:bg-green-500';
-                            } else {
-                                trackColor = `linear-gradient(90deg, #000000 0%, #3b82f6 100%)`;
-                                thumbClass = '[&::-webkit-slider-thumb]:bg-blue-500';
-                            }
-
-                            return (
-                                <div key={channel} className="flex items-center gap-2">
-                                    <span className="text-[8px] font-black text-zinc-400 w-4 uppercase">{channel}</span>
-                                    <input 
-                                        type="range" 
-                                        min="0" max="255" 
-                                        value={val} 
-                                        onChange={(e) => handleSliderChange(channel as any, parseInt(e.target.value))}
-                                        style={{ background: trackColor }}
-                                        className={`flex-grow h-1.5 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white ${thumbClass}`}
-                                    />
-                                    <span className="text-[8px] font-mono text-zinc-300 w-6 text-right">{val}</span>
-                                </div>
-                            );
-                        })}
+                        {/* Sliders */}
+                        {(['r', 'g', 'b'] as const).map(channel => (
+                            <div key={channel} className="flex items-center gap-2">
+                                <span className={`text-[8px] font-black uppercase w-3 ${channel === 'r' ? 'text-red-500' : (channel === 'g' ? 'text-green-500' : 'text-blue-500')}`}>{channel}</span>
+                                <input 
+                                    type="range" min="0" max="255" step="1" 
+                                    value={rgb[channel]} 
+                                    onChange={(e) => handleSliderChange(channel, parseInt(e.target.value))}
+                                    className={`flex-grow h-1.5 rounded-lg appearance-none cursor-pointer bg-zinc-800 
+                                    ${channel === 'r' ? '[&::-webkit-slider-thumb]:bg-red-500' : (channel === 'g' ? '[&::-webkit-slider-thumb]:bg-green-500' : '[&::-webkit-slider-thumb]:bg-blue-500')}
+                                    [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all`}
+                                />
+                                <span className="text-[8px] font-mono text-zinc-500 w-5 text-right">{rgb[channel]}</span>
+                            </div>
+                        ))}
                     </div>
 
                 </div>

@@ -1,4 +1,3 @@
-
 import React, { useEffect } from 'react';
 import { ShipFitting, ShipConfig, AmmoType } from '../types.ts';
 import { WEAPONS, SHIELDS, EXOTIC_WEAPONS, EXOTIC_SHIELDS } from '../constants.ts';
@@ -19,7 +18,7 @@ interface LoadoutDialogProps {
   setGodMode: (slotIdx: number) => void;
   buyAmmo: (type: AmmoType) => void;
   selectAmmo: (type: AmmoType) => void;
-  fontSize: 'small' | 'medium' | 'large';
+  fontSize: 'small' | 'medium' | 'large' | 'extra-large';
 }
 
 export const LoadoutDialog: React.FC<LoadoutDialogProps> = ({
