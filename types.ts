@@ -36,6 +36,8 @@ export interface CargoItem {
   price?: number;
   status?: 'listed' | 'sold';
   _buyAmount?: number; // Internal for batch buying
+  restockTime?: number; // Timestamp when this item might reappear if sold out
+  description?: string; // Enhanced description for market
 }
 
 export interface Weapon {
@@ -189,6 +191,7 @@ export interface GameState {
   typeColors: Record<string, Record<ShipPart, string>>;
   reserveByPlanet: Record<string, CargoItem[]>;
   marketListingsByPlanet: Record<string, CargoItem[]>;
+  marketRefreshes: Record<string, number>; // New: Track when market was last refreshed
   messages: GameMessage[];
   leaderboard: LeaderboardEntry[]; // Added Leaderboard
   planetOrbitOffsets: Record<string, number>;
