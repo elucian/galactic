@@ -1,11 +1,8 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
-import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, BOSS_SHIPS, BOSS_EXOTIC_SHIELDS, AMMO_CONFIG } from '../constants.ts';
-import { StarField } from './StarField.tsx';
+import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, BOSS_SHIPS, AMMO_CONFIG } from '../constants.ts';
 import { getEngineCoordinates, getWingMounts } from '../utils/drawingUtils.ts';
-import { ItemSVG } from './Common.tsx';
 
 // --- CONFIGURATION ---
 const ASTEROID_VARIANTS = [
@@ -109,7 +106,6 @@ class Asteroid {
         }
     }
 
-    // Icosahedron approximation for 3D rock look
     const t = (1 + Math.sqrt(5)) / 2; 
     const r = 1/t; 
     const p = t;
@@ -120,7 +116,6 @@ class Asteroid {
         [r, p, 0], [r, -p, 0], [-r, p, 0], [-r, -p, 0],
         [p, 0, r], [p, 0, -r], [-p, 0, r], [-p, 0, -r]
     ];
-    // Add randomness to vertices for "rocky" look
     this.vertices = baseVerts.map(v => ({ 
         x: v[0]*this.size + (Math.random()-0.5)*this.size*0.3, 
         y: v[1]*this.size + (Math.random()-0.5)*this.size*0.3, 
@@ -760,6 +755,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   let a = 0; if (cycleIndex % 2 === 0) { a = start + (range * prog); } else { a = (start + range) - (range * prog); }
                   s.bullets.push({ x: s.px, y: s.py - 24, vx: Math.sin(a) * 40, vy: -Math.cos(a) * 40, damage, color: '#facc15', type: 'laser', life: 15, isEnemy: false, width: 3, height: 100, weaponId, glow: true, glowIntensity: 15 });
               }
+          } else if (mainDef?.id === 'exotic_gravity_wave') {
+              // GRAVITY WAVE: 30 degree cone (-15 to +15), Blue Arcs
+              const angles = [-15, 0, 15];
+              angles.forEach(deg => {
+                  const rad = deg * (Math.PI / 180);
+                  s.bullets.push({ 
+                      x: s.px, y: s.py - 24, 
+                      vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, 
+                      damage, color: '#60a5fa', type: 'projectile', 
+                      life: 80, isEnemy: false, width: 20, height: 20, 
+                      weaponId, growthRate: 0.5 
+                  });
+              });
           } else {
               s.bullets.push({ x: s.px, y: s.py - 24, vx: 0, vy: -30, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, glow: true, glowIntensity: 5, isMain: true, weaponId });
               audioService.playWeaponFire('cannon', 0, activeShip.config.id);
@@ -795,7 +803,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   let startX = s.px; let startY = s.py;
                   if (slotIdx === 0) { startY = s.py - 30; } else { const mountIdx = slotIdx - 1; const m = mounts[mountIdx]; startX = s.px + (m.x - 50) * scale; startY = s.py + (m.y - 50) * scale; }
                   const damage = wDef.damage; const color = wDef.beamColor || '#fff'; const bulletSpeed = w.id.includes('exotic') ? 12 : 18; 
-                  if (wDef.type === WeaponType.LASER) { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -30, damage, color, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, weaponId: w.id }); } 
+                  
+                  if (wDef.id === 'exotic_gravity_wave') {
+                      // Alien Gravity Wave Logic
+                      const angles = [-15, 0, 15];
+                      angles.forEach(deg => {
+                          const rad = deg * (Math.PI / 180);
+                          s.bullets.push({ 
+                              x: startX, y: startY, 
+                              vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, 
+                              damage, color: '#60a5fa', type: 'projectile', 
+                              life: 80, isEnemy: false, width: 20, height: 20, 
+                              weaponId: w.id, growthRate: 0.5 
+                          });
+                      });
+                  } else if (wDef.type === WeaponType.LASER) { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -30, damage, color, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, weaponId: w.id }); } 
                   else { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -bulletSpeed, damage, color, type: 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); }
                   s.weaponFireTimes[slotIdx] = Date.now(); s.energy -= wDef.energyCost; fired = true;
               }
@@ -822,7 +844,23 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                       const scale = 0.6; const mx = mounts[i].x; const my = mounts[i].y; 
                       const startX = s.px + (mx - 50) * scale; const startY = s.py + (my - 50) * scale; 
                       const damage = wDef.damage; const color = wDef.beamColor || '#fff'; 
-                      s.bullets.push({ x: startX, y: startY, vx: 0, vy: -20, damage, color, type: wDef.type === WeaponType.LASER ? 'laser' : 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); 
+                      
+                      if (wDef.id === 'exotic_gravity_wave') {
+                          // Standard Ship Wing Gravity Wave
+                          const angles = [-15, 0, 15];
+                          angles.forEach(deg => {
+                              const rad = deg * (Math.PI / 180);
+                              s.bullets.push({ 
+                                  x: startX, y: startY, 
+                                  vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, 
+                                  damage, color: '#60a5fa', type: 'projectile', 
+                                  life: 80, isEnemy: false, width: 20, height: 20, 
+                                  weaponId: w.id, growthRate: 0.5 
+                              });
+                          });
+                      } else {
+                          s.bullets.push({ x: startX, y: startY, vx: 0, vy: -20, damage, color, type: wDef.type === WeaponType.LASER ? 'laser' : 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); 
+                      }
                       fired = true; if (!wDef.isAmmoBased) s.energy -= wDef.energyCost; 
                   } 
               } 
@@ -863,42 +901,30 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         let right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
 
         if (hasTiltRef.current) {
-            // Determine Orientation: Portrait vs Landscape
             const isLandscape = window.innerWidth > window.innerHeight;
-            
-            // Use Gamma for Portrait (Roll: Left/Right tilt)
-            // Use Beta for Landscape (Pitch: effectively Left/Right tilt in landscape)
             let tiltVal = 0;
             if (isLandscape) {
-                // In landscape, beta is the "up/down" relative to device, but left/right relative to user view
-                // Beta ranges -180 to 180. Usually 0 is flat on table.
                 tiltVal = tiltRef.current.beta;
             } else {
-                // Portrait
                 tiltVal = tiltRef.current.gamma;
             }
 
-            // Deadzone of 5 degrees
             if (tiltVal < -5) {
                 left = true;
-                // Add velocity based on tilt angle
                 s.px -= Math.abs(tiltVal) * 0.2; 
             } else if (tiltVal > 5) {
                 right = true;
                 s.px += Math.abs(tiltVal) * 0.2;
             }
             
-            // Override Tap Target if tilting
             if (Math.abs(tiltVal) > 5) {
                 targetRef.current = null;
             }
         }
 
-        // DESKTOP KEYS
         if (s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8')) targetThrottle = 1;
         else if (s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2')) targetThrottle = -1;
 
-        // TAP NAVIGATION LOGIC
         if (targetRef.current) {
             const dx = targetRef.current.x - s.px;
             const dy = targetRef.current.y - s.py;
@@ -909,49 +935,32 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 targetThrottle = 0;
             } else {
                 const angle = Math.atan2(dy, dx);
-                const approachSpeed = 12; // Brisk pace
-                
-                // Move Ship
+                const approachSpeed = 12; 
                 s.px += Math.cos(angle) * approachSpeed;
                 s.py += Math.sin(angle) * approachSpeed;
-                
-                // Set Visuals based on movement vector
                 const xComp = Math.cos(angle);
                 const yComp = Math.sin(angle);
-                
                 if (xComp < -0.5) left = true;
                 if (xComp > 0.5) right = true;
-                if (yComp < -0.5) targetThrottle = 1; // Moving UP screen is throttle forward
-                if (yComp > 0.5) targetThrottle = -1; // Moving DOWN screen is braking
+                if (yComp < -0.5) targetThrottle = 1; 
+                if (yComp > 0.5) targetThrottle = -1; 
             }
         }
 
-        // Interpolate current throttle towards target (Smoothness)
-        // Lerp factor 0.1 for nice weight
         s.currentThrottle = s.currentThrottle * 0.9 + targetThrottle * 0.1;
-        
-        // Snap to 0 if very close
         if (Math.abs(s.currentThrottle) < 0.01) s.currentThrottle = 0;
 
-        // Apply Movement Y based on throttle
-        // Throttle > 0: Move Up (Screen Y decreases)
-        // Throttle < 0: Move Down (Screen Y increases)
-        // Max vertical speed ~8px/frame
         const verticalSpeed = -s.currentThrottle * 8; 
         
-        // Only apply vertical speed if not navigating by touch (touch handles Y directly)
         if (!targetRef.current) {
             s.py += verticalSpeed;
         }
         
-        // Clamp Y
         s.py = Math.max(50, Math.min(height - 150, s.py));
 
-        // Horizontal Movement (Keys)
         if (s.keys.has('ArrowLeft') || s.keys.has('KeyA')) s.px -= speed;
         if (s.keys.has('ArrowRight') || s.keys.has('KeyD')) s.px += speed;
         
-        // Clamp X
         s.px = Math.max(30, Math.min(width-30, s.px));
 
         s.movement = { 
@@ -964,30 +973,25 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         let isMoving = s.currentThrottle !== 0 || left || right;
         s.usingWater = false; 
 
-        // World Speed Multiplier (Stars/Enemies relative speed)
-        // Forward (Throttle > 0) -> Faster World
-        // Brake (Throttle < 0) -> Slower World
         let worldSpeedFactor = 1.0;
-        if (s.currentThrottle > 0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); // Max 1.5x
-        if (s.currentThrottle < -0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); // Min 0.5x
+        if (s.currentThrottle > 0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); 
+        if (s.currentThrottle < -0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); 
 
         if (s.rescueMode) {
             const driftSpeed = 3;
             if (isMoving) {
-               // Drift logic overrides normal physics
                if (s.currentThrottle > 0) s.py -= driftSpeed;
                if (s.currentThrottle < 0) s.py += driftSpeed;
                s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
             }
-            // Modified Smoke (Bufs behind jets)
-            if (s.frame % 8 === 0) { // Periodic puffs
+            if (s.frame % 8 === 0) { 
                  s.particles.push({ 
                      x: s.px, 
-                     y: s.py + 60, // Behind the jet (approx cy+28+30)
+                     y: s.py + 60, 
                      vx: (Math.random()-0.5)*1, 
                      vy: 2 + Math.random(), 
                      life: 1.2, 
-                     color: '#9ca3af', // Smoke gray
+                     color: '#9ca3af', 
                      size: 5 + Math.random()*5 
                  });
             }
@@ -1109,6 +1113,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (s.rescueMode) { e.y += 3; if (e.type === 'boss') e.y += 2; } 
             else {
                 e.update(s.px, s.py, width, height, s.bullets, worldSpeedFactor); 
+                
+                // BOSS DEFENSE & ATTACK
                 if (difficulty >= 2 && e.type !== 'boss') {
                     const fireInterval = e.config.isAlien ? 120 : 180;
                     if (s.frame % fireInterval === 0 && Math.abs(e.x - s.px) < 300) {
@@ -1122,6 +1128,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         s.bullets.push({ x: e.x + 20, y: e.y + 40, vx: (Math.random()-0.5)*2, vy: 6, damage: 20, color: '#a855f7', type: 'projectile', life: 100, isEnemy: true, width: 10, height: 20 });
                     }
                 }
+                
+                // COLLISION
                 if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < 60) {
                     takeDamage(30, 'collision');
                     if(e.type !== 'boss') e.hp = 0;
@@ -1129,10 +1137,73 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             }
         });
-        s.enemies = s.enemies.filter(e => e.hp > 0 && e.y < height + 200);
+        
+        // Remove dead enemies and check boss drop
+        for (let i = s.enemies.length - 1; i >= 0; i--) {
+            const e = s.enemies[i];
+            if (e.hp <= 0 || e.y > height + 200) {
+                if (e.hp <= 0 && !s.rescueMode) {
+                    if (e.type === 'boss') {
+                        s.bossDead = true;
+                        // BOSS DEFEAT LOGIC: 10k * Difficulty Score
+                        s.score += 10000 * difficulty;
+                        createExplosion(e.x, e.y, '#a855f7', 30, 'boss');
+                        setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
+                        
+                        // BOSS LOOT DROP
+                        // 20% Exotic Weapon, 20% Exotic Shield, 20% 100 Missiles, 20% 100 Mines, 20% 5000 High Ammo
+                        const rand = Math.random();
+                        let lootType = '';
+                        let lootId = '';
+                        let quantity = 1;
+                        let name = '';
+
+                        if (rand < 0.2) {
+                            const w = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
+                            lootType = 'weapon'; lootId = w.id; name = w.name;
+                        } else if (rand < 0.4) {
+                            const sh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)];
+                            lootType = 'shield'; lootId = sh.id; name = sh.name;
+                        } else if (rand < 0.6) {
+                            lootType = 'missile'; quantity = 100; name = 'Missile Pack';
+                        } else if (rand < 0.8) {
+                            lootType = 'mine'; quantity = 100; name = 'Mine Pack';
+                        } else {
+                            const ammos = ['iridium', 'tungsten', 'explosive'];
+                            const selected = ammos[Math.floor(Math.random() * ammos.length)];
+                            lootType = 'ammo'; lootId = selected; quantity = 5000; name = 'Heavy Ammo Crate';
+                        }
+                        spawnLoot(e.x, e.y, 0, lootType, lootId, name, quantity);
+                    } else {
+                        s.score += 100 * difficulty;
+                    }
+                }
+                s.enemies.splice(i, 1);
+            }
+        }
 
         s.bullets.forEach(b => { 
             b.x += b.vx; b.y += b.vy; b.life--; 
+            
+            // GRAVITY WAVE LOGIC: Reflection
+            if (b.weaponId === 'exotic_gravity_wave') {
+                if (b.growthRate) {
+                    b.width += b.growthRate;
+                    b.height += b.growthRate * 0.5;
+                }
+                // Reflect Enemy Fire
+                s.bullets.forEach(other => {
+                    if (other.isEnemy && Math.abs(other.x - b.x) < b.width && Math.abs(other.y - b.y) < b.height) {
+                        other.isEnemy = false;
+                        other.vx = (Math.random()-0.5) * 5; // Scatter sideways
+                        other.vy = -Math.abs(other.vy) - 5; // Reflect UP fast
+                        other.color = b.color; // Adopt wave color
+                        other.damage *= 2; // Boost reflected damage
+                        createExplosion(other.x, other.y, b.color, 1);
+                    }
+                });
+            }
+
             if (b.isEnemy && !s.rescueMode) { 
                 if (Math.hypot(b.x-s.px, b.y-s.py) < 30) { takeDamage(b.damage, b.type); b.life = 0; createExplosion(b.x, b.y, b.color, 3); } 
             } else if (!b.isEnemy) { 
@@ -1213,8 +1284,46 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 else if (l.type === 'water') { s.water = Math.min(maxWater, s.water + 20); setHud(h => ({...h, alert: "+WATER", alertType: 'success'})); }
                 else if (l.type === 'energy') { s.energy = Math.min(maxEnergy, s.energy + 200); setHud(h => ({...h, alert: "+ENERGY", alertType: 'success'})); }
                 else if (l.type === 'repair' || l.type === 'nanite') { s.hp = Math.min(100, s.hp + 10); setHud(h => ({...h, alert: "+HULL REPAIR", alertType: 'success'})); }
-                else if (l.type === 'missile') { s.missiles = Math.min(10, s.missiles + 2); }
-                else if (l.type === 'mine') { s.mines = Math.min(10, s.mines + 2); }
+                else if (l.type === 'missile') { s.missiles = Math.min(10, s.missiles + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} MISSILES`, alertType: 'success'})); }
+                else if (l.type === 'mine') { s.mines = Math.min(10, s.mines + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} MINES`, alertType: 'success'})); }
+                else if (l.type === 'ammo') { 
+                    const ammoId = l.id as any; 
+                    if (ammoId) {
+                        s.ammo[ammoId] = (s.ammo[ammoId] || 0) + (l.quantity || 1); 
+                        setHud(h => ({...h, alert: `+${l.quantity || 1} AMMO`, alertType: 'success'})); 
+                    }
+                }
+                else if (l.type === 'weapon' || l.type === 'shield') { 
+                    const newItem: CargoItem = {
+                        instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        type: l.type as any,
+                        id: l.id,
+                        name: l.name || 'Unknown',
+                        quantity: l.quantity || 1,
+                        weight: 1
+                    };
+                    s.cargo.push(newItem); 
+                    setHud(h => ({...h, alert: `LOOT ACQUIRED: ${l.name}`, alertType: 'success'})); 
+                }
+                else if (['gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium', 'tungsten', 'goods', 'robot', 'drug', 'medicine', 'food', 'equipment', 'part', 'luxury'].includes(l.type)) {
+                    const itemId = l.id || l.type;
+                    const qty = l.quantity || 1;
+                    const existingItem = s.cargo.find(c => c.id === itemId);
+                    
+                    if (existingItem) {
+                        existingItem.quantity += qty;
+                    } else {
+                        s.cargo.push({
+                            instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            type: l.type as any,
+                            id: itemId,
+                            name: l.name || itemId.toUpperCase(),
+                            quantity: qty,
+                            weight: 1
+                        });
+                    }
+                    setHud(h => ({...h, alert: `+${qty} ${l.name || l.type.toUpperCase()}`, alertType: 'success'}));
+                }
                 else {
                     s.score += 500;
                     s.floatingTexts.push({ x: l.x, y: l.y, text: "+500", life: 1.0, color: '#fbbf24', vy: -3, size: 16 });
@@ -1341,6 +1450,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 else if (l.type === 'water') letter = "W";
                 else if (l.type === 'energy') letter = "E";
                 else if (l.type === 'repair' || l.type === 'nanite') letter = "+";
+                else if (l.type === 'missile') letter = "M";
+                else if (l.type === 'mine') letter = "X";
+                else if (l.type === 'ammo') letter = "A";
+                else if (l.type === 'weapon') letter = "G";
+                else if (l.type === 'shield') letter = "S";
                 
                 ctx.fillText(letter, 0, 1);
             }
@@ -1383,6 +1497,31 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen;
                     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
                 }
+
+            } else if (b.weaponId === 'exotic_gravity_wave') {
+                // EXOTIC: Gravity Wave (Growing Arcs - Dense & Series)
+                ctx.strokeStyle = b.color;
+                ctx.shadowColor = b.color; ctx.shadowBlur = 15;
+                ctx.lineCap = 'round';
+                
+                const count = 5; // Dense series
+                const spacing = 6; 
+                
+                for(let i=0; i<count; i++) {
+                    const arcW = b.width * (1 - i * 0.15); // Inner arcs slightly narrower
+                    const yOff = i * spacing;
+                    
+                    // Opacity gradient (Front arc solid, trailing arcs fade)
+                    ctx.globalAlpha = Math.max(0, 0.8 - (i * 0.15));
+                    ctx.lineWidth = 3;
+                    
+                    ctx.beginPath();
+                    // Upward facing arc
+                    ctx.arc(0, yOff, arcW/2, Math.PI * 1.2, Math.PI * 1.8);
+                    ctx.stroke();
+                }
+                ctx.globalAlpha = 1;
+                ctx.shadowBlur = 0;
 
             } else if (b.weaponId === 'exotic_star_shatter') {
                 // EXOTIC: Star Shatter (Spinning Star)
@@ -1446,22 +1585,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 ctx.beginPath(); ctx.arc(0, 0, b.width * 0.6, 0, Math.PI*2); ctx.stroke();
                 ctx.globalAlpha = 1;
                 ctx.shadowBlur = 0;
-
-            } else if (b.weaponId === 'exotic_gravity_wave') {
-                // EXOTIC: Gravity Wave (Crescent Arcs)
-                ctx.strokeStyle = b.color;
-                ctx.lineWidth = 4;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                // Arc 1
-                ctx.arc(0, 10, b.width, Math.PI * 1.2, Math.PI * 1.8);
-                ctx.stroke();
-                // Arc 2 (Trailing)
-                ctx.globalAlpha = 0.5;
-                ctx.beginPath();
-                ctx.arc(0, -5, b.width * 0.8, Math.PI * 1.2, Math.PI * 1.8);
-                ctx.stroke();
-                ctx.globalAlpha = 1;
 
             } else if (b.weaponId === 'exotic_octo_burst') {
                 // EXOTIC: Octo Burst (Plasma Blob)
@@ -1621,11 +1744,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     
     // --- DRAW RETRO THRUSTERS (BRAKING JETS) ---
     // Forward-facing jets (45 degrees outward from center line)
-    // Left Wing: -45 deg (Up-Right? No. Up is -90. Left is 180. Forward-Left is -135? Or is it 45 deg from Vertical?)
-    // "45 degree forward from axel".
-    // Ship points UP (-Y).
-    // Left Retro: Fires UP-LEFT (-135 degrees relative to Right 0?)
-    // Let's use simple rotation: Left Wing (-45 deg), Right Wing (+45 deg).
     if (isPlayer && movement && movement.down && !isRescue) {
         const mounts = getWingMounts(config); 
         // Left Retro: Fires Up-Left (-45 deg from vertical -90 => -135 deg total, or just rotate context -45)
