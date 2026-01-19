@@ -13,7 +13,7 @@ interface MarketDialogProps {
   credits: number;
   testMode: boolean;
   marketBuy: (item: any, quantity: number, listingId?: string) => void;
-  marketSell: (resIdx: number) => void;
+  marketSell: (itemId: string, quantity: number) => void;
   fontSize: 'small' | 'medium' | 'large' | 'extra-large';
   currentPlanet: Planet;
   marketListings?: CargoItem[]; 
@@ -28,37 +28,73 @@ const getCategory = (item: any) => {
     const t = item.type?.toLowerCase() || '';
     const id = item.id?.toLowerCase() || '';
 
-    // STRICT FIX: Iron Ingot vs Ammo
-    if (id === 'iron') {
-        return t === 'ammo' ? 'AMMO' : 'RESOURCES';
-    }
-
-    // AMMO
+    if (id === 'iron') return t === 'ammo' ? 'AMMO' : 'RESOURCES';
     if (t === 'ammo') return 'AMMO';
-    
-    // WEAPONRY
     if (['weapon', 'projectile', 'laser', 'gun'].includes(t)) return 'WEAPONRY';
     if (id.includes('gun') || id.includes('rifle') || id.includes('pistol')) return 'WEAPONRY';
-
-    // DEFENSE
     if (t === 'shield') return 'DEFENSE';
-    
-    // ORDNANCE
     if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
-    
-    // SUPPLIES (Water is here)
     if (['fuel', 'energy', 'repair', 'robot', 'nanite', 'water'].includes(t)) return 'SUPPLIES';
-    
-    // RESOURCES
     if (['iron', 'copper', 'gold', 'platinum', 'tungsten', 'lithium', 'chromium', 'titanium', 'silver'].includes(t)) return 'RESOURCES';
-    
-    // FOOD
     if (['food', 'organic', 'meat', 'grain', 'fruit', 'spice'].includes(t)) return 'FOOD';
-    
-    // GOODS
     if (['drug', 'medicine', 'equipment', 'part', 'luxury', 'goods'].includes(t)) return 'GOODS';
 
     return 'GOODS';
+};
+
+// HELPER: Stats Calculation for Display
+const getItemStats = (item: any) => {
+    let power = 0;
+    let disruption = 0;
+    const cat = getCategory(item);
+
+    if (cat === 'AMMO') {
+        const conf = AMMO_CONFIG[item.id as keyof typeof AMMO_CONFIG];
+        if (conf) {
+            power = conf.damageMult * 18; 
+            if (item.id === 'cobalt') disruption = 70;
+            else if (item.id === 'explosive') disruption = 90;
+            else if (item.id === 'titanium') disruption = 20;
+            else if (item.id === 'iridium') disruption = 40;
+            else disruption = 5;
+        }
+    } else if (cat === 'WEAPONRY') {
+        const w = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === item.id);
+        if (w) {
+            power = Math.min(100, w.damage * 1.5); 
+            if (w.id.includes('emp') || w.id.includes('ion')) disruption = 90;
+            else if (w.id.includes('laser')) disruption = 30;
+            else disruption = 10;
+        }
+    } else if (cat === 'DEFENSE') {
+        const s = [...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === item.id);
+        if (s) {
+            power = Math.min(100, s.capacity / 30); 
+            disruption = Math.min(100, s.regenRate * 3); 
+        }
+    } else if (cat === 'ORDNANCE') {
+        if (item.id && item.id.includes('emp')) { power = 20; disruption = 100; }
+        else if (item.id && item.id.includes('red')) { power = 100; disruption = 80; }
+        else { power = 85; disruption = 20; }
+    }
+
+    return { power: Math.min(100, power), disruption: Math.min(100, disruption) };
+};
+
+// HELPER: Price Level
+const getPriceLevel = (item: any) => {
+    const baseDef = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS, ...AMMO_MARKET_ITEMS].find(x => x.id === item.id);
+    if (!baseDef) return { label: 'UNKNOWN', color: '#9ca3af', val: 0 };
+    
+    const base = baseDef.price;
+    const current = item.price || base;
+    const ratio = current / base;
+
+    if (ratio <= 0.6) return { label: 'BARGAIN', color: '#10b981', val: 1 };
+    if (ratio <= 0.9) return { label: 'LOW', color: '#34d399', val: 2 };
+    if (ratio <= 1.1) return { label: 'AVERAGE', color: '#fbbf24', val: 3 };
+    if (ratio <= 1.5) return { label: 'HIGH', color: '#f87171', val: 4 };
+    return { label: 'INFLATED', color: '#ef4444', val: 5 };
 };
 
 export const MarketDialog: React.FC<MarketDialogProps> = ({
@@ -122,18 +158,13 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       // MERGE LOGIC
       const mergedMap = new Map();
       rawItems.forEach(item => {
-          // Normalize type key for merging to avoid splitting "iron" (type:iron) and "iron" (type:goods)
           let typeKey = item.type;
           if (item.id === 'iron' && item.type !== 'ammo') typeKey = 'resource_iron';
 
           const key = `${item.id}_${typeKey}_${item.price}`;
           
           if (!mergedMap.has(key)) {
-              mergedMap.set(key, {
-                  ...item,
-                  quantity: 0,
-                  stacks: []
-              });
+              mergedMap.set(key, { ...item, quantity: 0, stacks: [] });
           }
           
           const entry = mergedMap.get(key);
@@ -180,15 +211,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           const isMine = t === 'mine';
           const isAmmo = t === 'ammo';
           
-          if (isOmega) {
-              spaceLimit = Math.max(0, 5 - (shipFitting.redMineCount || 0));
-          } else if (isMissile) {
-              spaceLimit = Math.max(0, 10 - shipFitting.rocketCount);
-          } else if (isMine) {
-              spaceLimit = Math.max(0, 10 - shipFitting.mineCount);
-          } else if (isAmmo) {
-              spaceLimit = 99999; 
-          } else {
+          if (isOmega) spaceLimit = Math.max(0, 5 - (shipFitting.redMineCount || 0));
+          else if (isMissile) spaceLimit = Math.max(0, 10 - shipFitting.rocketCount);
+          else if (isMine) spaceLimit = Math.max(0, 10 - shipFitting.mineCount);
+          else if (isAmmo) spaceLimit = 99999; 
+          else {
               const currentLoad = shipFitting.cargo.reduce((acc, c) => acc + c.quantity, 0);
               spaceLimit = Math.max(0, shipConfig.maxCargo - currentLoad);
           }
@@ -206,41 +233,20 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   }, [selectedItem, transactionQty, marketTab]);
 
   useEffect(() => {
-      if (maxTransaction > 0) {
-          setTransactionQty(1);
-      } else {
-          setTransactionQty(0);
-      }
+      if (maxTransaction > 0) setTransactionQty(1);
+      else setTransactionQty(0);
   }, [selectedItemIdx, maxTransaction]);
 
   const handleTransaction = () => {
       if (!selectedItem || transactionQty <= 0) return;
-      
-      if (marketTab === 'buy') {
-          marketBuy(selectedItem, transactionQty, selectedItem.instanceId);
-      } else {
-          const sortedStacks = [...selectedItem.stacks].sort((a: any, b: any) => b.index - a.index);
-          let remaining = transactionQty;
-          
-          for (const stack of sortedStacks) {
-              if (remaining <= 0) break;
-              const take = Math.min(remaining, stack.qty);
-              for(let k=0; k<take; k++) {
-                  marketSell(stack.index); 
-              }
-              remaining -= take;
-          }
-      }
+      if (marketTab === 'buy') marketBuy(selectedItem, transactionQty, selectedItem.instanceId);
+      else marketSell(selectedItem.id, transactionQty);
       setSelectedItemIdx(null);
   };
 
   const toggleFilterMenu = () => {
-      if (isFilterOpen) {
-          setIsFilterOpen(false);
-      } else {
-          setPendingFilters(activeFilters);
-          setIsFilterOpen(true);
-      }
+      if (isFilterOpen) setIsFilterOpen(false);
+      else { setPendingFilters(activeFilters); setIsFilterOpen(true); }
   };
 
   const handleFilterApply = () => {
@@ -250,10 +256,14 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
 
   if (!isOpen) return null;
 
+  // Dynamic Size Classes
   const titleSize = fontSize === 'small' ? 'text-[11px]' : (fontSize === 'large' ? 'text-[16px]' : 'text-[13px]');
   const btnSize = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[14px]' : 'text-[12px]');
   const iconSize = fontSize === 'small' ? 22 : (fontSize === 'large' ? 32 : 26);
-  const largeIconSize = fontSize === 'small' ? 64 : (fontSize === 'large' ? 128 : 96);
+  // Large Icon for Panel
+  const largeIconSize = fontSize === 'small' ? 64 : (fontSize === 'large' ? 96 : 80);
+  const descSize = fontSize === 'small' ? 'text-[9px]' : (fontSize === 'large' ? 'text-[13px]' : 'text-[11px]');
+  const statLabelSize = fontSize === 'small' ? 'text-[7px]' : (fontSize === 'large' ? 'text-[10px]' : 'text-[8px]');
 
   const getItemColor = (item: any) => {
       let iconColor = marketTab === 'sell' ? "#fbbf24" : "#10b981";
@@ -297,14 +307,17 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       return iconColor;
   };
 
+  const itemStats = selectedItem ? getItemStats(selectedItem) : { power: 0, disruption: 0 };
+  const showStats = selectedItem && (itemStats.power > 0 || itemStats.disruption > 0);
+  const priceLevel = selectedItem ? getPriceLevel(selectedItem) : { label: '---', color: '#fff', val: 0 };
+  const totalPrice = selectedItem ? (selectedItem.price || 0) * transactionQty : 0;
+
   return (
     <div className="fixed inset-0 z-[9800] bg-black/95 flex items-center justify-center p-0 sm:p-4 backdrop-blur-2xl">
        <div className="w-full max-w-6xl bg-zinc-950 border-0 sm:border-2 border-zinc-800 rounded-none sm:rounded-xl flex flex-col h-full sm:h-[85vh] shadow-2xl overflow-hidden relative">
           
-          {/* HEADER (2 ROWS on ALL DEVICES) */}
+          {/* HEADER */}
           <header className="flex flex-col shrink-0 z-50 bg-zinc-900/80 border-b border-zinc-800">
-             
-             {/* ROW 1: Title & Funds */}
              <div className="flex justify-between items-center p-3 md:p-4 border-b border-zinc-800/50">
                 <h2 className={`retro-font text-emerald-500 ${titleSize} uppercase`}>Galactic Exchange</h2>
                 <div className="flex flex-col items-end">
@@ -312,31 +325,18 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                      <span className={`text-emerald-500 font-black tabular-nums ${fontSize === 'large' ? 'text-2xl' : 'text-xl'}`}>${credits.toLocaleString()}</span>
                 </div>
              </div>
-
-             {/* ROW 2: Controls */}
              <div className="flex justify-between items-center p-2 md:px-4 md:py-2 bg-zinc-950/50">
                  <div className="flex items-center gap-2 relative" ref={filterRef}>
                     <div className="flex gap-1 bg-zinc-900 rounded p-1">
                         {['buy', 'sell'].map(t => (
-                            <button 
-                                key={t} 
-                                onClick={() => setMarketTab(t as any)} 
-                                className={`px-4 py-1.5 text-[10px] md:${btnSize} font-black uppercase rounded transition-all ${marketTab === t ? (t === 'buy' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white') : 'text-zinc-500 hover:text-white'}`}
-                            >
-                                {t}
-                            </button>
+                            <button key={t} onClick={() => setMarketTab(t as any)} className={`px-4 py-1.5 text-[10px] md:${btnSize} font-black uppercase rounded transition-all ${marketTab === t ? (t === 'buy' ? 'bg-emerald-600 text-white' : 'bg-amber-600 text-white') : 'text-zinc-500 hover:text-white'}`}>{t}</button>
                         ))}
                     </div>
-                    <button 
-                        onClick={toggleFilterMenu}
-                        className={`w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded border transition-all ${isFilterOpen ? 'bg-zinc-800 border-white text-white' : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`}
-                        title="Filter Categories"
-                    >
+                    <button onClick={toggleFilterMenu} className={`w-8 h-8 md:w-9 md:h-9 flex items-center justify-center rounded border transition-all ${isFilterOpen ? 'bg-zinc-800 border-white text-white' : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300'}`} title="Filter">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>
                     </button>
-                    
                     {isFilterOpen && (
-                        <div className="absolute top-full left-0 mt-2 bg-zinc-950 border border-zinc-700 rounded-xl shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-[100] p-4 w-64 animate-in fade-in zoom-in-95 duration-100 ring-1 ring-zinc-800">
+                        <div className="absolute top-full left-0 mt-2 bg-zinc-950 border border-zinc-700 rounded-xl shadow-2xl z-[100] p-4 w-64 animate-in fade-in zoom-in-95 duration-100 ring-1 ring-zinc-800">
                             <div className="text-[10px] font-black uppercase text-zinc-500 mb-3 tracking-widest border-b border-zinc-800 pb-2">Filter Categories</div>
                             <div className="grid grid-cols-2 gap-2 mb-4">
                                 {CATEGORY_ORDER.map(cat => (
@@ -359,7 +359,6 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                         </div>
                     )}
                  </div>
-
                  <button onClick={onClose} className={`px-4 py-1.5 bg-zinc-900 border border-zinc-700 text-zinc-400 font-black ${btnSize} rounded hover:text-white hover:border-zinc-500 uppercase`}>CLOSE</button>
              </div>
           </header>
@@ -393,7 +392,9 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                                             className={`flex justify-between items-center p-3 rounded cursor-pointer border transition-all ${isSelected ? 'bg-white/5 border-white shadow-lg z-10' : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800'}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <ItemSVG type={item.type || 'goods'} color={color} size={iconSize} />
+                                                <div className="hidden sm:block">
+                                                    <ItemSVG type={item.type || 'goods'} color={color} size={iconSize} />
+                                                </div>
                                                 <div className="flex flex-col">
                                                     <span className={`font-black uppercase text-sm ${isSelected ? 'text-white' : 'text-zinc-300'}`}>{item.name}</span>
                                                     <span className="text-[9px] text-zinc-500 uppercase font-mono">{item.quantity} UNITS</span>
@@ -408,72 +409,129 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                     </div>
                 </div>
 
-                {/* RIGHT PANEL: DETAILS */}
+                {/* RIGHT PANEL: DETAILS & TRANSACTION */}
                 <div className="w-full md:w-1/2 lg:w-3/5 flex flex-col bg-zinc-950 relative border-t-4 border-zinc-900 md:border-t-0">
                     {selectedItem ? (
-                        <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300">
-                            
-                            {/* ITEM PREVIEW HEADER */}
-                            <div className="flex-grow flex flex-col items-center justify-center p-4 md:p-8 relative overflow-hidden">
-                                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_rgba(16,185,129,0.05)_0%,_transparent_70%)]" />
+                        <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300 relative">
+                            {/* Background Decoration */}
+                            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(16,185,129,0.05)_0%,_transparent_50%)] pointer-events-none" />
+
+                            {/* SCROLLABLE INFO AREA */}
+                            <div className="flex-grow overflow-y-auto custom-scrollbar p-6">
                                 
-                                {/* Large Icon - Hidden on Mobile */}
-                                <div className="hidden md:block relative z-10 drop-shadow-[0_0_30px_rgba(255,255,255,0.1)] scale-150 mb-6">
-                                    <ItemSVG type={selectedItem.type || 'goods'} color={getItemColor(selectedItem)} size={largeIconSize} />
+                                {/* HEADER: ICON + INFO */}
+                                <div className="flex items-start gap-6 mb-6">
+                                    <div className="shrink-0 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 shadow-lg flex items-center justify-center">
+                                        <ItemSVG type={selectedItem.type || 'goods'} color={getItemColor(selectedItem)} size={largeIconSize} />
+                                    </div>
+                                    <div className="flex flex-col pt-1">
+                                        <h2 className={`${fontSize === 'small' ? 'text-xl' : 'text-3xl'} font-black uppercase text-white tracking-tight leading-none mb-3`}>{selectedItem.name}</h2>
+                                        <span className="text-xs font-mono text-emerald-500 uppercase tracking-widest bg-emerald-950/30 px-3 py-1 rounded border border-emerald-900/50 w-fit">{getCategory(selectedItem)} CLASS</span>
+                                    </div>
                                 </div>
-                                
-                                <h2 className="text-xl md:text-3xl font-black uppercase text-white tracking-tight mb-1 relative z-10">{selectedItem.name}</h2>
-                                <span className="text-xs font-mono text-emerald-500 uppercase tracking-widest relative z-10">{getCategory(selectedItem)} CLASS</span>
-                                
-                                <p className="mt-4 md:mt-6 text-center text-zinc-400 text-xs md:text-sm max-w-md uppercase font-mono leading-relaxed relative z-10">
-                                    {selectedItem.description || "Standard issue galactic commodity. Used in various industrial and survival applications."}
-                                </p>
+
+                                {/* DESCRIPTION */}
+                                <div className="mb-6 bg-zinc-900/30 p-4 rounded-lg border border-zinc-800/50 relative">
+                                     <div className="absolute top-0 left-0 w-1 h-full bg-zinc-700 rounded-l-lg" />
+                                     <p className={`${descSize} text-zinc-400 font-mono leading-relaxed italic pl-2`}>
+                                        "{selectedItem.description || "Standard issue galactic commodity. Used in various industrial and survival applications."}"
+                                    </p>
+                                </div>
+
+                                {/* ATTRIBUTES & TRENDS */}
+                                <div className="grid grid-cols-1 gap-4">
+                                     {/* Stats (If Weapon/Shield) */}
+                                     {showStats && (
+                                         <div className="grid grid-cols-2 gap-3">
+                                            <div className="bg-zinc-900/50 rounded border border-zinc-800 p-2 flex flex-col gap-1">
+                                                <div className="flex justify-between items-end">
+                                                    <span className={`${statLabelSize} font-black uppercase text-zinc-500 tracking-widest`}>{getCategory(selectedItem) === 'DEFENSE' ? 'PROTECTION' : 'POWER'}</span>
+                                                    <span className={`${statLabelSize} font-mono text-zinc-400`}>{Math.round(itemStats.power)}%</span>
+                                                </div>
+                                                <div className="w-full h-1 bg-black rounded-full overflow-hidden">
+                                                    <div className="h-full bg-red-500" style={{ width: `${itemStats.power}%` }} />
+                                                </div>
+                                            </div>
+                                            <div className="bg-zinc-900/50 rounded border border-zinc-800 p-2 flex flex-col gap-1">
+                                                <div className="flex justify-between items-end">
+                                                    <span className={`${statLabelSize} font-black uppercase text-zinc-500 tracking-widest`}>{getCategory(selectedItem) === 'DEFENSE' ? 'REGEN' : 'DISRUPTION'}</span>
+                                                    <span className={`${statLabelSize} font-mono text-zinc-400`}>{Math.round(itemStats.disruption)}%</span>
+                                                </div>
+                                                <div className="w-full h-1 bg-black rounded-full overflow-hidden">
+                                                    <div className="h-full bg-blue-500" style={{ width: `${itemStats.disruption}%` }} />
+                                                </div>
+                                            </div>
+                                         </div>
+                                     )}
+
+                                     {/* Price Level Bar */}
+                                     <div className="bg-zinc-900/50 rounded border border-zinc-800 p-3">
+                                        <div className="flex justify-between items-center mb-1">
+                                            <span className={`${statLabelSize} font-black uppercase text-zinc-500 tracking-widest`}>Market Trend</span>
+                                            <span className={`${statLabelSize} font-bold uppercase`} style={{ color: priceLevel.color }}>{priceLevel.label}</span>
+                                        </div>
+                                        <div className="flex gap-[2px] h-1.5">
+                                            {[1,2,3,4,5].map(i => {
+                                                const active = i <= priceLevel.val;
+                                                return <div key={i} className="flex-1 rounded-[1px]" style={{ backgroundColor: active ? priceLevel.color : '#18181b' }} />;
+                                            })}
+                                        </div>
+                                     </div>
+                                </div>
                             </div>
 
-                            {/* TRANSACTION CONTROLS */}
-                            <div className="bg-zinc-900 border-t-2 border-zinc-800 p-4 md:p-6 shrink-0 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20">
-                                <div className="flex justify-between items-end mb-4">
-                                    <div className="flex flex-col">
-                                        <span className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Quantity Select</span>
-                                        <div className="flex items-center gap-4">
-                                            <span className="text-4xl font-black text-white tabular-nums">{transactionQty}</span>
-                                            <span className="text-sm text-zinc-500 font-mono">/ {maxTransaction} MAX</span>
+                            {/* COMPACT TRANSACTION FOOTER */}
+                            <div className="bg-zinc-950 border-t border-zinc-800 p-4 shrink-0 shadow-[0_-4px_30px_rgba(0,0,0,0.5)] z-20 relative">
+                                <div className="flex gap-6 items-end">
+                                    
+                                    {/* LEFT: SLIDER & VOLUME */}
+                                    <div className="flex-1 flex flex-col gap-3">
+                                        <div className="flex justify-between items-end mb-1">
+                                            <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Quantity</span>
+                                            <span className="text-xl font-mono font-black text-white leading-none">{transactionQty}</span>
                                         </div>
-                                        {cargoImpact > 0 && marketTab === 'buy' && (
-                                            <div className="text-[10px] font-mono text-zinc-400 mt-1">
-                                                LOAD: <span className="text-white">+{cargoImpact}</span> UNITS
-                                            </div>
-                                        )}
+                                        
+                                        <input 
+                                            type="range" 
+                                            min={maxTransaction > 0 ? 1 : 0} 
+                                            max={maxTransaction || 1} 
+                                            value={transactionQty}
+                                            onChange={(e) => setTransactionQty(parseInt(e.target.value))}
+                                            disabled={!maxTransaction}
+                                            className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all disabled:opacity-50"
+                                        />
+                                        
+                                        <div className="flex justify-between items-center text-[9px] font-mono text-zinc-500 uppercase">
+                                            <span>Cargo Impact</span>
+                                            <span className={cargoImpact > 0 ? "text-amber-400" : "text-zinc-600"}>+{cargoImpact} Units</span>
+                                        </div>
                                     </div>
-                                    <div className="flex flex-col items-end">
-                                        <span className="text-[10px] text-zinc-500 uppercase font-black tracking-widest mb-1">Total Cost</span>
-                                        <span className={`text-3xl font-black tabular-nums ${marketTab === 'buy' ? (credits >= (selectedItem.price || 0) * transactionQty ? 'text-emerald-400' : 'text-red-500') : 'text-amber-400'}`}>
-                                            ${((selectedItem.price || 0) * transactionQty).toLocaleString()}
-                                        </span>
+
+                                    {/* DIVIDER */}
+                                    <div className="w-[1px] h-12 bg-zinc-800 self-center hidden sm:block"></div>
+
+                                    {/* RIGHT: PRICE & ACTION */}
+                                    <div className="flex flex-col items-end gap-2 min-w-[140px]">
+                                        <div className="flex flex-col items-end">
+                                            <span className="text-[9px] font-black uppercase text-zinc-500 tracking-widest">Total Cost</span>
+                                            <span className={`text-2xl font-black tabular-nums leading-none ${credits >= totalPrice ? 'text-emerald-400' : 'text-red-500'}`}>
+                                                ${totalPrice.toLocaleString()}
+                                            </span>
+                                        </div>
+                                        
+                                        <button 
+                                            onClick={handleTransaction}
+                                            disabled={!maxTransaction || transactionQty === 0 || (marketTab === 'buy' && credits < totalPrice)}
+                                            className={`w-full py-2 font-black uppercase tracking-widest rounded shadow-lg transition-all active:scale-[0.98] text-xs flex items-center justify-center gap-2
+                                            ${marketTab === 'buy' 
+                                                ? (maxTransaction > 0 && credits >= totalPrice ? 'bg-emerald-600 hover:bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-600 cursor-not-allowed') 
+                                                : 'bg-amber-600 hover:bg-amber-500 text-white'}`}
+                                        >
+                                            {marketTab === 'buy' ? 'ACQUIRE' : 'SELL'}
+                                        </button>
                                     </div>
+
                                 </div>
-
-                                {/* SLIDER */}
-                                <input 
-                                    type="range" 
-                                    min={maxTransaction > 0 ? 1 : 0} 
-                                    max={maxTransaction || 1} 
-                                    value={transactionQty}
-                                    onChange={(e) => setTransactionQty(parseInt(e.target.value))}
-                                    disabled={!maxTransaction}
-                                    className="w-full h-3 bg-zinc-800 rounded-lg appearance-none cursor-pointer mb-6 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:scale-110 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                />
-
-                                <button 
-                                    onClick={handleTransaction}
-                                    disabled={!maxTransaction || transactionQty === 0 || (marketTab === 'buy' && credits < (selectedItem.price || 0) * transactionQty)}
-                                    className={`w-full py-4 text-sm font-black uppercase tracking-[0.2em] rounded shadow-lg transition-all active:scale-[0.99] flex items-center justify-center gap-3
-                                    ${marketTab === 'buy' 
-                                        ? (maxTransaction > 0 && credits >= (selectedItem.price || 0) * transactionQty ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/20' : 'bg-zinc-800 text-zinc-500 cursor-not-allowed') 
-                                        : 'bg-amber-600 hover:bg-amber-500 text-white shadow-amber-900/20'}`}
-                                >
-                                    {marketTab === 'buy' ? 'CONFIRM ACQUISITION' : 'LIQUIDATE ASSETS'}
-                                </button>
                             </div>
 
                         </div>

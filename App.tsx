@@ -1,5 +1,4 @@
 
-// ... existing imports ...
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry } from './types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from './constants.ts';
@@ -158,6 +157,8 @@ export default function App() {
       const isBarren = !isHabitable;
       const isHighTech = planet.difficulty > 5;
       const isWarZone = planet.difficulty > 8;
+      
+      const isTestMode = gameState.settings.testMode;
 
       // 1. COMMODITIES
       COMMODITIES.forEach(c => {
@@ -175,8 +176,8 @@ export default function App() {
               chance = 0.9; qtyBase = 100; // Always available
           }
 
-          if (Math.random() < chance) {
-              const qty = Math.floor(qtyBase * (0.5 + Math.random()));
+          if (isTestMode || Math.random() < chance) {
+              const qty = isTestMode ? 250 : Math.floor(qtyBase * (0.5 + Math.random()));
               newListings.push({
                   instanceId: `market_${planetId}_${c.id}_${Date.now()}`,
                   id: c.id,
@@ -193,10 +194,10 @@ export default function App() {
       // 2. ORDNANCE (Missiles/Mines)
       EXPLODING_ORDNANCE.forEach(o => {
           const type = o.id.includes('missile') ? 'missile' : 'mine';
-          if (o.id === 'ord_mine_red' && !isHighTech) return; // Omega only on high tech
+          if (!isTestMode && o.id === 'ord_mine_red' && !isHighTech) return; 
           
-          if (Math.random() < 0.7) {
-              const qty = Math.floor(20 + Math.random() * 30);
+          if (isTestMode || Math.random() < 0.7) {
+              const qty = isTestMode ? 100 : Math.floor(20 + Math.random() * 30);
               newListings.push({
                   instanceId: `market_${planetId}_${o.id}_${Date.now()}`,
                   id: o.id,
@@ -211,8 +212,8 @@ export default function App() {
 
       // 3. AMMO
       AMMO_MARKET_ITEMS.forEach(a => {
-          if (Math.random() < 0.8) {
-              const qty = Math.floor(5 + Math.random() * 10); // Packs of 1000
+          if (isTestMode || Math.random() < 0.8) {
+              const qty = isTestMode ? 100 : Math.floor(5 + Math.random() * 10); 
               newListings.push({
                   instanceId: `market_${planetId}_${a.id}_${Date.now()}`,
                   id: a.id,
@@ -232,14 +233,14 @@ export default function App() {
           const isShield = 'capacity' in g;
           const isHighTier = g.price > 50000;
           
-          if (isHighTier && planet.difficulty < 4) return; // Low level planets don't sell good stuff
+          if (!isTestMode && isHighTier && planet.difficulty < 4) return; 
           
           // Rarity check
           let chance = isHighTier ? 0.3 : 0.7;
-          if (isWarZone) chance += 0.2; // More weapons in war
+          if (isWarZone) chance += 0.2; 
 
-          if (Math.random() < chance) {
-              const qty = isHighTier ? Math.floor(1 + Math.random()) : Math.floor(1 + Math.random() * 3);
+          if (isTestMode || Math.random() < chance) {
+              const qty = isTestMode ? 10 : (isHighTier ? Math.floor(1 + Math.random()) : Math.floor(1 + Math.random() * 3));
               const priceMult = isWarZone ? 1.2 : 1.0;
               
               newListings.push({
@@ -250,28 +251,28 @@ export default function App() {
                   quantity: qty,
                   weight: 1,
                   price: Math.floor(g.price * priceMult),
-                  description: 'Defense System' // Simplified, dialog handles details
+                  description: 'Defense System'
               });
           }
       });
 
       // 5. EXOTICS (Very Rare, specific planets)
-      if (isHighTech || isWarZone) {
-          const exoticPool = [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
-          exoticPool.forEach(e => {
-              if (Math.random() < 0.05) { // 5% chance per visit/refresh
+      const exoticPool = [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
+      exoticPool.forEach(e => {
+          if (isTestMode || (isHighTech || isWarZone)) {
+              if (isTestMode || Math.random() < 0.05) { 
                   newListings.push({
                       instanceId: `market_${planetId}_${e.id}_${Date.now()}`,
                       id: e.id,
                       type: 'id' in e && (e as any).capacity ? 'shield' : 'weapon',
                       name: e.name,
-                      quantity: 1, // Unique
+                      quantity: isTestMode ? 10 : 1,
                       weight: 1,
                       price: e.price
                   });
               }
-          });
-      }
+          }
+      });
 
       return newListings;
   };
@@ -283,7 +284,8 @@ export default function App() {
       const now = Date.now();
       const REFRESH_INTERVAL = 3600000; // 1 Hour
 
-      if (now - lastRefresh > REFRESH_INTERVAL || !gameState.marketListingsByPlanet[dockedId]) {
+      // Check testMode change to force refresh if enabled
+      if (gameState.settings.testMode || now - lastRefresh > REFRESH_INTERVAL || !gameState.marketListingsByPlanet[dockedId]) {
           const newListings = generatePlanetMarket(dockedId);
           setGameState(prev => ({
               ...prev,
@@ -297,9 +299,8 @@ export default function App() {
               }
           }));
       }
-  }, [gameState.dockedPlanetId, gameState.marketRefreshes]);
+  }, [gameState.dockedPlanetId, gameState.marketRefreshes, gameState.settings.testMode]);
 
-  // ... [Redacted: Standard Functions - startNewGame, resumeGame, triggerSystemMessage] ...
   const startNewGame = () => {
       const newState = createInitialState();
       newState.settings = { ...gameState.settings };
@@ -408,7 +409,6 @@ export default function App() {
       return { btn: 'text-sm', beta: 'text-[9px]', container: 'w-72', spacing: 'gap-4' };
   }, [gameState.settings.fontSize]);
 
-  // ... [Other helper functions omitted for brevity but preserved in structure] ...
   const repairSelected = () => {
     if (!gameState.selectedShipInstanceId) return;
     const sId = gameState.selectedShipInstanceId;
@@ -640,14 +640,17 @@ export default function App() {
       });
   };
 
-  const marketSell = (resIdx: number) => { 
+  const marketSell = (itemId: string, qtyToSell: number) => { 
       const planet = PLANETS.find(p => p.id === dockedId);
       if (!planet) return;
 
       setGameState(prev => { 
           const newRes = [...(prev.reserveByPlanet[dockedId] || [])]; 
-          const item = newRes[resIdx]; 
-          if (!item) return prev;
+          const resIdx = newRes.findIndex(r => r.id === itemId);
+          
+          if (resIdx === -1) return prev;
+          
+          const item = newRes[resIdx];
 
           // For selling, we need to find the base price. Since sell items come from Reserve which might not have price info
           // We look up definitions.
@@ -673,11 +676,15 @@ export default function App() {
           }
 
           const sellPrice = Math.floor(basePrice * multiplier); 
+          const totalValue = sellPrice * qtyToSell;
 
-          if (item.quantity > 1) item.quantity--; 
-          else newRes.splice(resIdx, 1); 
+          if (item.quantity > qtyToSell) {
+              item.quantity -= qtyToSell;
+          } else {
+              newRes.splice(resIdx, 1); 
+          }
           
-          return { ...prev, credits: prev.credits + sellPrice, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newRes } }; 
+          return { ...prev, credits: prev.credits + totalValue, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: newRes } }; 
       }); 
       audioService.playSfx('buy'); 
   };
@@ -685,9 +692,6 @@ export default function App() {
   return (
     <>
       <StarBackground />
-      {/* ... [Rest of JSX remains mostly identical, just ensuring correct props passed to MarketDialog] ... */}
-      {/* Intentionally preserving structure but ensuring MarketDialog gets listing data */}
-      
       {screen === 'intro' && (
         <div className="relative w-full h-full flex items-center justify-center">
           <StoryScene />
@@ -1021,7 +1025,6 @@ export default function App() {
           />
       )}
       
-      {/* Updated MarketDialog Call with Market Listings */}
       <MarketDialog 
         isOpen={isMarketOpen} 
         onClose={() => setIsMarketOpen(false)} 
@@ -1034,7 +1037,7 @@ export default function App() {
         marketSell={marketSell} 
         fontSize={gameState.settings.fontSize}
         currentPlanet={dockedPlanet || PLANETS[0]}
-        marketListings={gameState.marketListingsByPlanet[dockedId] || []} // PASS LISTINGS
+        marketListings={gameState.marketListingsByPlanet[dockedId] || []}
         shipFitting={selectedFitting || undefined}
         shipConfig={selectedShipConfig || undefined}
       />
