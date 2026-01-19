@@ -1,5 +1,6 @@
+
 import React, { useRef, useEffect, useState } from 'react';
-import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData } from '../types.ts';
+import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData, AmmoType } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
 import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, BOSS_SHIPS, AMMO_CONFIG } from '../constants.ts';
 import { getEngineCoordinates, getWingMounts } from '../utils/drawingUtils.ts';
@@ -546,6 +547,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     missiles: activeShip.fitting.rocketCount, mines: activeShip.fitting.mineCount, redMines: activeShip.fitting.redMineCount || 0,
     cargo: [...activeShip.fitting.cargo],
     ammo: { ...activeShip.fitting.ammo }, 
+    // INDEPENDENT GUN STATES
+    gunStates: {} as Record<number, { mag: number, reloadTimer: number, maxMag: number }>,
+    
+    // Legacy magazine properties (kept for safety but not primary logic for guns now)
     magazineCurrent: activeShip.fitting.magazineCurrent !== undefined ? activeShip.fitting.magazineCurrent : 200, 
     reloadTimer: activeShip.fitting.reloadTimer || 0,
     selectedAmmo: activeShip.fitting.selectedAmmo,
@@ -596,6 +601,35 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       s.mines = activeShip.fitting.mineCount;
       s.redMines = activeShip.fitting.redMineCount || 0;
       
+      // Initialize Ammo Pool from both record AND cargo
+      // We sum up everything to allow flexible usage
+      s.ammo = { ...activeShip.fitting.ammo };
+      activeShip.fitting.cargo.forEach(c => {
+          if (c.type === 'ammo') {
+              // Assuming 1 Cargo Unit = 1000 rounds (Standard clip size)
+              const qty = c.quantity * 1000;
+              const type = c.id as AmmoType;
+              s.ammo[type] = (s.ammo[type] || 0) + qty;
+          }
+      });
+
+      // Initialize Independent Gun States
+      activeShip.fitting.weapons.forEach((w, i) => {
+          if (w) {
+              const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === w.id);
+              if (def && def.isAmmoBased) {
+                  // Each gun gets its own magazine state
+                  // Default to full 200 clip if no previous state, or persist from global if desired
+                  // For independent reload logic, we'll start with 200 per gun.
+                  s.gunStates[i] = {
+                      mag: 200, 
+                      reloadTimer: 0,
+                      maxMag: 200
+                  };
+              }
+          }
+      });
+
       const initStars = () => {
           const w = window.innerWidth;
           const h = window.innerHeight;
@@ -641,9 +675,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
       
-      // Calculate position relative to canvas
-      // e.clientX is viewport x.
-      // If canvas is full screen, this is usually accurate unless css scaling.
       targetRef.current = { x: e.clientX, y: e.clientY };
       
       // Permission hack for iOS Motion (first interaction)
@@ -651,7 +682,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           (DeviceMotionEvent as any).requestPermission()
               .then((response: string) => {
                   if (response === 'granted') {
-                      // listeners are already added in useEffect, this just grants access
+                      // listeners are already added in useEffect
                   }
               })
               .catch(console.error);
@@ -660,17 +691,37 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
   const handleTabReload = () => {
       const s = state.current;
-      if (s.ammo[s.selectedAmmo] > 0 && s.magazineCurrent < 1000) {
-          const needed = 1000 - s.magazineCurrent;
-          const take = Math.min(needed, s.ammo[s.selectedAmmo]);
-          s.magazineCurrent += take;
-          s.ammo[s.selectedAmmo] -= take;
-          s.reloadTimer = 0; 
-          setHud(h => ({...h, isReloading: false, alert: 'INSTANT RELOAD'}));
+      // Manual reload triggers reload for ALL empty/partial guns immediately if ammo available
+      let reloadedAny = false;
+      
+      Object.keys(s.gunStates).forEach(keyStr => {
+          const idx = parseInt(keyStr);
+          const gun = s.gunStates[idx];
+          
+          if (gun.mag < gun.maxMag) {
+              const needed = gun.maxMag - gun.mag;
+              // Determine ammo type
+              const wId = activeShip.fitting.weapons[idx]?.id;
+              const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
+              const type = wDef?.defaultAmmo || 'iron';
+              
+              const available = s.ammo[type as AmmoType] || 0;
+              if (available > 0) {
+                  const take = Math.min(needed, available);
+                  s.ammo[type as AmmoType] -= take;
+                  gun.mag += take;
+                  gun.reloadTimer = 0;
+                  reloadedAny = true;
+              }
+          }
+      });
+
+      if (reloadedAny) {
           audioService.playSfx('buy');
-          return;
+          setHud(h => ({...h, isReloading: false, alert: 'MANUAL RELOAD'}));
+      } else {
+          audioService.playSfx('denied');
       }
-      audioService.playSfx('denied');
   };
 
   useEffect(() => {
@@ -744,6 +795,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const delay = 1000 / fireRate;
 
       if (Date.now() - s.lastRapidFire > delay) {
+          // Check Ammo if applicable for Main Gun
+          if (mainDef && mainDef.isAmmoBased) {
+              const gun = s.gunStates[0];
+              if (!gun || gun.mag <= 0) return; // Empty
+              gun.mag--;
+          }
+
           let damage = mainDef ? mainDef.damage : 45;
           let weaponId = mainDef ? mainDef.id : 'gun_pulse';
           const crystalColor = (mainDef?.beamColor) || (activeShip.gunColor || activeShip.config.noseGunColor || '#f87171');
@@ -756,7 +814,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   s.bullets.push({ x: s.px, y: s.py - 24, vx: Math.sin(a) * 40, vy: -Math.cos(a) * 40, damage, color: '#facc15', type: 'laser', life: 15, isEnemy: false, width: 3, height: 100, weaponId, glow: true, glowIntensity: 15 });
               }
           } else if (mainDef?.id === 'exotic_gravity_wave') {
-              // GRAVITY WAVE: 30 degree cone (-15 to +15), Blue Arcs
               const angles = [-15, 0, 15];
               angles.forEach(deg => {
                   const rad = deg * (Math.PI / 180);
@@ -805,7 +862,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   const damage = wDef.damage; const color = wDef.beamColor || '#fff'; const bulletSpeed = w.id.includes('exotic') ? 12 : 18; 
                   
                   if (wDef.id === 'exotic_gravity_wave') {
-                      // Alien Gravity Wave Logic
                       const angles = [-15, 0, 15];
                       angles.forEach(deg => {
                           const rad = deg * (Math.PI / 180);
@@ -831,22 +887,31 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const mounts = getWingMounts(activeShip.config); 
       const wings = [activeShip.fitting.weapons[1], activeShip.fitting.weapons[2]]; 
       let fired = false; 
+      
       wings.forEach((w, i) => { 
+          const slotIdx = i + 1; // 1 or 2
           if (w && w.id) { 
               const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); 
               if (wDef) { 
                   const interval = Math.max(1, Math.floor(60 / wDef.fireRate)); 
                   if (s.frame % interval === 0) { 
-                      if (wDef.isAmmoBased) { if (s.magazineCurrent <= 0) return; s.magazineCurrent--; } 
+                      
+                      // INDEPENDENT AMMO LOGIC
+                      if (wDef.isAmmoBased) {
+                          const gun = s.gunStates[slotIdx];
+                          // If no gun state initialized or empty, skip fire
+                          if (!gun || gun.mag <= 0) return;
+                          
+                          gun.mag--; // Consume independent mag
+                      } 
                       else if (s.energy < wDef.energyCost) return; 
                       
-                      s.weaponFireTimes[i+1] = Date.now(); 
+                      s.weaponFireTimes[slotIdx] = Date.now(); 
                       const scale = 0.6; const mx = mounts[i].x; const my = mounts[i].y; 
                       const startX = s.px + (mx - 50) * scale; const startY = s.py + (my - 50) * scale; 
                       const damage = wDef.damage; const color = wDef.beamColor || '#fff'; 
                       
                       if (wDef.id === 'exotic_gravity_wave') {
-                          // Standard Ship Wing Gravity Wave
                           const angles = [-15, 0, 15];
                           angles.forEach(deg => {
                               const rad = deg * (Math.PI / 180);
@@ -1016,6 +1081,44 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
         
         if (!s.rescueMode) {
+            // RELOAD LOGIC - INDEPENDENT PER GUN
+            Object.keys(s.gunStates).forEach(keyStr => {
+                const key = parseInt(keyStr);
+                const gun = s.gunStates[key];
+
+                // If gun is empty and not already reloading
+                if (gun.mag <= 0 && gun.reloadTimer === 0) {
+                    // Check reserve
+                    const wId = activeShip.fitting.weapons[key]?.id;
+                    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
+                    const type = wDef?.defaultAmmo || 'iron';
+                    
+                    if ((s.ammo[type] || 0) > 0) {
+                         gun.reloadTimer = Date.now() + 10000; // 10 seconds
+                         setHud(h => ({...h, alert: "RELOADING ORDNANCE...", alertType: 'warning'}));
+                    }
+                }
+                
+                // Check if reload complete
+                if (gun.reloadTimer > 0 && Date.now() > gun.reloadTimer) {
+                    const wId = activeShip.fitting.weapons[key]?.id;
+                    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
+                    const type = wDef?.defaultAmmo || 'iron';
+                    const available = s.ammo[type] || 0;
+                    
+                    if (available > 0) {
+                        const take = Math.min(gun.maxMag, available);
+                        s.ammo[type] -= take;
+                        gun.mag += take;
+                        gun.reloadTimer = 0;
+                        audioService.playSfx('buy');
+                        setHud(h => ({...h, alert: "AMMUNITION CYCLED", alertType: 'success'}));
+                    } else {
+                        gun.reloadTimer = 0; // Cancel if no ammo left
+                    }
+                }
+            });
+
             if (!isFiring && s.capacitor < 100) {
                 if (s.energy > 0) {
                     s.capacitor = Math.min(100, s.capacitor + 0.5); 
@@ -1151,7 +1254,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
                         
                         // BOSS LOOT DROP
-                        // 20% Exotic Weapon, 20% Exotic Shield, 20% 100 Missiles, 20% 100 Mines, 20% 5000 High Ammo
                         const rand = Math.random();
                         let lootType = '';
                         let lootId = '';
@@ -1262,7 +1364,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             const dy = s.py - l.y;
             const dist = Math.hypot(dx, dy);
             
-            // Attraction (Increased radius from 150 to 175)
+            // Attraction
             if (dist < 175) {
                 l.isBeingPulled = true;
                 l.x += dx * 0.08;
@@ -1289,8 +1391,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 else if (l.type === 'ammo') { 
                     const ammoId = l.id as any; 
                     if (ammoId) {
-                        s.ammo[ammoId] = (s.ammo[ammoId] || 0) + (l.quantity || 1); 
-                        setHud(h => ({...h, alert: `+${l.quantity || 1} AMMO`, alertType: 'success'})); 
+                        s.ammo[ammoId] = (s.ammo[ammoId] || 0) + ((l.quantity || 1) * 1000); // 1 Unit = 1000 rounds
+                        setHud(h => ({...h, alert: `+${l.quantity || 1} AMMO UNITS`, alertType: 'success'})); 
                     }
                 }
                 else if (l.type === 'weapon' || l.type === 'shield') { 
@@ -1628,9 +1730,43 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     ctx.fillRect(-b.width/2, -b.height/2, b.width, b.height); 
                 }
             } else { 
-                // Default Projectile
+                // Default Projectile with Chemical Trail & Silver Head
+                
+                // Trail
+                const trailLen = 25 + Math.random() * 10;
+                const grad = ctx.createLinearGradient(0, 0, 0, -trailLen); // Draw upwards (behind if vy < 0)
+                // Since we translate to bullet pos, and bullet moves UP (-Y), "behind" is Down (+Y)
+                // However, standard canvas Y is down.
+                // Standard bullet: vy < 0 (moving up). 
+                // We want trail below bullet.
+                
+                // Correct direction based on velocity
+                const angle = Math.atan2(b.vy, b.vx) - Math.PI/2;
+                ctx.rotate(angle);
+                
+                // Trail (Fading gradient behind)
+                const trailGrad = ctx.createLinearGradient(0, 0, 0, -trailLen);
+                trailGrad.addColorStop(0, b.color);
+                trailGrad.addColorStop(1, 'transparent');
+                
+                ctx.fillStyle = trailGrad;
+                ctx.beginPath();
+                ctx.moveTo(-b.width/2, 0);
+                ctx.lineTo(b.width/2, 0);
+                ctx.lineTo(0, -trailLen);
+                ctx.fill();
+                
+                // Silver Head
+                ctx.fillStyle = '#a1a1aa'; // Silver/Gray
+                ctx.beginPath(); 
+                ctx.arc(0, 0, b.width/2, 0, Math.PI*2); 
+                ctx.fill();
+                
+                // Glowing Core
                 ctx.fillStyle = b.color;
-                ctx.beginPath(); ctx.arc(0,0, b.width/2, 0, Math.PI*2); ctx.fill(); 
+                ctx.beginPath(); 
+                ctx.arc(0, 0, b.width/4, 0, Math.PI*2); 
+                ctx.fill();
             }
             ctx.restore();
         });
@@ -1688,12 +1824,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         ctx.restore(); // Restore from shake translation
 
         if (s.frame % 10 === 0) { 
+            // Sum ammo for UI
+            let totalMagAmmo = 0;
+            let reloading = false;
+            Object.values(s.gunStates).forEach(g => {
+                totalMagAmmo += g.mag;
+                if (g.reloadTimer > 0) reloading = true;
+            });
+
             setHud(prev => ({ 
                 ...prev, 
                 hp: s.hp, sh1: s.sh1, fuel: s.fuel, water: s.water, energy: s.energy, 
                 score: s.score, missiles: s.missiles, mines: s.mines, redMines: s.redMines, 
                 timer: s.time, boss: s.enemies.find(e => e.type === 'boss'), 
-                ammoCount: s.magazineCurrent, isReloading: s.reloadTimer > 0,
+                ammoCount: totalMagAmmo, 
+                isReloading: reloading,
                 overload: s.capacitor, overdrive: s.overdrive, rescueMode: s.rescueMode
             })); 
         }
@@ -2146,7 +2291,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                     borderClass={hud.ammoCount < 50 ? 'border-red-600' : 'border-zinc-700 hover:border-zinc-500'}
                                     active={inputRef.current.secondary}
                                     count={hud.ammoCount}
-                                    maxCount={1000}
+                                    maxCount={1000} // Show aggregate? Or maybe 400?
                                 />
                             )}
 
@@ -2166,15 +2311,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
                 </div>
             </div>
-
-            {hud.isReloading && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
-                    <div className="flex flex-col items-center gap-2">
-                        <div className="w-12 h-12 border-4 border-t-emerald-500 border-zinc-800 rounded-full animate-spin" />
-                        <span className="text-[10px] font-black text-emerald-500 uppercase tracking-widest animate-pulse">RELOADING</span>
-                    </div>
-                </div>
-            )}
         </div>
 
         {hud.isPaused && (

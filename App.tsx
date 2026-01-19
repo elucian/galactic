@@ -582,24 +582,23 @@ export default function App() {
           }
 
           if (remainingQty > 0) {
-              if (itemType === 'ammo') {
-                  const ammoType = item.id as AmmoType;
-                  updatedFit.ammo[ammoType] = (updatedFit.ammo[ammoType] || 0) + (remainingQty * 1000); // 1 Unit = 1000 rounds
-                  updatedFit.selectedAmmo = ammoType; // Auto-select new ammo
+              // ALWAYS add to Cargo array for better inventory management visibility
+              const cargoSpace = config.maxCargo - newCargo.reduce((acc, c) => acc + c.quantity, 0);
+              const toCargo = Math.min(remainingQty, cargoSpace);
+              
+              if (toCargo > 0) {
+                  const existingIdx = newCargo.findIndex(c => c.id === item.id);
+                  if (existingIdx >= 0) { 
+                      newCargo[existingIdx] = { ...newCargo[existingIdx], quantity: newCargo[existingIdx].quantity + toCargo }; 
+                  } else { 
+                      newCargo.push({ instanceId: `buy_${Date.now()}_${item.id}`, type: itemType as any, id: item.id, name: item.name, weight: 1, quantity: toCargo }); 
+                  }
+                  updatedFit.cargo = newCargo;
                   purchased = true;
-              } else {
-                  const cargoSpace = config.maxCargo - newCargo.reduce((acc, c) => acc + c.quantity, 0);
-                  const toCargo = Math.min(remainingQty, cargoSpace);
                   
-                  if (toCargo > 0) {
-                      const existingIdx = newCargo.findIndex(c => c.id === item.id);
-                      if (existingIdx >= 0) { 
-                          newCargo[existingIdx] = { ...newCargo[existingIdx], quantity: newCargo[existingIdx].quantity + toCargo }; 
-                      } else { 
-                          newCargo.push({ instanceId: `buy_${Date.now()}_${item.id}`, type: itemType, id: item.id, name: item.name, weight: 1, quantity: toCargo }); 
-                      }
-                      updatedFit.cargo = newCargo;
-                      purchased = true;
+                  // Auto-select new ammo type for convenience if ammo bought
+                  if (itemType === 'ammo') {
+                      updatedFit.selectedAmmo = item.id as AmmoType;
                   }
               }
           }
