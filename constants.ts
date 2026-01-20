@@ -252,10 +252,14 @@ export const WEAPONS: Weapon[] = [
   { id: 'gun_bolt', name: 'Ion Emitter', type: WeaponType.LASER, price: 5000, damage: 83, fireRate: 2, energyCost: 4, cargoWeight: 4, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
   // Buffed from 35 to 53
   { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 53, fireRate: 4, energyCost: 0, cargoWeight: 10, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 3, defaultAmmo: 'titanium' }, 
+  // Level 3 Standard Projectile (New: 6 shots/s)
+  { id: 'gun_repeater', name: 'Rapid Repeater', type: WeaponType.PROJECTILE, price: 40000, damage: 45, fireRate: 6, energyCost: 0, cargoWeight: 15, isAmmoBased: true, beamColor: '#fb923c', barrelCount: 2, defaultAmmo: 'cobalt' },
   // Buffed from 30 to 45
   { id: 'gun_heavy', name: 'Heavy Chaingun', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 6, energyCost: 0, cargoWeight: 25, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'cobalt' }, 
   // Buffed from 25 to 38
-  { id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 38, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' } 
+  { id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 38, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' },
+  // Level 5 High-End Projectile (New: 12 shots/s)
+  { id: 'gun_hyper', name: 'Hyper Gatling', type: WeaponType.PROJECTILE, price: 150000, damage: 40, fireRate: 12, energyCost: 0, cargoWeight: 35, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'tungsten' } 
 ];
 
 // 9 DISTINCT EXOTIC WEAPONS

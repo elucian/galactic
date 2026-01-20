@@ -187,7 +187,16 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           const catB = getCategory(b);
           const idxA = CATEGORY_ORDER.indexOf(catA);
           const idxB = CATEGORY_ORDER.indexOf(catB);
+          
+          // Primary Sort: Category Order
           if (idxA !== idxB) return idxA - idxB;
+          
+          // Secondary Sort: Price Descending
+          const priceA = a.price || 0;
+          const priceB = b.price || 0;
+          if (priceB !== priceA) return priceB - priceA;
+          
+          // Tertiary Sort: Name
           return a.name.localeCompare(b.name);
       });
   }, [marketTab, marketListings, currentReserves, activeFilters, currentPlanet]);
@@ -209,15 +218,25 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           const isOmega = id === 'ord_mine_red';
           const isMissile = t === 'missile';
           const isMine = t === 'mine';
-          const isAmmo = t === 'ammo';
+          // Ammo logic handled via cargo space
           
-          if (isOmega) spaceLimit = Math.max(0, 5 - (shipFitting.redMineCount || 0));
-          else if (isMissile) spaceLimit = Math.max(0, 10 - shipFitting.rocketCount);
-          else if (isMine) spaceLimit = Math.max(0, 10 - shipFitting.mineCount);
-          else if (isAmmo) spaceLimit = 99999; 
+          const currentLoad = shipFitting.cargo.reduce((acc, c) => acc + c.quantity, 0);
+          const freeCargo = Math.max(0, shipConfig.maxCargo - currentLoad);
+          
+          if (isOmega) {
+              const slotFree = Math.max(0, 5 - (shipFitting.redMineCount || 0));
+              spaceLimit = slotFree + freeCargo;
+          }
+          else if (isMissile) {
+              const slotFree = Math.max(0, 10 - shipFitting.rocketCount);
+              spaceLimit = slotFree + freeCargo;
+          }
+          else if (isMine) {
+              const slotFree = Math.max(0, 10 - shipFitting.mineCount);
+              spaceLimit = slotFree + freeCargo;
+          }
           else {
-              const currentLoad = shipFitting.cargo.reduce((acc, c) => acc + c.quantity, 0);
-              spaceLimit = Math.max(0, shipConfig.maxCargo - currentLoad);
+              spaceLimit = freeCargo;
           }
       }
 
@@ -226,11 +245,29 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
 
   const cargoImpact = useMemo(() => {
       if (!selectedItem || marketTab === 'sell') return 0;
+      if (!shipFitting) return transactionQty;
+
       const t = selectedItem.type;
       const id = selectedItem.id;
-      if (id === 'ord_mine_red' || t === 'missile' || t === 'mine' || t === 'ammo') return 0;
+      const isOmega = id === 'ord_mine_red';
+      const isMissile = t === 'missile';
+      const isMine = t === 'mine';
+      
+      if (isOmega) {
+          const slotFree = Math.max(0, 5 - (shipFitting.redMineCount || 0));
+          return Math.max(0, transactionQty - slotFree);
+      }
+      if (isMissile) {
+          const slotFree = Math.max(0, 10 - shipFitting.rocketCount);
+          return Math.max(0, transactionQty - slotFree);
+      }
+      if (isMine) {
+          const slotFree = Math.max(0, 10 - shipFitting.mineCount);
+          return Math.max(0, transactionQty - slotFree);
+      }
+      
       return transactionQty; 
-  }, [selectedItem, transactionQty, marketTab]);
+  }, [selectedItem, transactionQty, marketTab, shipFitting]);
 
   useEffect(() => {
       if (maxTransaction > 0) setTransactionQty(1);

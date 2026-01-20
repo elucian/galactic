@@ -25,8 +25,9 @@ interface Projectile {
   weaponId?: string; isOvercharge?: boolean; isTracer?: boolean; traceColor?: string;
   homingState?: 'searching' | 'tracking' | 'returning' | 'engaging' | 'launching';
   target?: Enemy | null;
+  targetLostCounter?: number;
   launchTime?: number; headColor?: string; finsColor?: string; turnRate?: number; maxSpeed?: number;
-  accel?: number; z?: number;
+  accel?: number; z?: number; vz?: number; // Added vz for 3D steering
   angleOffset?: number; growthRate?: number; originalSize?: number;
   isEmp?: boolean;
 }
@@ -37,15 +38,6 @@ interface Particle {
   size: number; color: string; type?: string;
   decay?: number; grow?: number; initialAlpha?: number;
   rotation?: number; spin?: number;
-}
-
-interface FloatingText {
-  x: number; y: number;
-  text: string;
-  life: number;
-  color: string;
-  vy: number;
-  size: number;
 }
 
 interface Loot {
@@ -66,23 +58,25 @@ class Asteroid {
     this.vy = 2 + Math.random() * 2; 
     this.vx = (Math.random() - 0.5) * 6; 
     this.vz = (Math.random() - 0.5);
-    this.size = 15 + Math.random() * 25; 
+    // Smaller asteroids: 12 to 27
+    this.size = 12 + Math.random() * 15; 
     this.hp = (this.size * 30) + (this.size * this.size);
     this.vax = (Math.random() - 0.5) * 0.05; 
     this.vay = (Math.random() - 0.5) * 0.05; 
     this.vaz = (Math.random() - 0.5) * 0.05; 
     
     let variantPool = [];
+    // Increased frequency of 'ice' (blue) asteroids by ~40% across all quadrants
     if (quadrant === QuadrantType.ALFA) {
-        variantPool = [...Array(4).fill('ice'), ...Array(3).fill('platinum'), 'rock', 'copper'];
+        variantPool = [...Array(6).fill('ice'), ...Array(3).fill('platinum'), 'rock', 'copper'];
     } else if (quadrant === QuadrantType.BETA) {
-        variantPool = ['ice', 'ice', 'platinum', 'platinum', 'rock', 'rock', 'copper', 'copper'];
+        variantPool = ['ice', 'ice', 'ice', 'ice', 'platinum', 'platinum', 'rock', 'rock', 'copper', 'copper'];
     } else if (quadrant === QuadrantType.GAMA) {
-        variantPool = ['platinum', 'platinum', 'rock', 'rock', 'rock', 'rust', 'rust', 'copper'];
+        variantPool = ['ice', 'ice', 'ice', 'platinum', 'platinum', 'rock', 'rock', 'rock', 'rust', 'rust', 'copper'];
     } else if (quadrant === QuadrantType.DELTA) {
-        variantPool = ['gold', 'gold', 'gold', 'rare', 'rare', 'platinum', 'platinum', 'ice'];
+        variantPool = ['gold', 'gold', 'gold', 'rare', 'rare', 'platinum', 'platinum', 'ice', 'ice', 'ice'];
     } else {
-        variantPool = ['rock'];
+        variantPool = ['rock', 'ice'];
     }
 
     const selectedType = variantPool[Math.floor(Math.random() * variantPool.length)];
@@ -279,10 +273,25 @@ class Enemy {
           return { dmg: actualDamage, isShield: false };
       }
 
-      if (type === 'missile' || type === 'mine') {
+      if (type === 'missile' || type === 'mine' || type === 'explosion') {
           let percentage = isBoss ? 0.25 : 0.8;
-          if (type === 'mine') percentage = isBoss ? 0.3 : 0.9;
+          if (type === 'mine' || type === 'explosion') percentage = isBoss ? 0.3 : 0.9;
           
+          if (type === 'explosion') {
+              actualDamage = amount; 
+              if (this.shieldLayers.length > 0 && this.shieldDisabledUntil <= 0) {
+                  const layer = this.shieldLayers[0];
+                  layer.current -= actualDamage;
+                  hitShield = true;
+                  if (layer.current <= 0) this.shieldLayers.shift();
+                  this.vibration = 30;
+              } else {
+                  this.hp -= actualDamage;
+                  this.vibration = 40;
+              }
+              return { dmg: actualDamage, isShield: hitShield };
+          }
+
           if (this.shieldLayers.length > 0 && this.shieldDisabledUntil <= 0) {
               const layer = this.shieldLayers[0];
               const shieldDmg = layer.max * 0.8; 
@@ -514,7 +523,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const hasGuns = activeShip?.fitting.weapons.some(w => !!w);
 
   const hudLabel = fontSize === 'small' ? 'text-[8px]' : (fontSize === 'large' ? 'text-[12px]' : 'text-[10px]');
-  // Reduced font sizes by ~50% as requested
   const hudScore = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-lg' : 'text-sm');
   const hudTimer = fontSize === 'small' ? 'text-xs' : (fontSize === 'large' ? 'text-xl' : 'text-base');
   const hudAlertText = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[16px]' : 'text-[12px]');
@@ -542,15 +550,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     px: window.innerWidth/2, py: window.innerHeight*0.8, hp: 100, fuel: 0, water: 0, energy: maxEnergy, 
     sh1: 0, sh2: 0, score: 0, time: mode === 'drift' ? 60 : 120, phase: 'travel', bossSpawned: false, bossDead: false,
     enemies: [] as Enemy[], asteroids: [] as Asteroid[], bullets: [] as Projectile[], 
-    particles: [] as Particle[], floatingTexts: [] as FloatingText[], loot: [] as Loot[], stars: [] as {x:number, y:number, s:number}[],
+    particles: [] as Particle[], loot: [] as Loot[], stars: [] as {x:number, y:number, s:number}[],
     keys: new Set<string>(), lastFire: 0, lastSpawn: 0, frame: 0, 
     missiles: activeShip.fitting.rocketCount, mines: activeShip.fitting.mineCount, redMines: activeShip.fitting.redMineCount || 0,
     cargo: [...activeShip.fitting.cargo],
     ammo: { ...activeShip.fitting.ammo }, 
-    // INDEPENDENT GUN STATES
     gunStates: {} as Record<number, { mag: number, reloadTimer: number, maxMag: number }>,
-    
-    // Legacy magazine properties (kept for safety but not primary logic for guns now)
     magazineCurrent: activeShip.fitting.magazineCurrent !== undefined ? activeShip.fitting.magazineCurrent : 200, 
     reloadTimer: activeShip.fitting.reloadTimer || 0,
     selectedAmmo: activeShip.fitting.selectedAmmo,
@@ -586,7 +591,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     isCapacitorCharging: false,
     salvoTimer: 0,
     lastSalvoFire: 0,
-    currentThrottle: 0, // -1.0 to 1.0 (smooth)
+    currentThrottle: 0, 
     shipVy: 0,
   });
 
@@ -601,26 +606,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       s.mines = activeShip.fitting.mineCount;
       s.redMines = activeShip.fitting.redMineCount || 0;
       
-      // Initialize Ammo Pool from both record AND cargo
-      // We sum up everything to allow flexible usage
       s.ammo = { ...activeShip.fitting.ammo };
       activeShip.fitting.cargo.forEach(c => {
           if (c.type === 'ammo') {
-              // Assuming 1 Cargo Unit = 1000 rounds (Standard clip size)
               const qty = c.quantity * 1000;
               const type = c.id as AmmoType;
               s.ammo[type] = (s.ammo[type] || 0) + qty;
           }
       });
 
-      // Initialize Independent Gun States
       activeShip.fitting.weapons.forEach((w, i) => {
           if (w) {
               const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === w.id);
               if (def && def.isAmmoBased) {
-                  // Each gun gets its own magazine state
-                  // Default to full 200 clip if no previous state, or persist from global if desired
-                  // For independent reload logic, we'll start with 200 per gun.
                   s.gunStates[i] = {
                       mag: 200, 
                       reloadTimer: 0,
@@ -668,61 +666,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   }, []);
 
   const handlePointerDown = (e: React.PointerEvent) => {
-      // Check if clicking a HUD button
       const target = e.target as HTMLElement;
       if (target.closest('button') || target.tagName === 'BUTTON') return;
-      
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
-      
       targetRef.current = { x: e.clientX, y: e.clientY };
-      
-      // Permission hack for iOS Motion (first interaction)
       if (typeof (DeviceMotionEvent as any).requestPermission === 'function') {
           (DeviceMotionEvent as any).requestPermission()
               .then((response: string) => {
-                  if (response === 'granted') {
-                      // listeners are already added in useEffect
-                  }
+                  if (response === 'granted') {}
               })
               .catch(console.error);
       }
   };
 
-  const handleTabReload = () => {
-      const s = state.current;
-      // Manual reload triggers reload for ALL empty/partial guns immediately if ammo available
-      let reloadedAny = false;
-      
-      Object.keys(s.gunStates).forEach(keyStr => {
-          const idx = parseInt(keyStr);
-          const gun = s.gunStates[idx];
-          
-          if (gun.mag < gun.maxMag) {
-              const needed = gun.maxMag - gun.mag;
-              // Determine ammo type
-              const wId = activeShip.fitting.weapons[idx]?.id;
-              const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
-              const type = wDef?.defaultAmmo || 'iron';
-              
-              const available = s.ammo[type as AmmoType] || 0;
-              if (available > 0) {
-                  const take = Math.min(needed, available);
-                  s.ammo[type as AmmoType] -= take;
-                  gun.mag += take;
-                  gun.reloadTimer = 0;
-                  reloadedAny = true;
-              }
-          }
-      });
-
-      if (reloadedAny) {
-          audioService.playSfx('buy');
-          setHud(h => ({...h, isReloading: false, alert: 'MANUAL RELOAD'}));
-      } else {
-          audioService.playSfx('denied');
-      }
-  };
+  const handleTabReload = () => {};
 
   useEffect(() => {
     const k = state.current.keys;
@@ -762,44 +720,148 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const s = state.current;
       const mainWeapon = activeShip.fitting.weapons[0];
       const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null;
-      const dmg = (mainDef ? mainDef.damage : 45) * 3.0; 
-      const color = mainDef ? mainDef.beamColor : '#fff';
       
-      const angle = (Math.random() - 0.5) * 0.1;
-      s.bullets.push({
-          x: s.px, y: s.py - 24, 
-          vx: Math.sin(angle) * 15, vy: -Math.cos(angle) * 25, 
-          damage: dmg, 
-          color: color || '#fff', 
-          type: 'laser', 
-          life: 50, 
-          isEnemy: false, 
-          width: 12, height: 60, 
-          glow: true, glowIntensity: 30, 
-          isMain: true, 
-          weaponId: mainWeapon?.id || 'gun_pulse',
-          isOvercharge: true
-      });
+      const baseDamage = mainDef ? mainDef.damage : 45;
+      const dmg = baseDamage * 10.0; // 10x damage
+      
+      if (mainDef?.id === 'exotic_octo_burst') {
+          // Power shot: Straight, 10x damage, 50% slower fire rate (handled by caller timing)
+          const speed = 25;
+          s.bullets.push({ 
+              x: s.px, y: s.py - 24, 
+              vx: 0, vy: -speed, 
+              damage: dmg, 
+              color: '#a855f7', // Purple/Pink plasma
+              type: 'projectile', 
+              life: 50, 
+              isEnemy: false, 
+              width: 15, height: 40, // Longer, fatter
+              weaponId: mainWeapon?.id,
+              isOvercharge: true,
+              glow: true,
+              glowIntensity: 30 // More glowing
+          });
+      } else if (mainDef?.id === 'exotic_phaser_sweep') {
+          // Power shot: Straight, 30% longer (120 * 1.3 ~ 160), from tip
+          s.bullets.push({ 
+              x: s.px, y: s.py - 45, 
+              vx: 0, vy: -40, 
+              damage: dmg, 
+              color: '#facc15', 
+              type: 'laser', 
+              life: 15, 
+              isEnemy: false, 
+              width: 8, height: 160, 
+              weaponId: mainWeapon?.id,
+              isOvercharge: true,
+              glow: true,
+              glowIntensity: 25 
+          });
+      } else if (mainDef?.id === 'exotic_flamer') {
+          // Power Shot: Straight growing fireball, starts small (rice), grows to big (cent)
+          s.bullets.push({ 
+              x: s.px, y: s.py - 40, 
+              vx: 0, vy: -20, 
+              damage: dmg, 
+              color: '#f97316', 
+              type: 'projectile', 
+              life: 50, 
+              isEnemy: false, 
+              width: 4, height: 8, // Rice size
+              weaponId: mainWeapon?.id,
+              isOvercharge: true,
+              growthRate: 1.2, // Grows to ~60px
+              glow: true,
+              glowIntensity: 20
+          });
+      } else if (mainDef?.id === 'exotic_rainbow_spread') {
+          // Power Shot: Full Rainbow Ring growing rapidly straight ahead
+          s.bullets.push({ 
+              x: s.px, y: s.py - 30, 
+              vx: 0, vy: -12, // Move forward
+              damage: dmg, 
+              color: '#ffffff', // Multi-color handled in draw
+              type: 'projectile', 
+              life: 60, 
+              isEnemy: false, 
+              width: 20, // Start slightly larger for power shot
+              height: 5, // Start thickness
+              weaponId: mainDef.id,
+              growthRate: 3.0, // Grows faster
+              isOvercharge: true
+          });
+      } else if (mainDef?.id === 'exotic_star_shatter') {
+          // Power Shot: Devastating Single Star (WHITE), 3 shots/sec (handled by caller logic)
+          // Start small (6px width), grow rapidly
+          s.bullets.push({ 
+              x: s.px, y: s.py - 40, 
+              vx: 0, vy: -15, // Fast straight shot
+              damage: baseDamage, // Base damage for calculation later
+              color: '#ffffff', // WHITE with gold glow
+              type: 'projectile', 
+              life: 60, 
+              isEnemy: false, 
+              width: 6, // Start small
+              height: 6,
+              weaponId: mainDef.id,
+              growthRate: 0.5, // Grows to ~36px
+              isOvercharge: true
+          });
+      } else {
+          const color = mainDef ? mainDef.beamColor : '#fff';
+          
+          // Standard size based on weapon type or default
+          const baseW = 4; 
+          const baseH = 25;
+          
+          // "longer 20% and 10% larger (wider)"
+          const width = baseW * 1.1; 
+          const height = baseH * 1.2;
+
+          s.bullets.push({
+              x: s.px, y: s.py - 24, 
+              vx: 0, vy: -35,
+              damage: dmg, 
+              color: color || '#fff', 
+              type: 'laser', 
+              life: 50, 
+              isEnemy: false, 
+              width: width, 
+              height: height, 
+              glow: true, 
+              glowIntensity: 20, // Discrete glow
+              isMain: true, 
+              weaponId: mainWeapon?.id || 'gun_pulse',
+              isOvercharge: true
+          });
+      }
       
       s.weaponFireTimes[0] = Date.now();
       audioService.playWeaponFire('mega', 0, activeShip.config.id);
-      s.shakeX = 5;
-      s.shakeY = 5;
+      s.shakeX = 3; 
+      s.shakeY = 3;
   };
 
   const fireRapidShot = () => {
       const s = state.current;
       const mainWeapon = activeShip.fitting.weapons[0];
       const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null;
-      const fireRate = mainDef ? mainDef.fireRate : 4;
+      
+      // FIRE RATE OVERRIDE: 
+      // Rainbow Nova = 6 shots/sec
+      // Star Shatter = 6 shots/sec (Normal Mode)
+      const fireRate = (mainDef?.id === 'exotic_rainbow_spread' || mainDef?.id === 'exotic_star_shatter') ? 6 : (mainDef ? mainDef.fireRate : 4);
       const delay = 1000 / fireRate;
 
       if (Date.now() - s.lastRapidFire > delay) {
-          // Check Ammo if applicable for Main Gun
           if (mainDef && mainDef.isAmmoBased) {
               const gun = s.gunStates[0];
-              if (!gun || gun.mag <= 0) return; // Empty
+              if (!gun || gun.mag <= 0) return; 
               gun.mag--;
+          } else {
+              // Regular fire consumes Reactor Energy
+              if (s.energy < (mainDef ? mainDef.energyCost : 5)) return;
+              s.energy -= (mainDef ? mainDef.energyCost : 5);
           }
 
           let damage = mainDef ? mainDef.damage : 45;
@@ -807,12 +869,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           const crystalColor = (mainDef?.beamColor) || (activeShip.gunColor || activeShip.config.noseGunColor || '#f87171');
           
           if (mainDef?.id === 'exotic_phaser_sweep') {
-              const cycleFrames = 30; const sweepFrames = 18; const cycleIndex = Math.floor(s.frame / cycleFrames); const frameInCycle = s.frame % cycleFrames;
-              if (frameInCycle < sweepFrames) {
-                  const prog = frameInCycle / sweepFrames; const range = 60 * (Math.PI / 180); const start = 0 - (30 * Math.PI / 180);
-                  let a = 0; if (cycleIndex % 2 === 0) { a = start + (range * prog); } else { a = (start + range) - (range * prog); }
-                  s.bullets.push({ x: s.px, y: s.py - 24, vx: Math.sin(a) * 40, vy: -Math.cos(a) * 40, damage, color: '#facc15', type: 'laser', life: 15, isEnemy: false, width: 3, height: 100, weaponId, glow: true, glowIntensity: 15 });
-              }
+              // Smooth Sine Sweep Logic
+              const sweepSpeed = 0.15;
+              const maxAngle = 45 * (Math.PI / 180);
+              const angle = Math.sin(s.frame * sweepSpeed) * maxAngle;
+              
+              // Shorter beams (height ~60), shorter travel (life ~8), from tip (y-45)
+              s.bullets.push({ 
+                  x: s.px, y: s.py - 45, 
+                  vx: Math.sin(angle) * 40, vy: -Math.cos(angle) * 40, 
+                  damage, color: '#facc15', type: 'laser', 
+                  life: 8, isEnemy: false, width: 5, height: 60, 
+                  weaponId, glow: true, glowIntensity: 15 
+              });
           } else if (mainDef?.id === 'exotic_gravity_wave') {
               const angles = [-15, 0, 15];
               angles.forEach(deg => {
@@ -825,6 +894,95 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                       weaponId, growthRate: 0.5 
                   });
               });
+          } else if (mainDef?.id === 'exotic_octo_burst') {
+              // Random spread +/- 5 degrees (total 10 degree spread)
+              const spread = 10 * (Math.PI / 180);
+              const angle = (Math.random() - 0.5) * spread; // -5 to +5 degrees
+              const speed = 20; // Fast plasma
+              const vx = Math.sin(angle) * speed;
+              const vy = -Math.cos(angle) * speed;
+              
+              s.bullets.push({ 
+                  x: s.px, y: s.py - 24, 
+                  vx, vy, 
+                  damage, 
+                  color: '#a855f7', 
+                  type: 'projectile', 
+                  life: 40, 
+                  isEnemy: false, 
+                  width: 10, height: 20, // Short and fat-ish
+                  weaponId,
+                  isOvercharge: false // Normal shot
+              });
+          } else if (mainDef?.id === 'exotic_flamer') {
+              // Normal Flamer: Cone 20deg, Blue/Yellow/Red, Grows slowly
+              const spread = 20 * (Math.PI / 180);
+              const angle = (Math.random() - 0.5) * spread; 
+              const speed = 15;
+              const vx = Math.sin(angle) * speed;
+              const vy = -Math.cos(angle) * speed;
+              
+              const colors = ['#3b82f6', '#facc15', '#ef4444'];
+              const selectedColor = colors[Math.floor(Math.random() * colors.length)];
+
+              s.bullets.push({ 
+                  x: s.px, y: s.py - 30, 
+                  vx, vy, 
+                  damage, 
+                  color: selectedColor, 
+                  type: 'projectile', 
+                  life: 35, 
+                  isEnemy: false, 
+                  width: 8, height: 8, 
+                  weaponId,
+                  growthRate: 0.4, 
+                  isOvercharge: false
+              });
+          } else if (mainDef?.id === 'exotic_rainbow_spread') {
+              // Rainbow Nova: Expanding Rainbow Arc (Semicircle 120 deg)
+              // Radius grows from small (4px) to big (~60px), Thickness 3px -> 8px
+              
+              s.bullets.push({ 
+                  x: s.px, y: s.py - 30, 
+                  vx: 0, vy: -12, // Move forward
+                  damage, 
+                  color: '#ffffff', // Multi-color handled in draw
+                  type: 'projectile', 
+                  life: 50, // Fades out
+                  isEnemy: false, 
+                  width: 8, // Initial Diameter (Radius 4)
+                  height: 3, // Initial Thickness 3px
+                  weaponId,
+                  growthRate: 2.0, // Expand radius
+                  isOvercharge: false
+              });
+          } else if (mainDef?.id === 'exotic_star_shatter') {
+              // Star Shatter: 12 Stars growing 4->12, Arc, Simultaneous
+              // Orange Color (#fbbf24) for Normal
+              const count = 12;
+              const arc = 60 * (Math.PI / 180); // 60 degrees spread
+              const startAngle = -Math.PI / 2 - arc / 2;
+              const step = arc / (count - 1);
+              
+              for(let i=0; i<count; i++) {
+                  const angle = startAngle + (i * step);
+                  const speed = 12;
+                  s.bullets.push({
+                      x: s.px, y: s.py - 30,
+                      vx: Math.cos(angle) * speed,
+                      vy: Math.sin(angle) * speed,
+                      damage,
+                      color: '#fbbf24', // Orange
+                      type: 'projectile',
+                      life: 45,
+                      isEnemy: false,
+                      width: 4, // Start size 4
+                      height: 4,
+                      weaponId,
+                      growthRate: 0.2, // Grows to ~13 over 45 frames
+                      isOvercharge: false
+                  });
+              }
           } else {
               s.bullets.push({ x: s.px, y: s.py - 24, vx: 0, vy: -30, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, glow: true, glowIntensity: 5, isMain: true, weaponId });
               audioService.playWeaponFire('cannon', 0, activeShip.config.id);
@@ -836,9 +994,94 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       }
   };
 
-  const fireMissile = () => { const s = state.current; if (s.missiles > 0) { const isEmp = s.missiles % 2 !== 0; s.missiles--; s.lastMissileFire = Date.now(); s.bullets.push({ x: s.px, y: s.py, vx: 0, vy: -2, damage: 0, color: isEmp ? '#22d3ee' : '#ef4444', type: isEmp ? 'missile_emp' : 'missile', life: 600, isEnemy: false, width: 12, height: 28, homingState: 'launching', launchTime: s.frame, headColor: isEmp ? '#22d3ee' : '#ef4444', finsColor: isEmp ? '#0ea5e9' : '#ef4444', turnRate: 0.05, maxSpeed: 14, z: 0 }); audioService.playWeaponFire(isEmp ? 'emp' : 'missile'); } };
-  const fireMine = () => { const s = state.current; if (s.mines > 0) { const isEmp = s.mines % 2 !== 0; s.mines--; s.lastMineFire = Date.now(); s.mineSide = !s.mineSide; const sideAngle = s.mineSide ? -235 : 55; const rad = (sideAngle * Math.PI) / 180; const spread = (Math.random() - 0.5) * 0.5; const speed = 3 + Math.random(); s.bullets.push({ x: s.px, y: s.py + 20, vx: Math.cos(rad + spread) * speed, vy: Math.sin(rad + spread) * speed, damage: 0, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: s.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); audioService.playWeaponFire('mine'); } };
-  const fireRedMine = () => { const s = state.current; if (s.redMines > 0) { s.redMines--; s.lastRedMineFire = Date.now(); s.omegaSide = !s.omegaSide; const sideAngle = s.omegaSide ? -235 : 55; const rad = (sideAngle * Math.PI) / 180; const speed = 1.5; s.bullets.push({ x: s.px, y: s.py + 30, vx: Math.cos(rad) * speed, vy: Math.sin(rad) * speed, damage: 0, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'searching', turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); audioService.playWeaponFire('mine'); setHud(h => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); } };
+  const fireMissile = () => { 
+      const s = state.current; 
+      if (s.missiles > 0) { 
+          const isEmp = s.missiles % 2 !== 0; 
+          s.missiles--; 
+          s.lastMissileFire = Date.now(); 
+          s.bullets.push({ 
+              x: s.px, y: s.py, 
+              vx: 0, vy: -3, vz: 0, 
+              damage: 0, 
+              color: isEmp ? '#22d3ee' : '#ef4444', 
+              type: isEmp ? 'missile_emp' : 'missile', 
+              life: 600, 
+              isEnemy: false, 
+              width: 12, height: 28, 
+              homingState: 'launching', 
+              launchTime: s.frame, 
+              headColor: isEmp ? '#22d3ee' : '#ef4444', 
+              finsColor: isEmp ? '#0ea5e9' : '#ef4444', 
+              turnRate: 0.05, 
+              maxSpeed: 14, 
+              z: 0 
+          }); 
+          audioService.playWeaponFire(isEmp ? 'emp' : 'missile'); 
+      } 
+  };
+
+  const fireMine = () => { 
+      const s = state.current; 
+      if (s.mines > 0) { 
+          const isEmp = s.mines % 2 !== 0; 
+          s.mines--; 
+          s.lastMineFire = Date.now(); 
+          s.mineSide = !s.mineSide; 
+          
+          const speed = 5;
+          const vx = s.mineSide ? -speed : speed;
+          
+          s.bullets.push({ 
+              x: s.px, y: s.py + 20, 
+              vx: vx, vy: 0, vz: 0,
+              damage: 0, 
+              color: isEmp ? '#22d3ee' : '#fbbf24', 
+              type: isEmp ? 'mine_emp' : 'mine', 
+              life: 600, 
+              isEnemy: false, 
+              width: 14, height: 14, 
+              homingState: 'launching', 
+              launchTime: s.frame, 
+              turnRate: 0.08, 
+              maxSpeed: 10, 
+              z: 0 
+          }); 
+          audioService.playWeaponFire('mine'); 
+      } 
+  };
+
+  const fireRedMine = () => { 
+      const s = state.current; 
+      if (s.redMines > 0) { 
+          s.redMines--; 
+          s.lastRedMineFire = Date.now(); 
+          s.omegaSide = !s.omegaSide; 
+          
+          const speed = 4;
+          const vx = s.omegaSide ? -speed : speed;
+
+          s.bullets.push({ 
+              x: s.px, y: s.py + 30, 
+              vx: vx, vy: 0, vz: 0,
+              damage: 0, 
+              color: '#ef4444', 
+              type: 'mine_red', 
+              life: 600, 
+              isEnemy: false, 
+              width: 20, height: 20, 
+              homingState: 'launching', 
+              launchTime: s.frame, 
+              turnRate: 0.05, 
+              maxSpeed: 8, 
+              z: 0, 
+              glow: true, glowIntensity: 30 
+          }); 
+          audioService.playWeaponFire('mine'); 
+          setHud(h => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); 
+      } 
+  };
+
   const spawnLoot = (x: number, y: number, z: number, type: string, id?: string, name?: string, quantity: number = 1) => { state.current.loot.push({ x, y, z, type, id, name, quantity, isPulled: false, vx: (Math.random()-0.5), vy: (Math.random()-0.5) }); };
   
   const fireAlienWeapons = () => {
@@ -895,14 +1138,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               if (wDef) { 
                   const interval = Math.max(1, Math.floor(60 / wDef.fireRate)); 
                   if (s.frame % interval === 0) { 
-                      
-                      // INDEPENDENT AMMO LOGIC
                       if (wDef.isAmmoBased) {
                           const gun = s.gunStates[slotIdx];
-                          // If no gun state initialized or empty, skip fire
                           if (!gun || gun.mag <= 0) return;
-                          
-                          gun.mag--; // Consume independent mag
+                          gun.mag--; 
                       } 
                       else if (s.energy < wDef.energyCost) return; 
                       
@@ -943,6 +1182,37 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           s.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.0 + Math.random() * 0.5, color: Math.random() > 0.5 ? color : '#ffffff', size: Math.random()*3+2 }); 
       }
   };
+
+  const createAreaDamage = (x: number, y: number, radius: number, damage: number, sourceId?: string) => {
+      const s = state.current;
+      
+      // Damage Enemies
+      s.enemies.forEach(e => {
+          if (e.hp > 0) {
+              const dist = Math.hypot(e.x - x, e.y - y);
+              if (dist < radius) {
+                  const factor = 1 - (dist / radius);
+                  const dmg = damage * factor;
+                  if (dmg > 5) { 
+                      e.takeDamage(dmg, 'explosion', false);
+                      createExplosion(e.x, e.y, '#f97316', 2);
+                  }
+              }
+          }
+      });
+
+      // Damage Player
+      if (!s.rescueMode) {
+          const dist = Math.hypot(s.px - x, s.py - y);
+          if (dist < radius) {
+              const factor = 1 - (dist / radius);
+              const dmg = damage * factor * 0.5; 
+              if (dmg > 5) {
+                  takeDamage(dmg, 'explosion');
+              }
+          }
+      }
+  };
   
   useEffect(() => {
     const cvs = canvasRef.current; if(!cvs) return;
@@ -960,7 +1230,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         const speed = 9;
         
-        // --- INPUT & MOVEMENT LOGIC (SMOOTHING) ---
         let targetThrottle = 0;
         let left = s.keys.has('ArrowLeft') || s.keys.has('KeyA') || s.keys.has('Numpad4');
         let right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
@@ -1000,9 +1269,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 targetThrottle = 0;
             } else {
                 const angle = Math.atan2(dy, dx);
-                const approachSpeed = 12; 
-                s.px += Math.cos(angle) * approachSpeed;
-                s.py += Math.sin(angle) * approachSpeed;
+                s.px += Math.cos(angle) * 12;
+                s.py += Math.sin(angle) * 12;
                 const xComp = Math.cos(angle);
                 const yComp = Math.sin(angle);
                 if (xComp < -0.5) left = true;
@@ -1081,40 +1349,48 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
         
         if (!s.rescueMode) {
-            // RELOAD LOGIC - INDEPENDENT PER GUN
             Object.keys(s.gunStates).forEach(keyStr => {
                 const key = parseInt(keyStr);
                 const gun = s.gunStates[key];
+                const wId = activeShip.fitting.weapons[key]?.id;
+                const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
+                
+                if (!wDef || !wDef.isAmmoBased) return;
 
-                // If gun is empty and not already reloading
                 if (gun.mag <= 0 && gun.reloadTimer === 0) {
-                    // Check reserve
-                    const wId = activeShip.fitting.weapons[key]?.id;
-                    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
-                    const type = wDef?.defaultAmmo || 'iron';
-                    
-                    if ((s.ammo[type] || 0) > 0) {
-                         gun.reloadTimer = Date.now() + 10000; // 10 seconds
-                         setHud(h => ({...h, alert: "RELOADING ORDNANCE...", alertType: 'warning'}));
+                    const defType = wDef.defaultAmmo || 'iron';
+                    let hasAmmo = (s.ammo[defType] || 0) > 0;
+                    if (!hasAmmo) {
+                        const anyAmmo = Object.keys(s.ammo).some(k => (s.ammo[k as AmmoType] || 0) > 0);
+                        if (anyAmmo) hasAmmo = true;
+                    }
+
+                    if (hasAmmo) {
+                         gun.reloadTimer = Date.now() + 10000; 
+                         setHud(h => ({...h, alert: "RELOADING WEAPON SYSTEMS...", alertType: 'warning'}));
+                    } else {
+                        if (s.frame % 300 === 0) {
+                             setHud(h => ({...h, alert: "AMMUNITION DEPLETED", alertType: 'error'}));
+                        }
                     }
                 }
                 
-                // Check if reload complete
                 if (gun.reloadTimer > 0 && Date.now() > gun.reloadTimer) {
-                    const wId = activeShip.fitting.weapons[key]?.id;
-                    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
-                    const type = wDef?.defaultAmmo || 'iron';
-                    const available = s.ammo[type] || 0;
-                    
-                    if (available > 0) {
-                        const take = Math.min(gun.maxMag, available);
-                        s.ammo[type] -= take;
-                        gun.mag += take;
+                    const defType = wDef.defaultAmmo || 'iron';
+                    let typeToUse = (s.ammo[defType] || 0) > 0 ? defType : null;
+                    if (!typeToUse) {
+                        typeToUse = Object.keys(s.ammo).find(k => (s.ammo[k as AmmoType] || 0) > 0) as AmmoType || null;
+                    }
+
+                    if (typeToUse) {
+                        const amount = Math.min(gun.maxMag, s.ammo[typeToUse]);
+                        s.ammo[typeToUse] -= amount;
+                        gun.mag += amount;
                         gun.reloadTimer = 0;
                         audioService.playSfx('buy');
-                        setHud(h => ({...h, alert: "AMMUNITION CYCLED", alertType: 'success'}));
+                        setHud(h => ({...h, alert: "WEAPONS RELOADED", alertType: 'success'}));
                     } else {
-                        gun.reloadTimer = 0; // Cancel if no ammo left
+                        gun.reloadTimer = 0; 
                     }
                 }
             });
@@ -1158,11 +1434,20 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (isFiring) fireAlienWeapons();
             } else {
                 if (isFiring) {
-                    const salvoCost = 20;
-                    if (s.capacitor >= salvoCost) {
-                        if (s.frame - s.lastSalvoFire > 15) {
+                    const wId = activeShip.fitting.weapons[0]?.id;
+                    let powerCost = 10;
+                    if (wId === 'exotic_star_shatter') powerCost = 100/12; // 12 shots per 100 cap
+
+                    if (s.capacitor >= powerCost) {
+                        let salvoRate = 15;
+                        if (wId === 'exotic_phaser_sweep') salvoRate = 10;
+                        if (wId === 'exotic_flamer') salvoRate = 8; 
+                        // Power shot: 3 per second. (60/20 = 3)
+                        if (wId === 'exotic_star_shatter') salvoRate = 20; 
+                        
+                        if (s.frame - s.lastSalvoFire > salvoRate) {
                             fireSalvoShot();
-                            s.capacitor = Math.max(0, s.capacitor - salvoCost);
+                            s.capacitor = Math.max(0, s.capacitor - powerCost);
                             s.lastSalvoFire = s.frame;
                         }
                     } else {
@@ -1217,7 +1502,34 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             else {
                 e.update(s.px, s.py, width, height, s.bullets, worldSpeedFactor); 
                 
-                // BOSS DEFENSE & ATTACK
+                // Damage Effects
+                if (e.hp < e.maxHp && e.hp > 0) {
+                    if (Math.random() < 0.2) {
+                        s.particles.push({ 
+                            x: e.x + (Math.random()-0.5)*30, 
+                            y: e.y + (Math.random()-0.5)*30, 
+                            vx: (Math.random()-0.5)*2, 
+                            vy: (Math.random()-0.5)*2, 
+                            life: 0.5 + Math.random()*0.5, 
+                            size: 3 + Math.random()*4, 
+                            color: '#52525b', 
+                            type: 'smoke' 
+                        });
+                    }
+                    if (e.hp < e.maxHp * 0.3 && Math.random() < 0.3) {
+                        s.particles.push({ 
+                            x: e.x + (Math.random()-0.5)*20, 
+                            y: e.y + (Math.random()-0.5)*20, 
+                            vx: (Math.random()-0.5), 
+                            vy: (Math.random()-0.5), 
+                            life: 0.4 + Math.random()*0.3, 
+                            size: 2 + Math.random()*3, 
+                            color: '#ef4444', 
+                            type: 'fire' 
+                        });
+                    }
+                }
+
                 if (difficulty >= 2 && e.type !== 'boss') {
                     const fireInterval = e.config.isAlien ? 120 : 180;
                     if (s.frame % fireInterval === 0 && Math.abs(e.x - s.px) < 300) {
@@ -1232,7 +1544,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     }
                 }
                 
-                // COLLISION
                 if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < 60) {
                     takeDamage(30, 'collision');
                     if(e.type !== 'boss') e.hp = 0;
@@ -1241,19 +1552,18 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             }
         });
         
-        // Remove dead enemies and check boss drop
         for (let i = s.enemies.length - 1; i >= 0; i--) {
             const e = s.enemies[i];
             if (e.hp <= 0 || e.y > height + 200) {
                 if (e.hp <= 0 && !s.rescueMode) {
+                    createAreaDamage(e.x, e.y, 100, 40);
+
                     if (e.type === 'boss') {
                         s.bossDead = true;
-                        // BOSS DEFEAT LOGIC: 10k * Difficulty Score
                         s.score += 10000 * difficulty;
                         createExplosion(e.x, e.y, '#a855f7', 30, 'boss');
                         setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
                         
-                        // BOSS LOOT DROP
                         const rand = Math.random();
                         let lootType = '';
                         let lootId = '';
@@ -1287,20 +1597,151 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         s.bullets.forEach(b => { 
             b.x += b.vx; b.y += b.vy; b.life--; 
             
-            // GRAVITY WAVE LOGIC: Reflection
-            if (b.weaponId === 'exotic_gravity_wave') {
-                if (b.growthRate) {
-                    b.width += b.growthRate;
-                    b.height += b.growthRate * 0.5;
+            // Integrate Z velocity
+            if (b.vz !== undefined) {
+                b.z = (b.z || 0) + b.vz;
+            }
+
+            if (['missile', 'missile_emp', 'mine', 'mine_emp', 'mine_red'].includes(b.type)) {
+                const isMissile = b.type.includes('missile');
+                const age = s.frame - (b.launchTime || 0);
+                
+                // --- 1. Launch / Arming (Shortened to 20 frames = ~0.3s) ---
+                if (age < 20) {
+                    if (isMissile) {
+                        b.vy -= 0.6; // Accelerate Up
+                        b.vx *= 0.95; // Dampen X
+                    } else {
+                        // Mines drift with momentum
+                        b.vx *= 0.99;
+                    }
+                } 
+                else {
+                    // --- 2. Target Acquisition ---
+                    // Only search if no target or target is dead/gone
+                    if (!b.target || b.target.hp <= 0 || b.target.y > height + 200 || b.target.y < -200) {
+                        b.target = null;
+                        let best = null;
+                        let bestScore = -Infinity;
+                        
+                        let searchDir = -Math.PI / 2; // Default UP
+                        if (isMissile) {
+                            const speed = Math.hypot(b.vx, b.vy);
+                            if (speed > 1) searchDir = Math.atan2(b.vy, b.vx);
+                        } else {
+                            // Mines scan horizontally: Left (PI) or Right (0)
+                            searchDir = b.vx > 0 ? 0 : Math.PI;
+                        }
+
+                        const cone = isMissile ? (Math.PI / 2.5) : (Math.PI / 1.5); 
+                        
+                        s.enemies.forEach(e => {
+                            if (e.hp <= 0) return;
+                            const dx = e.x - b.x;
+                            const dy = e.y - b.y;
+                            const dz = e.z - (b.z || 0); // 3D Distance
+                            const dist3d = Math.hypot(dx, dy, dz);
+                            
+                            // Optimization: Ignore far targets
+                            if (dist3d > 900) return;
+
+                            const angleToEnemy = Math.atan2(dy, dx);
+                            
+                            let diff = angleToEnemy - searchDir;
+                            while (diff <= -Math.PI) diff += 2*Math.PI;
+                            while (diff > Math.PI) diff -= 2*Math.PI;
+                            
+                            if (Math.abs(diff) < cone) {
+                                // Score based on 3D distance and angle alignment
+                                const score = (5000 / (dist3d + 1)) + (20 / (Math.abs(diff) + 0.1));
+                                if (score > bestScore) {
+                                    bestScore = score;
+                                    best = e;
+                                }
+                            }
+                        });
+                        
+                        if (best) {
+                            b.target = best;
+                        }
+                    }
+                    
+                    // --- 3. Tracking Physics ---
+                    if (b.target) {
+                        const dx = b.target.x - b.x;
+                        const dy = b.target.y - b.y;
+                        const dz = b.target.z - (b.z || 0);
+                        const dist = Math.hypot(dx, dy, dz);
+                        
+                        // Dynamic turn rate
+                        const turnRate = isMissile ? 0.18 : 0.08; 
+                        const desiredSpeed = isMissile ? 15 : 8;
+                        
+                        const tx = (dx / dist) * desiredSpeed;
+                        const ty = (dy / dist) * desiredSpeed;
+                        const tz = (dz / dist) * desiredSpeed;
+                        
+                        b.vx += (tx - b.vx) * turnRate;
+                        b.vy += (ty - b.vy) * turnRate;
+                        b.vz = (b.vz || 0) + (tz - (b.vz || 0)) * turnRate;
+                    }
+                    
+                    // Asteroid Avoidance
+                    s.asteroids.forEach(a => {
+                        if (a.hp > 0) {
+                            const dx = b.x - a.x;
+                            const dy = b.y - a.y;
+                            const dist = Math.hypot(dx, dy);
+                            const avoidRad = a.size + 80;
+                            if (dist < avoidRad) {
+                                const force = (avoidRad - dist) / avoidRad;
+                                const repulsion = isMissile ? 2.5 : 1.5;
+                                b.vx += (dx / dist) * force * repulsion;
+                                b.vy += (dy / dist) * force * repulsion;
+                            }
+                        }
+                    });
+
+                    // Missiles accelerate continuously (Rocket Motor)
+                    if (isMissile) {
+                         const speed = Math.hypot(b.vx, b.vy); // 2D speed check is fine for cap
+                         if (speed < (b.maxSpeed || 16)) {
+                             b.vx *= 1.05;
+                             b.vy *= 1.05;
+                         }
+                    }
                 }
-                // Reflect Enemy Fire
+            }
+
+            // GROWTH LOGIC for FLAMER, GRAVITY, RAINBOW, STAR SHATTER
+            if (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_gravity_wave' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter') {
+                if (b.growthRate) {
+                    if (b.weaponId === 'exotic_rainbow_spread') {
+                        // Grow width (Radius)
+                        b.width += b.growthRate;
+                        // Thickness (height) grows from 3 -> 8.
+                        if (b.height < 8) b.height += 0.1;
+                    } else if (b.weaponId === 'exotic_star_shatter') {
+                        b.width += b.growthRate;
+                        b.height += b.growthRate;
+                    } else {
+                        b.width += b.growthRate;
+                        b.height += b.growthRate * (b.weaponId === 'exotic_gravity_wave' ? 0.5 : 1.0);
+                    }
+                }
+            }
+
+            if (b.weaponId === 'exotic_gravity_wave' && b.type !== 'projectile') {
+                // ...
+            } else if (b.weaponId === 'exotic_gravity_wave' && b.growthRate) {
+                // Fallback collision logic for growth weapons if specific block didn't exist
                 s.bullets.forEach(other => {
                     if (other.isEnemy && Math.abs(other.x - b.x) < b.width && Math.abs(other.y - b.y) < b.height) {
                         other.isEnemy = false;
-                        other.vx = (Math.random()-0.5) * 5; // Scatter sideways
-                        other.vy = -Math.abs(other.vy) - 5; // Reflect UP fast
-                        other.color = b.color; // Adopt wave color
-                        other.damage *= 2; // Boost reflected damage
+                        other.vx = (Math.random()-0.5) * 5; 
+                        other.vy = -Math.abs(other.vy) - 5; 
+                        other.color = b.color; 
+                        other.damage *= 2; 
                         createExplosion(other.x, other.y, b.color, 1);
                     }
                 });
@@ -1311,60 +1752,77 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             } else if (!b.isEnemy) { 
                 let hit = false; 
                 s.enemies.forEach(e => { 
-                    const hitDist = (b.type.includes('missile') || b.type.includes('mine')) ? (e.type === 'boss' ? 100 : 60) : (e.type === 'boss' ? 80 : 40); 
-                    if (Math.hypot(b.x-e.x, b.y-e.y) < hitDist) { 
-                        const dmgResult = e.takeDamage(b.damage, b.type as any, !!b.isMain, !!b.isOvercharge, !!b.isEmp); 
-                        if (dmgResult.dmg > 0) {
-                            s.floatingTexts.push({
-                                x: e.x + (Math.random() - 0.5) * 40,
-                                y: e.y,
-                                text: dmgResult.dmg.toString(),
-                                life: 1.0,
-                                color: dmgResult.isShield ? '#3b82f6' : '#ef4444',
-                                vy: -2 - Math.random(),
-                                size: dmgResult.dmg > 100 ? 20 : 14
-                            });
+                    const isOrdnance = b.type.includes('missile') || b.type.includes('mine');
+                    const hitDist = isOrdnance ? (e.type === 'boss' ? 100 : 60) : (e.type === 'boss' ? 80 : 40); 
+                    // Flamer/Star Shatter hitbox adjustment: Use bullet width as it grows
+                    const hitThreshold = (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter') ? Math.max(hitDist, b.width/2) : hitDist;
+                    
+                    const dist2d = Math.hypot(b.x-e.x, b.y-e.y);
+                    const zDist = Math.abs((b.z || 0) - e.z);
+
+                    // Ordnance must match Z depth to hit. Standard fire (lasers) hits all Z planes (gameplay balance).
+                    if (dist2d < hitThreshold && (!isOrdnance || zDist < 80)) { 
+                        let effectiveDamage = b.damage;
+                        if (b.weaponId === 'exotic_star_shatter') {
+                            if (b.isOvercharge) {
+                                // Power Shot: Grows 6 -> 36.
+                                // Small (6): 4x normal base. Large (36): 20x normal base.
+                                // Ratio based on growth: (current - start) / (max - start)
+                                const ratio = Math.min(1, Math.max(0, (b.width - 6) / 30));
+                                const multiplier = 4 + (ratio * 16); // 4x to 20x
+                                effectiveDamage = b.damage * multiplier;
+                            } else {
+                                // Normal Shot: Grows 4 -> 12.
+                                // Base damage 144 is too high. 
+                                // Scale linear: Width/12.
+                                const ratio = Math.min(1, b.width / 12);
+                                effectiveDamage = b.damage * ratio;
+                            }
                         }
+
+                        e.takeDamage(effectiveDamage, b.type as any, !!b.isMain, !!b.isOvercharge, !!b.isEmp); 
                         hit = true; createExplosion(b.x, b.y, b.color, 2); 
+                        if (b.type.includes('mine')) {
+                            createAreaDamage(b.x, b.y, 120, 60); 
+                        }
                     } 
                 });
                 s.asteroids.forEach(a => {
-                    if (Math.hypot(b.x-a.x, b.y-a.y) < a.size + 10) {
+                    const hitThreshold = (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter') ? Math.max(a.size + 10, b.width/2) : a.size + 10;
+                    if (Math.hypot(b.x-a.x, b.y-a.y) < hitThreshold) {
                         let dmg = b.damage;
                         if (b.isOvercharge) dmg *= 5.0; 
                         a.hp -= dmg;
                         if (a.hp <= 0 && a.loot) spawnLoot(a.x, a.y, a.z, a.loot.type, a.loot.id, a.loot.name, a.loot.quantity || 1);
                         hit = true; createExplosion(b.x, b.y, '#888', 5, 'asteroid');
-                        s.floatingTexts.push({
-                            x: a.x,
-                            y: a.y,
-                            text: Math.floor(dmg).toString(),
-                            life: 0.8,
-                            color: '#9ca3af',
-                            vy: -1,
-                            size: 12
-                        });
+                        if (b.type.includes('mine')) {
+                            createAreaDamage(b.x, b.y, 120, 60);
+                        }
                     }
                 });
-                if (hit) b.life = 0;
+                // Rainbow Nova pierces through enemies (doesn't die on hit), but flamer dies?
+                // Request didn't specify piercing, but large AOE usually pierces or explodes.
+                // Let's make Rainbow Nova die on hit to avoid excessive damage, or keep alive for "wave" feel?
+                // Given it's "little rainbows", maybe they hit once.
+                if (hit && b.weaponId !== 'exotic_rainbow_spread') b.life = 0;
             }
         }); 
-        s.bullets = s.bullets.filter(b => b.life > 0 && b.y > -200 && b.y < height + 200);
-        
-        // Update Floating Texts
-        s.floatingTexts.forEach(ft => {
-            ft.y += ft.vy;
-            ft.life -= 0.02;
+        s.bullets = s.bullets.filter(b => {
+            if (b.life <= 0) {
+                if (b.type.includes('mine')) {
+                    createAreaDamage(b.x, b.y, 120, 60);
+                    createExplosion(b.x, b.y, b.color, 5);
+                }
+                return false;
+            }
+            return b.y > -200 && b.y < height + 200;
         });
-        s.floatingTexts = s.floatingTexts.filter(ft => ft.life > 0);
-
-        // Update Loot
+        
         s.loot.forEach(l => {
             const dx = s.px - l.x;
             const dy = s.py - l.y;
             const dist = Math.hypot(dx, dy);
             
-            // Attraction
             if (dist < 175) {
                 l.isBeingPulled = true;
                 l.x += dx * 0.08;
@@ -1376,12 +1834,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 l.y += l.vy;
             }
             
-            // Collection
             if (dist < 30) {
                 l.isPulled = true; 
                 audioService.playSfx('buy');
                 
-                // Refill Logic
                 if (l.type === 'fuel') { s.fuel = Math.min(maxFuel, s.fuel + 1.0); setHud(h => ({...h, alert: "+FUEL", alertType: 'success'})); }
                 else if (l.type === 'water') { s.water = Math.min(maxWater, s.water + 20); setHud(h => ({...h, alert: "+WATER", alertType: 'success'})); }
                 else if (l.type === 'energy') { s.energy = Math.min(maxEnergy, s.energy + 200); setHud(h => ({...h, alert: "+ENERGY", alertType: 'success'})); }
@@ -1391,7 +1847,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 else if (l.type === 'ammo') { 
                     const ammoId = l.id as any; 
                     if (ammoId) {
-                        s.ammo[ammoId] = (s.ammo[ammoId] || 0) + ((l.quantity || 1) * 1000); // 1 Unit = 1000 rounds
+                        s.ammo[ammoId] = (s.ammo[ammoId] || 0) + ((l.quantity || 1) * 1000); 
                         setHud(h => ({...h, alert: `+${l.quantity || 1} AMMO UNITS`, alertType: 'success'})); 
                     }
                 }
@@ -1428,7 +1884,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
                 else {
                     s.score += 500;
-                    s.floatingTexts.push({ x: l.x, y: l.y, text: "+500", life: 1.0, color: '#fbbf24', vy: -3, size: 16 });
                 }
             }
         });
@@ -1564,11 +2019,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         });
 
         s.bullets.forEach(b => { 
-            ctx.save(); ctx.translate(b.x, b.y); 
+            const scale = 1 + (b.z || 0) / 1000;
+            ctx.save(); ctx.translate(b.x, b.y); ctx.scale(scale, scale);
             
             if (b.type === 'missile' || b.type === 'missile_emp') {
                 ctx.scale(1.2, 1.2);
-                ctx.rotate(b.vy > 0 ? Math.PI : 0); 
+                const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;
+                ctx.rotate(angle); 
                 
                 ctx.fillStyle = b.finsColor || '#ef4444';
                 ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill();
@@ -1600,39 +2057,62 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
                 }
 
+            } else if (b.weaponId === 'exotic_octo_burst') {
+                // New Octo Burst Drawing: Jet of plasma, short, pointed ends, fat middle.
+                ctx.save();
+                // Rotate to match velocity
+                const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;
+                ctx.rotate(angle);
+
+                ctx.fillStyle = b.color;
+                ctx.shadowColor = b.color; 
+                ctx.shadowBlur = b.glowIntensity || 10;
+
+                // Diamond/Lens Shape
+                ctx.beginPath();
+                ctx.moveTo(0, -b.height/2); // Top tip
+                ctx.quadraticCurveTo(b.width/2, 0, 0, b.height/2); // Right curve to bottom
+                ctx.quadraticCurveTo(-b.width/2, 0, 0, -b.height/2); // Left curve back to top
+                ctx.fill();
+                
+                // Bright Core
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = 0.8;
+                ctx.beginPath();
+                ctx.moveTo(0, -b.height/3);
+                ctx.quadraticCurveTo(b.width/4, 0, 0, b.height/3);
+                ctx.quadraticCurveTo(-b.width/4, 0, 0, -b.height/3);
+                ctx.fill();
+                
+                ctx.restore();
+
             } else if (b.weaponId === 'exotic_gravity_wave') {
-                // EXOTIC: Gravity Wave (Growing Arcs - Dense & Series)
                 ctx.strokeStyle = b.color;
                 ctx.shadowColor = b.color; ctx.shadowBlur = 15;
                 ctx.lineCap = 'round';
-                
-                const count = 5; // Dense series
-                const spacing = 6; 
-                
+                const count = 5; const spacing = 6; 
                 for(let i=0; i<count; i++) {
-                    const arcW = b.width * (1 - i * 0.15); // Inner arcs slightly narrower
+                    const arcW = b.width * (1 - i * 0.15); 
                     const yOff = i * spacing;
-                    
-                    // Opacity gradient (Front arc solid, trailing arcs fade)
                     ctx.globalAlpha = Math.max(0, 0.8 - (i * 0.15));
                     ctx.lineWidth = 3;
-                    
-                    ctx.beginPath();
-                    // Upward facing arc
-                    ctx.arc(0, yOff, arcW/2, Math.PI * 1.2, Math.PI * 1.8);
-                    ctx.stroke();
+                    ctx.beginPath(); ctx.arc(0, yOff, arcW/2, Math.PI * 1.2, Math.PI * 1.8); ctx.stroke();
                 }
-                ctx.globalAlpha = 1;
-                ctx.shadowBlur = 0;
+                ctx.globalAlpha = 1; ctx.shadowBlur = 0;
 
             } else if (b.weaponId === 'exotic_star_shatter') {
-                // EXOTIC: Star Shatter (Spinning Star)
-                ctx.fillStyle = b.color;
-                ctx.shadowColor = b.color; ctx.shadowBlur = 10;
+                // Power Shot (Overcharge): White with Gold Glow
+                // Normal Shot: Orange with Orange Glow
+                ctx.fillStyle = b.isOvercharge ? '#ffffff' : '#fbbf24'; 
+                ctx.shadowColor = b.isOvercharge ? '#facc15' : '#f97316';
+                ctx.shadowBlur = b.isOvercharge ? 20 : 10;
+                
                 const rot = s.frame * 0.15 + (b.x * 0.01);
                 ctx.rotate(rot);
                 ctx.beginPath();
-                const spikes = 5; const outer = b.width; const inner = b.width * 0.4;
+                const spikes = 5; 
+                const outer = b.width; // Use full width as 'radius' here
+                const inner = b.width * 0.4;
                 for(let i=0; i<spikes; i++) {
                     let x = Math.cos((18+i*72)/180*Math.PI) * outer;
                     let y = -Math.sin((18+i*72)/180*Math.PI) * outer;
@@ -1641,131 +2121,153 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     y = -Math.sin((54+i*72)/180*Math.PI) * inner;
                     ctx.lineTo(x, y);
                 }
-                ctx.closePath();
-                ctx.fill();
+                ctx.closePath(); 
+                ctx.fill(); 
                 ctx.shadowBlur = 0;
 
             } else if (b.weaponId === 'exotic_flamer') {
-                // EXOTIC: Dragon Breath (Fire Particles)
-                ctx.globalCompositeOperation = 'screen';
-                const pulse = Math.sin(s.frame * 0.5 + b.y) * 0.2 + 0.8;
-                const fireGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, b.width);
-                fireGrad.addColorStop(0, '#ffff00');
-                fireGrad.addColorStop(0.4, '#ef4444');
-                fireGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-                ctx.fillStyle = fireGrad;
-                ctx.globalAlpha = 0.8;
-                ctx.beginPath(); ctx.arc(0, 0, b.width * pulse, 0, Math.PI*2); ctx.fill();
+                if (b.isOvercharge) {
+                    // Power Shot: Big growing fireball with circumference flames, fading out
+                    const opacity = Math.max(0.1, 1 - (b.width / 80));
+                    ctx.globalAlpha = opacity;
+                    
+                    // Core Gradient
+                    const grad = ctx.createRadialGradient(0, 0, b.width * 0.2, 0, 0, b.width/2);
+                    grad.addColorStop(0, '#fff');
+                    grad.addColorStop(0.4, '#f97316');
+                    grad.addColorStop(1, 'rgba(249, 115, 22, 0)');
+                    
+                    ctx.fillStyle = grad;
+                    ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill();
+                    
+                    // Circumference Flames
+                    ctx.strokeStyle = '#ef4444';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    const spikes = 12;
+                    for(let i=0; i<=spikes; i++) {
+                        const angle = (i / spikes) * Math.PI * 2 + (s.frame * 0.2);
+                        const r = (b.width/2) + Math.sin(s.frame * 0.8 + i*13) * 6;
+                        const fx = Math.cos(angle) * r;
+                        const fy = Math.sin(angle) * r;
+                        if (i===0) ctx.moveTo(fx, fy); else ctx.lineTo(fx, fy);
+                    }
+                    ctx.closePath();
+                    ctx.stroke();
+                    
+                    ctx.globalAlpha = 1;
+                } else {
+                    // Normal Shot: Colored balls
+                    ctx.fillStyle = b.color;
+                    ctx.shadowColor = b.color;
+                    ctx.shadowBlur = 8;
+                    ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill();
+                    
+                    // White hot center
+                    ctx.fillStyle = '#fff';
+                    ctx.globalAlpha = 0.6;
+                    ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill();
+                    ctx.globalAlpha = 1;
+                    ctx.shadowBlur = 0;
+                }
+
+            } else if (b.weaponId === 'exotic_rainbow_spread') {
+                // Rainbow Nova: Expanding Rainbow Arc (Semicircle 120 deg or 360 ring)
+                const radius = b.width / 2;
+                const thickness = b.height;
+                const arcAngle = b.isOvercharge ? (Math.PI * 2) : ((120 * Math.PI) / 180);
+                
+                // Fade out as it expands (assuming max radius ~100px normal, ~200px overcharge)
+                const maxRad = b.isOvercharge ? 200 : 100;
+                const opacity = Math.max(0.1, 1.0 - (radius / maxRad));
+                ctx.globalAlpha = opacity;
+                
+                ctx.save();
+                // Rotate to match movement direction (projectile moves forward -Y)
+                const rot = Math.atan2(b.vy, b.vx); 
+                ctx.rotate(rot); 
+                
+                // Draw multiple arcs for rainbow effect
+                const colors = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7'];
+                const segThickness = thickness / colors.length;
+                
+                colors.forEach((c, i) => {
+                    ctx.beginPath();
+                    const r = radius - (i * segThickness);
+                    if (r > 0) {
+                        ctx.arc(0, 0, r, -arcAngle/2, arcAngle/2);
+                        ctx.strokeStyle = c;
+                        ctx.lineWidth = segThickness + 0.5; // Slightly overlap
+                        ctx.stroke();
+                    }
+                });
+                
+                ctx.restore();
                 ctx.globalAlpha = 1;
-                ctx.globalCompositeOperation = 'source-over';
 
             } else if (b.weaponId === 'exotic_electric') {
-                // EXOTIC: Zeus Thunderbolt (Jagged Line)
-                ctx.strokeStyle = '#00ffff';
-                ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10;
-                ctx.lineWidth = 3;
-                ctx.beginPath();
-                ctx.moveTo(0, -b.height/2);
-                let ly = -b.height/2;
-                while(ly < b.height/2) {
-                    ly += 5;
-                    ctx.lineTo((Math.random()-0.5)*10, ly);
-                }
-                ctx.stroke();
-                ctx.shadowBlur = 0;
+                ctx.strokeStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10; ctx.lineWidth = 3;
+                ctx.beginPath(); ctx.moveTo(0, -b.height/2);
+                let ly = -b.height/2; while(ly < b.height/2) { ly += 5; ctx.lineTo((Math.random()-0.5)*10, ly); }
+                ctx.stroke(); ctx.shadowBlur = 0;
 
             } else if (b.weaponId === 'exotic_wave') {
-                // EXOTIC: Sonic Ring (Expanding Ring)
-                ctx.strokeStyle = b.color;
-                ctx.lineWidth = 3;
-                ctx.shadowColor = b.color; ctx.shadowBlur = 5;
-                ctx.beginPath(); 
-                ctx.arc(0, 0, b.width, 0, Math.PI*2); 
-                ctx.stroke();
-                // Inner Echo
-                ctx.globalAlpha = 0.5;
-                ctx.beginPath(); ctx.arc(0, 0, b.width * 0.6, 0, Math.PI*2); ctx.stroke();
-                ctx.globalAlpha = 1;
-                ctx.shadowBlur = 0;
-
-            } else if (b.weaponId === 'exotic_octo_burst') {
-                // EXOTIC: Octo Burst (Plasma Blob)
-                ctx.fillStyle = b.color;
-                ctx.shadowColor = b.color; ctx.shadowBlur = 10;
-                ctx.beginPath();
-                // Draw a wobbly circle
-                for(let i=0; i<=8; i++) {
-                    const angle = (i/8) * Math.PI * 2;
-                    const r = b.width * (0.8 + Math.sin(angle * 3 + s.frame * 0.5) * 0.2);
-                    const x = Math.cos(angle) * r;
-                    const y = Math.sin(angle) * r;
-                    if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-                }
-                ctx.fill();
-                ctx.shadowBlur = 0;
+                ctx.strokeStyle = b.color; ctx.lineWidth = 3; ctx.shadowColor = b.color; ctx.shadowBlur = 5;
+                ctx.beginPath(); ctx.arc(0, 0, b.width, 0, Math.PI*2); ctx.stroke();
+                ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(0, 0, b.width * 0.6, 0, Math.PI*2); ctx.stroke();
+                ctx.globalAlpha = 1; ctx.shadowBlur = 0;
 
             } else if (b.weaponId === 'exotic_plasma_orb') {
-                // EXOTIC: Plasma Orb (Big Core)
                 const grad = ctx.createRadialGradient(0,0, b.width*0.2, 0,0, b.width);
-                grad.addColorStop(0, '#fff');
-                grad.addColorStop(0.5, b.color);
-                grad.addColorStop(1, 'transparent');
-                ctx.fillStyle = grad;
-                ctx.beginPath(); ctx.arc(0,0, b.width, 0, Math.PI*2); ctx.fill();
+                grad.addColorStop(0, '#fff'); grad.addColorStop(0.5, b.color); grad.addColorStop(1, 'transparent');
+                ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0,0, b.width, 0, Math.PI*2); ctx.fill();
                 
             } else if (b.type === 'laser') { 
+                // Align rotation with velocity if moving laterally
+                if (Math.abs(b.vx) > 0.1) {
+                    const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;
+                    ctx.rotate(angle);
+                }
+                
                 ctx.fillStyle = b.color;
                 if (b.isOvercharge) {
-                    ctx.lineCap = 'round';
-                    ctx.lineWidth = b.width;
-                    ctx.strokeStyle = b.color;
-                    ctx.shadowBlur = b.glowIntensity || 10;
-                    ctx.shadowColor = b.color;
+                    ctx.lineCap = 'round'; ctx.lineWidth = b.width; ctx.strokeStyle = b.color;
+                    ctx.shadowBlur = b.glowIntensity || 10; ctx.shadowColor = b.color;
                     ctx.beginPath(); ctx.moveTo(0, -b.height/2); ctx.lineTo(0, b.height/2); ctx.stroke();
-                    ctx.lineWidth = b.width/2;
-                    ctx.strokeStyle = '#fff';
-                    ctx.shadowBlur = 0;
-                    ctx.stroke();
+                    ctx.lineWidth = b.width/2; ctx.strokeStyle = '#fff'; ctx.shadowBlur = 0; ctx.stroke();
                 } else {
                     ctx.fillRect(-b.width/2, -b.height/2, b.width, b.height); 
                 }
             } else { 
-                // Default Projectile with Chemical Trail & Silver Head
-                
-                // Trail
-                const trailLen = 25 + Math.random() * 10;
-                const grad = ctx.createLinearGradient(0, 0, 0, -trailLen); // Draw upwards (behind if vy < 0)
-                // Since we translate to bullet pos, and bullet moves UP (-Y), "behind" is Down (+Y)
-                // However, standard canvas Y is down.
-                // Standard bullet: vy < 0 (moving up). 
-                // We want trail below bullet.
-                
-                // Correct direction based on velocity
                 const angle = Math.atan2(b.vy, b.vx) - Math.PI/2;
                 ctx.rotate(angle);
                 
-                // Trail (Fading gradient behind)
+                const trailLen = 30 + Math.random() * 10;
+                const trailWidth = b.width; 
                 const trailGrad = ctx.createLinearGradient(0, 0, 0, -trailLen);
-                trailGrad.addColorStop(0, b.color);
-                trailGrad.addColorStop(1, 'transparent');
+                trailGrad.addColorStop(0, 'rgba(200, 200, 200, 0.8)');
+                trailGrad.addColorStop(0.5, 'rgba(150, 150, 150, 0.4)');
+                trailGrad.addColorStop(1, 'rgba(100, 100, 100, 0)');
                 
                 ctx.fillStyle = trailGrad;
                 ctx.beginPath();
-                ctx.moveTo(-b.width/2, 0);
-                ctx.lineTo(b.width/2, 0);
-                ctx.lineTo(0, -trailLen);
+                ctx.moveTo(-trailWidth/2, 0);
+                ctx.lineTo(trailWidth/2, 0);
+                ctx.lineTo(0, -trailLen); 
                 ctx.fill();
                 
-                // Silver Head
-                ctx.fillStyle = '#a1a1aa'; // Silver/Gray
+                const headGrad = ctx.createRadialGradient(0, 0, 1, 0, 0, b.width/2);
+                headGrad.addColorStop(0, '#e2e8f0');
+                headGrad.addColorStop(1, '#78350f'); 
+                
+                ctx.fillStyle = headGrad;
                 ctx.beginPath(); 
                 ctx.arc(0, 0, b.width/2, 0, Math.PI*2); 
                 ctx.fill();
                 
-                // Glowing Core
-                ctx.fillStyle = b.color;
-                ctx.beginPath(); 
-                ctx.arc(0, 0, b.width/4, 0, Math.PI*2); 
+                ctx.fillStyle = '#ffffff';
+                ctx.beginPath();
+                ctx.arc(-b.width/4, -b.width/4, b.width/6, 0, Math.PI*2);
                 ctx.fill();
             }
             ctx.restore();
@@ -1780,20 +2282,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             ctx.restore();
         });
 
-        // DRAW FLOATING TEXTS
-        s.floatingTexts.forEach(ft => {
-            ctx.save();
-            ctx.globalAlpha = ft.life;
-            ctx.fillStyle = ft.color;
-            ctx.font = `900 ${ft.size}px monospace`;
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 3;
-            ctx.strokeText(ft.text, ft.x, ft.y);
-            ctx.fillText(ft.text, ft.x, ft.y);
-            ctx.restore();
-        });
-
-        // DRAW TARGET MARKER (TAP NAVIGATION)
         if (targetRef.current) {
             ctx.save();
             ctx.strokeStyle = '#10b981';
@@ -1801,33 +2289,26 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             const tSize = 15;
             const tx = targetRef.current.x;
             const ty = targetRef.current.y;
-            
-            // Rotating brackets
             const rot = s.frame * 0.1;
             ctx.translate(tx, ty);
             ctx.rotate(rot);
-            
             ctx.beginPath();
             ctx.moveTo(-tSize, -tSize/2); ctx.lineTo(-tSize, -tSize); ctx.lineTo(-tSize/2, -tSize);
             ctx.moveTo(tSize, -tSize/2); ctx.lineTo(tSize, -tSize); ctx.lineTo(tSize/2, -tSize);
             ctx.moveTo(-tSize, tSize/2); ctx.lineTo(-tSize, tSize); ctx.lineTo(-tSize/2, tSize);
             ctx.moveTo(tSize, tSize/2); ctx.lineTo(tSize, tSize); ctx.lineTo(tSize/2, tSize);
             ctx.stroke();
-            
-            // Pulse center
             ctx.fillStyle = `rgba(16, 185, 129, ${0.5 + Math.sin(s.frame * 0.2) * 0.3})`;
             ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
-            
             ctx.restore();
         }
 
         ctx.restore(); // Restore from shake translation
 
         if (s.frame % 10 === 0) { 
-            // Sum ammo for UI
             let totalMagAmmo = 0;
             let reloading = false;
-            Object.values(s.gunStates).forEach(g => {
+            Object.values(s.gunStates).forEach((g: any) => {
                 totalMagAmmo += g.mag;
                 if (g.reloadTimer > 0) reloading = true;
             });
@@ -1852,7 +2333,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const s = state.current;
       if (s.rescueMode) return;
       
-      // Screen Shake on damage
       s.shakeX = 15;
       s.shakeY = 15;
 
@@ -1867,7 +2347,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               s.hp = 0; s.rescueMode = true; 
               s.asteroids = []; s.bullets = [];
               
-              // CRITICAL FIX: Stop reactor sound on death
               audioService.stopCapacitorCharge();
               s.isCapacitorCharging = false;
 
@@ -1887,13 +2366,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     const { wingStyle, hullShapeType } = config; 
     const engineLocs = getEngineCoordinates(config); 
     
-    // --- DRAW RETRO THRUSTERS (BRAKING JETS) ---
-    // Forward-facing jets (45 degrees outward from center line)
     if (isPlayer && movement && movement.down && !isRescue) {
         const mounts = getWingMounts(config); 
-        // Left Retro: Fires Up-Left (-45 deg from vertical -90 => -135 deg total, or just rotate context -45)
         drawRetro(ctx, mounts[0].x, mounts[0].y, -45, usingWater);
-        // Right Retro: Fires Up-Right (+45 deg from vertical -90 => -45 deg total, or just rotate context +45)
         drawRetro(ctx, mounts[1].x, mounts[1].y, 45, usingWater);
     }
 
@@ -1948,56 +2423,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             
             if (isPlayer && movement) {
                 const nozzleEnd = y + eh + nozzleH;
-
-                // MAIN THRUSTER
                 if (movement.up) {
                     const thrustLen = 40 + Math.random() * 15;
                     const grad = ctx.createLinearGradient(x, nozzleEnd, x, nozzleEnd + thrustLen);
-                    if (usingWater) { 
-                        grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(0.3, '#3b82f6'); grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); 
-                    } else { 
-                        grad.addColorStop(0, '#ffedd5'); grad.addColorStop(0.3, '#f97316'); grad.addColorStop(1, 'rgba(249, 115, 22, 0)'); 
-                    }
-                    ctx.fillStyle = grad; 
-                    ctx.beginPath(); 
-                    ctx.moveTo(drawX + inset, nozzleEnd); 
-                    ctx.lineTo(drawX + ew - inset, nozzleEnd); 
-                    ctx.lineTo(x, nozzleEnd + thrustLen); 
-                    ctx.fill();
+                    if (usingWater) { grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(0.3, '#3b82f6'); grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); } 
+                    else { grad.addColorStop(0, '#ffedd5'); grad.addColorStop(0.3, '#f97316'); grad.addColorStop(1, 'rgba(249, 115, 22, 0)'); }
+                    ctx.fillStyle = grad; ctx.beginPath(); ctx.moveTo(drawX + inset, nozzleEnd); ctx.lineTo(drawX + ew - inset, nozzleEnd); ctx.lineTo(x, nozzleEnd + thrustLen); ctx.fill();
                 } else if (!movement.down) {
-                    // IDLE THRUST (Only visible if NOT accelerating AND NOT braking)
                     const idleLen = 12 + Math.random() * 3;
                     const idleColor = config.isAlien ? '#a855f7' : (usingWater ? '#93c5fd' : '#60a5fa');
-                    
-                    ctx.fillStyle = idleColor;
-                    ctx.globalAlpha = 0.8;
-                    ctx.beginPath(); 
-                    ctx.moveTo(drawX + inset + 1, nozzleEnd); 
-                    ctx.lineTo(drawX + ew - inset - 1, nozzleEnd); 
-                    ctx.lineTo(x, nozzleEnd + idleLen); 
-                    ctx.fill(); 
-                    ctx.globalAlpha = 1.0;
+                    ctx.fillStyle = idleColor; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.moveTo(drawX + inset + 1, nozzleEnd); ctx.lineTo(drawX + ew - inset - 1, nozzleEnd); ctx.lineTo(x, nozzleEnd + idleLen); ctx.fill(); ctx.globalAlpha = 1.0;
                 }
-
-                // STRAFE THRUSTERS
                 const strafeLen = 12 + Math.random() * 6;
                 ctx.fillStyle = usingWater ? '#93c5fd' : '#fbbf24';
-                if (movement.left) { 
-                    // Right engine fires right to push left
-                    ctx.beginPath(); 
-                    ctx.moveTo(drawX + ew, y + eh/2 - 3); 
-                    ctx.lineTo(drawX + ew + strafeLen, y + eh/2); 
-                    ctx.lineTo(drawX + ew, y + eh/2 + 3); 
-                    ctx.fill(); 
-                }
-                if (movement.right) { 
-                    // Left engine fires left to push right
-                    ctx.beginPath(); 
-                    ctx.moveTo(drawX, y + eh/2 - 3); 
-                    ctx.lineTo(drawX - strafeLen, y + eh/2); 
-                    ctx.lineTo(drawX, y + eh/2 + 3); 
-                    ctx.fill(); 
-                }
+                if (movement.left) { ctx.beginPath(); ctx.moveTo(drawX + ew, y + eh/2 - 3); ctx.lineTo(drawX + ew + strafeLen, y + eh/2); ctx.lineTo(drawX + ew, y + eh/2 + 3); ctx.fill(); }
+                if (movement.right) { ctx.beginPath(); ctx.moveTo(drawX, y + eh/2 - 3); ctx.lineTo(drawX - strafeLen, y + eh/2); ctx.lineTo(drawX, y + eh/2 + 3); ctx.fill(); }
             } else if (!isPlayer) {
                const idleLen = 10 + Math.random() * 2;
                ctx.fillStyle = config.isAlien ? '#a855f7' : '#60a5fa';
@@ -2007,51 +2447,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         };
         engineLocs.forEach(eng => drawEngine(eng.x, eng.y, eng.w, eng.h));
     } else {
-        // RESCUE CAPSULE MODE
         const cy = (config.isAlien && wingStyle === 'alien-a') ? 65 : (config.isAlien ? 45 : 38);
-
-        // 1. Capsule Body (Blue Transparent) - DASHED SHIELD
         ctx.save();
-        ctx.beginPath(); 
-        ctx.arc(50, cy, 33, 0, Math.PI*2); 
-        ctx.strokeStyle='#3b82f6'; 
-        ctx.lineWidth = 3; 
-        ctx.shadowColor = '#3b82f6'; 
-        ctx.shadowBlur = 20; 
-        ctx.setLineDash([8, 6]); // Dashed Effect
-        ctx.stroke();
-        ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; 
-        ctx.fill(); 
-        ctx.restore();
-
-        // 2. Jet (Idle + Moving) - ABOVE SHIELD (Drawn After)
-        // "tail out" means extending down.
-        // Always visible (idle).
+        ctx.beginPath(); ctx.arc(50, cy, 33, 0, Math.PI*2); ctx.strokeStyle='#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 20; ctx.setLineDash([8, 6]); ctx.stroke();
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; ctx.fill(); ctx.restore();
         const isThrusting = isPlayer && movement && (movement.up || movement.down || movement.left || movement.right);
         const jetLen = isThrusting ? 55 + Math.random()*10 : 35 + Math.random()*5; 
-        
-        ctx.save();
-        ctx.translate(50, cy + 28); // Start near bottom
-        ctx.fillStyle = '#f97316'; // Orange
-        ctx.shadowColor = '#f97316'; ctx.shadowBlur = 20;
-        ctx.beginPath(); 
-        ctx.moveTo(-6, 0); 
-        ctx.lineTo(0, jetLen); 
-        ctx.lineTo(6, 0); 
-        ctx.fill();
-        ctx.restore();
+        ctx.save(); ctx.translate(50, cy + 28); ctx.fillStyle = '#f97316'; ctx.shadowColor = '#f97316'; ctx.shadowBlur = 20;
+        ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(0, jetLen); ctx.lineTo(6, 0); ctx.fill(); ctx.restore();
     }
     
-    // COCKPIT RENDERING
     const finalCockpitColor = cockpitColor || '#0ea5e9'; 
-
-    ctx.fillStyle = finalCockpitColor; 
-    ctx.beginPath();
+    ctx.fillStyle = finalCockpitColor; ctx.beginPath();
     if (config.isAlien) { const cy = wingStyle === 'alien-a' ? 65 : 45; ctx.ellipse(50, cy, 8, 20, 0, 0, Math.PI * 2); } 
     else if (wingStyle === 'x-wing') { ctx.ellipse(50, 55, 8, 12, 0, 0, Math.PI * 2); } 
     else { ctx.ellipse(50, 40, 8, 12, 0, 0, Math.PI * 2); }
     ctx.fill();
-    
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     ctx.beginPath(); 
     if (wingStyle === 'x-wing') { ctx.ellipse(48, 52, 3, 5, -0.2, 0, Math.PI * 2); } 
@@ -2107,37 +2518,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     ctx.restore();
   };
 
-  // Helper for drawing Retro Thrusters
   const drawRetro = (ctx: CanvasRenderingContext2D, x: number, y: number, angleDeg: number, usingWater: boolean) => {
       ctx.save();
       ctx.translate(x, y);
       const rad = (angleDeg * Math.PI) / 180;
       ctx.rotate(rad);
-      
       const flicker = 0.8 + Math.random() * 0.4;
       const len = 30 * flicker; 
       const w = 6; 
-
-      ctx.beginPath();
-      ctx.moveTo(-w/2, 0);
-      ctx.lineTo(0, -len); // Draw UP relative to rotation
-      ctx.lineTo(w/2, 0);
-      ctx.closePath();
-
+      ctx.beginPath(); ctx.moveTo(-w/2, 0); ctx.lineTo(0, -len); ctx.lineTo(w/2, 0); ctx.closePath();
       const grad = ctx.createLinearGradient(0, 0, 0, -len);
-      if (usingWater) {
-          grad.addColorStop(0, '#e0f2fe'); 
-          grad.addColorStop(0.4, '#3b82f6'); 
-          grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); 
-      } else {
-          grad.addColorStop(0, '#fff'); 
-          grad.addColorStop(0.2, '#fbbf24'); 
-          grad.addColorStop(1, 'rgba(251, 191, 36, 0)');
-      }
-      ctx.fillStyle = grad;
-      ctx.globalAlpha = 0.9;
-      ctx.fill();
-      
+      if (usingWater) { grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(0.4, '#3b82f6'); grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); } 
+      else { grad.addColorStop(0, '#fff'); grad.addColorStop(0.2, '#fbbf24'); grad.addColorStop(1, 'rgba(251, 191, 36, 0)'); }
+      ctx.fillStyle = grad; ctx.globalAlpha = 0.9; ctx.fill();
       ctx.restore();
   };
 
@@ -2287,8 +2680,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                     subLabel={`${hud.ammoCount}`}
                                     onDown={() => { inputRef.current.secondary = true; }}
                                     onUp={() => { inputRef.current.secondary = false; }}
-                                    colorClass={hud.ammoCount < 50 ? 'text-red-500 animate-pulse' : 'text-white'}
-                                    borderClass={hud.ammoCount < 50 ? 'border-red-600' : 'border-zinc-700 hover:border-zinc-500'}
+                                    colorClass={hud.isReloading ? 'text-amber-500 animate-pulse' : (hud.ammoCount < 50 ? 'text-red-500 animate-pulse' : 'text-white')}
+                                    borderClass={hud.isReloading ? 'border-amber-500' : (hud.ammoCount < 50 ? 'border-red-600' : 'border-zinc-700 hover:border-zinc-500')}
                                     active={inputRef.current.secondary}
                                     count={hud.ammoCount}
                                     maxCount={1000} // Show aggregate? Or maybe 400?

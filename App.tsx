@@ -231,16 +231,23 @@ export default function App() {
       const gearPool = [...WEAPONS, ...SHIELDS];
       gearPool.forEach(g => {
           const isShield = 'capacity' in g;
-          const isHighTier = g.price > 50000;
           
-          if (!isTestMode && isHighTier && planet.difficulty < 4) return; 
+          if (!isTestMode) {
+              // Difficulty Constraints
+              if (g.id === 'gun_repeater' && planet.difficulty < 3) return;
+              if (g.id === 'gun_hyper' && planet.difficulty < 5) return;
+              
+              // Generic High Tier constraint (price > 50k means level 4+)
+              const isHighTier = g.price > 50000;
+              if (isHighTier && planet.difficulty < 4) return;
+          }
           
           // Rarity check
-          let chance = isHighTier ? 0.3 : 0.7;
+          let chance = g.price > 50000 ? 0.3 : 0.7;
           if (isWarZone) chance += 0.2; 
 
           if (isTestMode || Math.random() < chance) {
-              const qty = isTestMode ? 10 : (isHighTier ? Math.floor(1 + Math.random()) : Math.floor(1 + Math.random() * 3));
+              const qty = isTestMode ? 10 : (g.price > 50000 ? Math.floor(1 + Math.random()) : Math.floor(1 + Math.random() * 3));
               const priceMult = isWarZone ? 1.2 : 1.0;
               
               newListings.push({
@@ -259,18 +266,29 @@ export default function App() {
       // 5. EXOTICS (Very Rare, specific planets)
       const exoticPool = [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
       exoticPool.forEach(e => {
-          if (isTestMode || (isHighTech || isWarZone)) {
-              if (isTestMode || Math.random() < 0.05) { 
-                  newListings.push({
-                      instanceId: `market_${planetId}_${e.id}_${Date.now()}`,
-                      id: e.id,
-                      type: 'id' in e && (e as any).capacity ? 'shield' : 'weapon',
-                      name: e.name,
-                      quantity: isTestMode ? 10 : 1,
-                      weight: 1,
-                      price: e.price
-                  });
-              }
+          const pQuadrant = planet.quadrant;
+          
+          if (!isTestMode) {
+              // 1. Exotics only in GAMA or DELTA
+              if (pQuadrant !== QuadrantType.GAMA && pQuadrant !== QuadrantType.DELTA) return;
+
+              // 2. Spreading Exotics ONLY in GAMA
+              const spreadingIds = ['exotic_star_shatter', 'exotic_rainbow_spread', 'exotic_flamer'];
+              if (spreadingIds.includes(e.id) && pQuadrant !== QuadrantType.GAMA) return;
+          }
+
+          // Probability Check
+          // Slightly higher chance in war zones or high tech
+          if (isTestMode || Math.random() < 0.05) { 
+              newListings.push({
+                  instanceId: `market_${planetId}_${e.id}_${Date.now()}`,
+                  id: e.id,
+                  type: 'id' in e && (e as any).capacity ? 'shield' : 'weapon',
+                  name: e.name,
+                  quantity: isTestMode ? 10 : 1,
+                  weight: 1,
+                  price: e.price
+              });
           }
       });
 

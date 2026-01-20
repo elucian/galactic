@@ -13,11 +13,15 @@ class AudioService {
   private chargeGain: GainNode | null = null;
   private chargeFilter: BiquadFilterNode | null = null; // Track filter for cleanup
 
-  // Capacitor Sound State (Low Pulsing Reactor Hum)
+  // Capacitor Sound State (Low Pulsing Reactor Hum + Bottle Fill)
   private capOsc: OscillatorNode | null = null;
   private capGain: GainNode | null = null;
   private capFilter: BiquadFilterNode | null = null;
   private capLfo: OscillatorNode | null = null;
+  // Bottle Layer Nodes
+  private bottleNode: AudioBufferSourceNode | null = null;
+  private bottleFilter: BiquadFilterNode | null = null;
+  private bottleGain: GainNode | null = null;
 
   // Launch Sound State
   private launchGain: GainNode | null = null;
@@ -521,7 +525,7 @@ class AudioService {
     }
   }
 
-  // --- NEW CAPACITOR CHARGE SOUND (Low Pulsing Reactor Hum) ---
+  // --- CAPACITOR CHARGE SOUND (Reactor + Bottle Fill) ---
   startCapacitorCharge() {
     this.init();
     if (!this.ctx || !this.enabled) return;
@@ -530,60 +534,80 @@ class AudioService {
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
-    // "vou vou vou" - Low pulsing reactor hum
-    // Use a sawtooth for texture, filtered heavily
+    // 1. REACTOR HUM (Sawtooth Low Rumble)
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(60, t); // Low base pitch
+    osc.frequency.setValueAtTime(50, t); 
 
-    // Dynamic Filter
-    const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(100, t); // Start very muffled
-    filter.frequency.linearRampToValueAtTime(300, t + 4.0); // Slow rise to signify filling
-    filter.Q.value = 1; // Mild resonance
+    const humFilter = ctx.createBiquadFilter();
+    humFilter.type = 'lowpass';
+    humFilter.frequency.setValueAtTime(120, t);
+    
+    const humGain = ctx.createGain();
+    humGain.gain.setValueAtTime(0, t);
+    humGain.gain.linearRampToValueAtTime(0.15, t + 0.5);
 
-    // LFO for the "vou vou" (Wah effect)
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 3; // 3Hz pulse speed
-
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 150; // Modulate filter by +/- 150Hz
-
-    // Volume Envelope
-    const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, t);
-    gain.gain.linearRampToValueAtTime(0.1, t + 0.5); // Very soft volume (0.1)
-
-    // Connect LFO -> Filter Freq
-    lfo.connect(lfoGain);
-    lfoGain.connect(filter.frequency);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.masterGain!);
-
+    osc.connect(humFilter);
+    humFilter.connect(humGain);
+    humGain.connect(this.masterGain!);
     osc.start();
-    lfo.start();
 
+    // 2. BOTTLE FILL (Resonant Noise Sweep)
+    const bufferSize = ctx.sampleRate * 2; 
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+        data[i] = Math.random() * 2 - 1;
+    }
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    // High-Q Bandpass filter sweeping up mimics filling cavity resonance
+    const bottleFilter = ctx.createBiquadFilter();
+    bottleFilter.type = 'bandpass';
+    bottleFilter.Q.value = 15; 
+    bottleFilter.frequency.setValueAtTime(200, t);
+    bottleFilter.frequency.exponentialRampToValueAtTime(1500, t + 4.0); // Sweep up over 4s
+
+    const bottleGain = ctx.createGain();
+    bottleGain.gain.setValueAtTime(0, t);
+    bottleGain.gain.linearRampToValueAtTime(0.1, t + 0.5);
+
+    noise.connect(bottleFilter);
+    bottleFilter.connect(bottleGain);
+    bottleGain.connect(this.masterGain!);
+    noise.start();
+
+    // Store references
     this.capOsc = osc;
-    this.capGain = gain;
-    this.capFilter = filter;
-    this.capLfo = lfo;
+    this.capGain = humGain;
+    this.capFilter = humFilter;
+    
+    this.bottleNode = noise;
+    this.bottleFilter = bottleFilter;
+    this.bottleGain = bottleGain;
   }
 
   stopCapacitorCharge() {
+      const t = this.ctx!.currentTime;
+      
       if (this.capGain) {
-          const t = this.ctx!.currentTime;
           this.capGain.gain.setTargetAtTime(0, t, 0.1);
-          setTimeout(() => {
-              if (this.capOsc) { try { this.capOsc.stop(); } catch(e){} this.capOsc.disconnect(); this.capOsc = null; }
-              if (this.capLfo) { try { this.capLfo.stop(); } catch(e){} this.capLfo.disconnect(); this.capLfo = null; }
-              if (this.capFilter) { this.capFilter.disconnect(); this.capFilter = null; }
-              if (this.capGain) { this.capGain.disconnect(); this.capGain = null; }
-          }, 150);
       }
+      if (this.bottleGain) {
+          this.bottleGain.gain.setTargetAtTime(0, t, 0.1);
+      }
+
+      setTimeout(() => {
+          if (this.capOsc) { try { this.capOsc.stop(); } catch(e){} this.capOsc.disconnect(); this.capOsc = null; }
+          if (this.capFilter) { this.capFilter.disconnect(); this.capFilter = null; }
+          if (this.capGain) { this.capGain.disconnect(); this.capGain = null; }
+          
+          if (this.bottleNode) { try { this.bottleNode.stop(); } catch(e){} this.bottleNode.disconnect(); this.bottleNode = null; }
+          if (this.bottleFilter) { this.bottleFilter.disconnect(); this.bottleFilter = null; }
+          if (this.bottleGain) { this.bottleGain.disconnect(); this.bottleGain = null; }
+      }, 150);
   }
 
   private getShipSoundParams(id: string) {
