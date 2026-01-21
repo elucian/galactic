@@ -9,12 +9,12 @@ class AudioService {
   private introAudio: HTMLAudioElement | null = null;
   private intendedTrack: string | null = null; // Track we *want* to be playing
   
-  // Track Mapping
+  // Track Mapping - Using relative paths for better compatibility
   private tracks: Record<string, string> = {
-      'intro': '/assets/intro.mp3',
-      'command': '/assets/hangar.mp3',
-      'map': '/assets/map.mp3',
-      'combat': '/assets/combat.mp3'
+      'intro': 'assets/intro.mp3',
+      'command': 'assets/hangar.mp3',
+      'map': 'assets/map.mp3',
+      'combat': 'assets/combat.mp3'
   };
 
   private activeNodes: Set<AudioNode> = new Set();
@@ -62,14 +62,18 @@ class AudioService {
     }
 
     // 3. Retry playing background music if it was blocked
+    // This is crucial: if we tried to play before but were blocked, retry now that we have interaction
     if (this.introAudio && this.introAudio.paused && this.enabled && this.volume > 0) {
         const playPromise = this.introAudio.play();
         if (playPromise !== undefined) {
             playPromise.catch(e => {
-                // Still blocked, will try again on next interaction
-                console.debug("Retry play failed", e);
+                // Still blocked or other error (e.g. file not found), log it but don't crash
+                console.warn("Retry music play failed:", e);
             });
         }
+    } else if (this.intendedTrack && !this.introAudio && this.enabled && this.volume > 0) {
+        // If we intended to play a track but it failed to even load/start, try loading it again
+        this.loadAndPlay(this.intendedTrack);
     }
   }
 
@@ -126,7 +130,8 @@ class AudioService {
       // Check if we are already playing this track
       if (this.introAudio) {
           // If the src matches, just ensure it's playing
-          if (this.introAudio.src.endsWith(path.substring(1))) { // Handle ./ vs / matching loosely
+          // We check for the filename presence in the src url to handle full vs relative paths
+          if (this.introAudio.src.includes(path)) { 
                if (this.introAudio.paused && this.volume > 0) {
                    this.introAudio.play().catch(e => console.warn("Play blocked:", e));
                }
@@ -142,6 +147,13 @@ class AudioService {
       audio.loop = true;
       audio.volume = this.volume;
       
+      // Add error listener to help debug file issues
+      audio.addEventListener('error', (e) => {
+          console.error(`Error loading audio file: ${path}`, e);
+          const error = (e.target as HTMLAudioElement).error;
+          if (error) console.error("Audio Error Details:", error.code, error.message);
+      });
+
       const playPromise = audio.play();
       if (playPromise !== undefined) {
           playPromise.catch(error => {
