@@ -51,12 +51,14 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
   // Generate visual-only properties for the view (orbits, moons)
   const planetVisuals = useMemo(() => {
-    let cumulativeDist = 220; // Start further out to clear Sun
+    // Start closer to the smaller sun (150px instead of 220px)
+    let cumulativeDist = 150; 
 
     return sectorPlanets.map((p, i) => {
       const status = getPlanetStatus(p.id);
       const isInner = i < 2;
-      const planetSizePx = isInner ? 28 : 36;
+      // Increased Planet Sizes by ~30%
+      const planetSizePx = isInner ? 36 : 48; // Was 28 / 36
       const planetRadius = planetSizePx / 2;
 
       // Deterministic but varied moon counts
@@ -64,7 +66,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
       // Generate Visual Moons
       const visualMoons = Array.from({ length: moonCount }).map((_, mi) => ({
-          dist: 38 + (mi * 22), // 22px gap between moon orbits
+          dist: planetRadius + 18 + (mi * 18), // Tighter moon spacing
           speed: 0.02 + (Math.random() * 0.02),
           offset: Math.random() * Math.PI * 2,
           direction: Math.random() > 0.5 ? 1 : -1,
@@ -73,13 +75,14 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
       // Calculate System Radius to ensure clearance
       const maxMoonDist = visualMoons.length > 0 ? visualMoons[visualMoons.length - 1].dist : 0;
-      const systemRadius = planetRadius + maxMoonDist + 25; // +Buffer
+      const systemRadius = Math.max(planetRadius + 10, maxMoonDist) + 20; // +Buffer
 
       // Set current orbit distance
       const myDist = cumulativeDist;
 
-      // Increment for next planet (Current System + Gap + Next Planet approx)
-      cumulativeDist += systemRadius + 120; // Wide gap between systems
+      // Increment for next planet (Current System + Small Gap + Next System approximation)
+      // Much more compact gap (40px instead of 120px)
+      cumulativeDist += systemRadius + 40; 
 
       return {
         ...p,
@@ -140,24 +143,37 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
     }
   }, [selectedPlanetId, planetRegistry]);
 
-  // Drag Handlers
-  const handleSunMouseDown = (e: React.MouseEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+  // Drag Handlers (Mouse & Touch)
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+      // Prevent default to avoid scrolling on mobile, but allow if it's not the map
+      // e.preventDefault(); // Moved to passive: false in effect if needed, but here simple logic works
+      
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+
       setIsDragging(true);
       dragRef.current = {
-          startX: e.clientX,
-          startY: e.clientY,
+          startX: clientX,
+          startY: clientY,
           initialPanX: pan.x,
           initialPanY: pan.y
       };
   };
 
   useEffect(() => {
-      const handleMove = (e: MouseEvent) => {
+      const handleMove = (e: MouseEvent | TouchEvent) => {
           if (!isDragging) return;
-          const dx = e.clientX - dragRef.current.startX;
-          const dy = e.clientY - dragRef.current.startY;
+          
+          // Prevent scrolling on touch devices while panning map
+          if (e.type === 'touchmove') {
+             // e.preventDefault(); // Passive listener issue in React 18, handled via CSS touch-action usually
+          }
+
+          const clientX = 'touches' in e ? (e as TouchEvent).touches[0].clientX : (e as MouseEvent).clientX;
+          const clientY = 'touches' in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
+
+          const dx = clientX - dragRef.current.startX;
+          const dy = clientY - dragRef.current.startY;
           setPan({ x: dragRef.current.initialPanX + dx, y: dragRef.current.initialPanY + dy });
       };
 
@@ -176,9 +192,14 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
       window.addEventListener('mousemove', handleMove);
       window.addEventListener('mouseup', handleUp);
+      window.addEventListener('touchmove', handleMove);
+      window.addEventListener('touchend', handleUp);
+      
       return () => {
           window.removeEventListener('mousemove', handleMove);
           window.removeEventListener('mouseup', handleUp);
+          window.removeEventListener('touchmove', handleMove);
+          window.removeEventListener('touchend', handleUp);
       };
   }, [isDragging]);
 
@@ -196,28 +217,29 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   };
 
   const getSunVisuals = (q: QuadrantType) => {
+    // Reduced shadow spread for smaller sun (80px -> 50px)
     switch (q) {
       case QuadrantType.ALFA: return { 
         color: '#facc15', 
-        shadow: '0 0 80px #facc15', 
+        shadow: '0 0 50px #facc15', 
         gradient: 'radial-gradient(circle, #fef08a 20%, #eab308 100%)', 
         label: 'YELLOW DWARF' 
       };
       case QuadrantType.BETA: return { 
         color: '#ef4444', 
-        shadow: '0 0 80px #ef4444', 
+        shadow: '0 0 50px #ef4444', 
         gradient: 'radial-gradient(circle, #fca5a5 20%, #dc2626 100%)', 
         label: 'RED GIANT' 
       };
       case QuadrantType.GAMA: return { 
         color: '#3b82f6', 
-        shadow: '0 0 80px #3b82f6', 
+        shadow: '0 0 50px #3b82f6', 
         gradient: 'radial-gradient(circle, #93c5fd 20%, #2563eb 100%)', 
         label: 'BLUE NEUTRON' 
       };
       case QuadrantType.DELTA: return { 
         color: '#451a03', 
-        shadow: '0 0 40px #ffffff, inset 0 0 50px #000', 
+        shadow: '0 0 30px #ffffff, inset 0 0 40px #000', 
         gradient: 'radial-gradient(circle, #000000 60%, #451a03 100%)', 
         border: '2px solid rgba(255,255,255,0.9)',
         isBlackHole: true,
@@ -345,7 +367,11 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
         </div>
 
         {/* Solar System Container Wrapper for Dragging */}
-        <div className="absolute inset-0 flex items-center justify-center overflow-hidden">
+        <div 
+            className="absolute inset-0 flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing touch-none"
+            onMouseDown={handleDragStart}
+            onTouchStart={handleDragStart}
+        >
             <div 
                 className="relative flex items-center justify-center"
                 style={{ 
@@ -362,10 +388,9 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                 {/* Pulsar Jets */}
                 {renderBlackHoleJets()}
 
-                {/* Central Sun */}
+                {/* Central Sun - Reduced Size */}
                 <div 
-                    className={`absolute z-10 w-32 h-32 rounded-full shadow-2xl ${isDragging ? 'cursor-grabbing' : 'cursor-grab hover:scale-105'} transition-transform duration-200`}
-                    onMouseDown={handleSunMouseDown}
+                    className="absolute z-10 w-20 h-20 rounded-full shadow-2xl transition-transform duration-200"
                     style={{ background: sunStyle.gradient, boxShadow: sunStyle.shadow, border: sunStyle.border || 'none' }}
                 >
                     {sunStyle.isBlackHole && (
@@ -401,17 +426,14 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                         <div 
                             className="absolute z-20 cursor-pointer group flex items-center justify-center"
                             style={{ transform: `translate(${x}px, ${y}px) translate(-50%, -50%)` }}
-                            onClick={() => setSelectedPlanetId(p.id)}
+                            onClick={(e) => { e.stopPropagation(); setSelectedPlanetId(p.id); }}
                         >
                             {/* SMART RETICLE */}
                             {isSelected && (
                                 <div className="absolute left-1/2 top-1/2 pointer-events-none z-0" style={{ transform: `translate(-50%, -50%) scale(${1/currentScale})` }}> 
                                     <div className="relative flex items-center justify-center"
                                          style={{ 
-                                             // Dynamic Size Logic: 
-                                             // 1. Base Universe Size = Planet + Gap. 
-                                             // 2. Scale by currentScale to get raw screen size.
-                                             // 3. Clamp Min (45px screen) and Max (85% Sun screen).
+                                             // Dynamic Size Logic for Selection
                                              width: Math.min(
                                                  Math.max((p.planetSizePx * 2.2 * currentScale), 45), 
                                                  (128 * currentScale * 0.85)

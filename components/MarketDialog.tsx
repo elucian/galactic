@@ -103,14 +103,18 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   const [activeFilters, setActiveFilters] = useState<string[]>(CATEGORY_ORDER);
   const [selectedItemIdx, setSelectedItemIdx] = useState<number | null>(null);
   const [transactionQty, setTransactionQty] = useState(1);
+  const [showMobileDetails, setShowMobileDetails] = useState(false);
   
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [pendingFilters, setPendingFilters] = useState<string[]>(CATEGORY_ORDER);
   const filterRef = useRef<HTMLDivElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const lastClickRef = useRef<{ idx: number, time: number }>({ idx: -1, time: 0 });
 
   useEffect(() => {
       setSelectedItemIdx(null);
       setTransactionQty(1);
+      setShowMobileDetails(false);
   }, [marketTab, isOpen]);
 
   useEffect(() => {
@@ -122,6 +126,31 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       if (isFilterOpen) document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isFilterOpen]);
+
+  const handleItemClick = (idx: number) => {
+      const now = Date.now();
+      const last = lastClickRef.current;
+      
+      // Double tap detection (within 400ms on same item)
+      if (last.idx === idx && (now - last.time) < 400) {
+          setSelectedItemIdx(idx);
+          setShowMobileDetails(true);
+      } else {
+          setSelectedItemIdx(idx);
+      }
+      lastClickRef.current = { idx, time: now };
+  };
+
+  const handleScroll = (direction: 'up' | 'down') => {
+      if (listContainerRef.current) {
+          const h = listContainerRef.current.clientHeight;
+          const scrollAmount = h * 0.8;
+          listContainerRef.current.scrollBy({ 
+              top: direction === 'up' ? -scrollAmount : scrollAmount, 
+              behavior: 'smooth' 
+          });
+      }
+  };
 
   const displayItems = useMemo(() => {
       let rawItems: any[] = [];
@@ -279,6 +308,7 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       if (marketTab === 'buy') marketBuy(selectedItem, transactionQty, selectedItem.instanceId);
       else marketSell(selectedItem.id, transactionQty);
       setSelectedItemIdx(null);
+      setShowMobileDetails(false);
   };
 
   const toggleFilterMenu = () => {
@@ -400,10 +430,10 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
              </div>
           </header>
           
-          <div className="flex-grow flex flex-col md:flex-row overflow-hidden">
+          <div className="flex-grow flex flex-col md:flex-row overflow-hidden relative">
                 {/* LEFT PANEL: LISTING */}
-                <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col border-b-2 md:border-b-0 md:border-r-2 border-zinc-800 bg-zinc-900/20">
-                    <div className="flex-grow overflow-y-auto custom-scrollbar p-2 space-y-1">
+                <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col border-b-2 md:border-b-0 md:border-r-2 border-zinc-800 bg-zinc-900/20 relative">
+                    <div ref={listContainerRef} className="flex-grow overflow-y-auto custom-scrollbar p-2 space-y-1 pb-16">
                         {displayItems.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-40 opacity-30 mt-10">
                                 <span className="text-2xl text-zinc-600 mb-2">∅</span>
@@ -425,11 +455,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                                             </div>
                                         )}
                                         <div 
-                                            onClick={() => setSelectedItemIdx(idx)}
+                                            onClick={() => handleItemClick(idx)}
                                             className={`flex justify-between items-center p-3 rounded cursor-pointer border transition-all ${isSelected ? 'bg-white/5 border-white shadow-lg z-10' : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800'}`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className="hidden sm:block">
+                                                <div className="block">
                                                     <ItemSVG type={item.type || 'goods'} color={color} size={iconSize} />
                                                 </div>
                                                 <div className="flex flex-col">
@@ -444,10 +474,39 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                             })
                         )}
                     </div>
+
+                    {/* SCROLL CONTROLS (Mobile Only) */}
+                    <div className="absolute bottom-4 right-4 flex flex-col gap-2 md:hidden z-30">
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleScroll('up'); }}
+                            className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
+                        </button>
+                        <button 
+                            onClick={(e) => { e.stopPropagation(); handleScroll('down'); }}
+                            className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
+                    </div>
                 </div>
 
                 {/* RIGHT PANEL: DETAILS & TRANSACTION */}
-                <div className="w-full md:w-1/2 lg:w-3/5 flex flex-col bg-zinc-950 relative border-t-4 border-zinc-900 md:border-t-0">
+                <div className={`
+                    w-full md:w-1/2 lg:w-3/5 flex flex-col bg-zinc-950 border-t-4 border-zinc-900 md:border-t-0
+                    ${showMobileDetails ? 'fixed inset-0 z-[100] border-0' : 'hidden md:flex relative'}
+                `}>
+                    {/* Close Button for Mobile Modal */}
+                    {showMobileDetails && (
+                        <button 
+                            onClick={() => setShowMobileDetails(false)}
+                            className="absolute top-4 right-4 z-50 w-10 h-10 bg-zinc-900/80 border border-zinc-600 rounded-full text-white flex items-center justify-center shadow-xl active:scale-95 md:hidden"
+                        >
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                    )}
+
                     {selectedItem ? (
                         <div className="flex flex-col h-full animate-in fade-in slide-in-from-right-4 duration-300 relative">
                             {/* Background Decoration */}
@@ -456,14 +515,30 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                             {/* SCROLLABLE INFO AREA */}
                             <div className="flex-grow overflow-y-auto custom-scrollbar p-6">
                                 
-                                {/* HEADER: ICON + INFO */}
-                                <div className="flex items-start gap-6 mb-6">
-                                    <div className="shrink-0 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 shadow-lg flex items-center justify-center">
-                                        <ItemSVG type={selectedItem.type || 'goods'} color={getItemColor(selectedItem)} size={largeIconSize} />
+                                {/* HEADER: RESPONSIVE LAYOUT */}
+                                <div className="mb-6">
+                                    {/* MOBILE LAYOUT: Name, Category, Icon centered stack */}
+                                    <div className="flex flex-col items-center md:hidden">
+                                        <h2 className="text-2xl font-black uppercase text-white tracking-tight leading-none mb-2 text-center">
+                                            {selectedItem.name}
+                                        </h2>
+                                        <span className="text-[10px] font-mono text-emerald-500 uppercase tracking-widest bg-emerald-950/30 px-3 py-1 rounded border border-emerald-900/50 mb-6">
+                                            {getCategory(selectedItem)} CLASS
+                                        </span>
+                                        <div className="bg-zinc-900/50 p-6 rounded-full border border-zinc-800 shadow-[0_0_25px_rgba(0,0,0,0.5)] mb-2">
+                                            <ItemSVG type={selectedItem.type || 'goods'} color={getItemColor(selectedItem)} size={96} />
+                                        </div>
                                     </div>
-                                    <div className="flex flex-col pt-1">
-                                        <h2 className={`${fontSize === 'small' ? 'text-xl' : 'text-3xl'} font-black uppercase text-white tracking-tight leading-none mb-3`}>{selectedItem.name}</h2>
-                                        <span className="text-xs font-mono text-emerald-500 uppercase tracking-widest bg-emerald-950/30 px-3 py-1 rounded border border-emerald-900/50 w-fit">{getCategory(selectedItem)} CLASS</span>
+
+                                    {/* DESKTOP LAYOUT: Icon Left, Name Right */}
+                                    <div className="hidden md:flex items-start gap-6">
+                                        <div className="shrink-0 bg-zinc-900/50 p-4 rounded-xl border border-zinc-800 shadow-lg flex items-center justify-center">
+                                            <ItemSVG type={selectedItem.type || 'goods'} color={getItemColor(selectedItem)} size={largeIconSize} />
+                                        </div>
+                                        <div className="flex flex-col pt-1">
+                                            <h2 className={`${fontSize === 'small' ? 'text-xl' : 'text-3xl'} font-black uppercase text-white tracking-tight leading-none mb-3`}>{selectedItem.name}</h2>
+                                            <span className="text-xs font-mono text-emerald-500 uppercase tracking-widest bg-emerald-950/30 px-3 py-1 rounded border border-emerald-900/50 w-fit">{getCategory(selectedItem)} CLASS</span>
+                                        </div>
                                     </div>
                                 </div>
 
