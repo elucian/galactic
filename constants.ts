@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 25
-// VERSION: Beta 25 - Galactic Freelancer Rebrand
+// CHECKPOINT: Beta 28
+// VERSION: Beta 28 - Restored Baseline
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;

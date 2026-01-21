@@ -2,23 +2,32 @@
 class AudioService {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
-  private currentTrack: any = null;
   private volume: number = 0.3;
   private enabled: boolean = true;
+  
+  // Background Music State
   private introAudio: HTMLAudioElement | null = null;
+  private intendedTrack: string | null = null; // Track we *want* to be playing
+  
+  // Track Mapping
+  private tracks: Record<string, string> = {
+      'intro': '/assets/intro.mp3',
+      'command': '/assets/hangar.mp3',
+      'map': '/assets/map.mp3',
+      'combat': '/assets/combat.mp3'
+  };
+
   private activeNodes: Set<AudioNode> = new Set();
   
   // Charge Sound State
   private chargeOsc: OscillatorNode | null = null;
   private chargeGain: GainNode | null = null;
-  private chargeFilter: BiquadFilterNode | null = null; // Track filter for cleanup
+  private chargeFilter: BiquadFilterNode | null = null;
 
-  // Capacitor Sound State (Low Pulsing Reactor Hum + Bottle Fill)
+  // Capacitor Sound State
   private capOsc: OscillatorNode | null = null;
   private capGain: GainNode | null = null;
   private capFilter: BiquadFilterNode | null = null;
-  private capLfo: OscillatorNode | null = null;
-  // Bottle Layer Nodes
   private bottleNode: AudioBufferSourceNode | null = null;
   private bottleFilter: BiquadFilterNode | null = null;
   private bottleGain: GainNode | null = null;
@@ -34,16 +43,18 @@ class AudioService {
 
   init() {
     if (this.ctx) return;
-    this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
-    this.masterGain = this.ctx.createGain();
-    this.masterGain.connect(this.ctx.destination);
-    this.updateVolume(this.volume);
+    const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+    if (AudioContextClass) {
+        this.ctx = new AudioContextClass();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.connect(this.ctx.destination);
+        this.updateVolume(this.volume);
+    }
   }
 
   private createPanner(x: number): StereoPannerNode | null {
     if (!this.ctx) return null;
     const panner = this.ctx.createStereoPanner();
-    // Clamp x to -1 to 1
     const panValue = Math.max(-1, Math.min(1, x));
     panner.pan.setValueAtTime(panValue, this.ctx.currentTime);
     return panner;
@@ -51,8 +62,35 @@ class AudioService {
 
   updateVolume(v: number) {
     this.volume = v;
-    if (this.masterGain) this.masterGain.gain.setTargetAtTime(this.enabled ? v : 0, this.ctx!.currentTime, 0.1);
-    if (this.introAudio) this.introAudio.volume = this.enabled ? v : 0;
+    
+    // Update SFX Volume
+    if (this.masterGain && this.ctx) {
+        this.masterGain.gain.setTargetAtTime(this.enabled ? v : 0, this.ctx.currentTime, 0.1);
+    }
+
+    // Update Music Volume
+    if (this.enabled && v > 0) {
+        if (this.introAudio) {
+            // Update existing track volume
+            this.introAudio.volume = v;
+            // Resume if it was paused due to 0 volume or initial autoplay block
+            if (this.introAudio.paused) {
+                const playPromise = this.introAudio.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(e => console.warn("Resume failed (interaction needed?):", e));
+                }
+            }
+        } else if (this.intendedTrack) {
+            // Volume raised from 0, load the intended track now
+            this.loadAndPlay(this.intendedTrack);
+        }
+    } else {
+        // Volume is 0 or disabled
+        if (this.introAudio) {
+            this.introAudio.pause();
+            // Optional: Unload to save memory if specifically desired
+        }
+    }
   }
 
   setEnabled(e: boolean) {
@@ -60,13 +98,78 @@ class AudioService {
     this.updateVolume(this.volume);
   }
 
+  // Internal helper to actually load the file
+  private loadAndPlay(trackId: string) {
+      const path = this.tracks[trackId];
+      if (!path) return;
+
+      // Check if we are already playing this track
+      if (this.introAudio) {
+          // If the src matches, just ensure it's playing
+          if (this.introAudio.src.endsWith(path.substring(1))) { // Handle ./ vs / matching loosely
+               if (this.introAudio.paused && this.volume > 0) {
+                   this.introAudio.play().catch(e => console.warn("Play blocked:", e));
+               }
+               return; 
+          }
+          // Otherwise stop the old one
+          this.introAudio.pause();
+          this.introAudio.src = "";
+          this.introAudio = null;
+      }
+
+      const audio = new Audio(path);
+      audio.loop = true;
+      audio.volume = this.volume;
+      
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+          playPromise.catch(error => {
+              console.warn(`Audio play blocked for ${trackId}:`, error);
+              // We intentionally leave it paused. 
+              // App.tsx handleInteraction will call init() -> updateVolume() which will try .play() again on user gesture.
+          });
+      }
+      
+      this.introAudio = audio;
+  }
+
+  playTrack(type: 'intro' | 'command' | 'map' | 'combat') {
+    this.init();
+    
+    // Always update intention
+    this.intendedTrack = type;
+
+    // Check Constraints: If volume 0 or disabled, do NOT load/play
+    if (!this.enabled || this.volume <= 0) {
+        if (this.introAudio) {
+            this.introAudio.pause();
+            // Don't nullify immediately to allow resume, but if switching tracks we might want to?
+            // Actually, if we switch tracks while mute, we shouldn't load the new one.
+            // If we are just pausing the current one, we keep it.
+            // But if 'type' is different from current, we should probably prepare to switch.
+            // For now, simple pause is enough.
+        }
+        return;
+    }
+
+    // Load and play
+    this.loadAndPlay(type);
+  }
+
+  stop() {
+    this.intendedTrack = null;
+    if (this.introAudio) {
+      this.introAudio.pause();
+      this.introAudio = null;
+    }
+  }
+
   startLandingThruster() {
     this.init();
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
     
-    // Create Brown Noise Buffer for heavy rumble
-    // 4 seconds loop to avoid repetition artifacts
     const bufferSize = ctx.sampleRate * 4;
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -74,21 +177,17 @@ class AudioService {
     let lastOut = 0;
     for (let i = 0; i < bufferSize; i++) {
         const white = Math.random() * 2 - 1;
-        // Leaky integrator for brown noise approximation
         lastOut = (lastOut + (0.02 * white)) / 1.02;
-        data[i] = lastOut * 3.5; 
-        // Add a tiny bit of white noise back for high-freq hiss
-        data[i] += white * 0.05; 
+        data[i] = lastOut * 3.5 + (white * 0.05); 
     }
 
     const noise = ctx.createBufferSource();
     noise.buffer = buffer;
     noise.loop = true;
 
-    // Filter to shape the roar dynamically
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.value = 100; // Start deep and muffled
+    filter.frequency.value = 100; 
 
     const gain = ctx.createGain();
     gain.gain.value = 0;
@@ -107,11 +206,8 @@ class AudioService {
   updateLandingThruster(intensity: number) {
     if (this.landingThrusterGain && this.landingThrusterFilter && this.ctx) {
         const t = this.ctx.currentTime;
-        // Volume: 0 to 0.7 based on intensity
         const vol = Math.max(0, Math.min(0.7, intensity));
         this.landingThrusterGain.gain.setTargetAtTime(vol, t, 0.1);
-        
-        // Filter Freq: 80Hz (idle rumble) to 600Hz (full throttle roar)
         const freq = 80 + (intensity * 520); 
         this.landingThrusterFilter.frequency.setTargetAtTime(freq, t, 0.1);
     }
@@ -121,19 +217,9 @@ class AudioService {
     if (this.landingThrusterGain && this.ctx) {
         this.landingThrusterGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.5);
         setTimeout(() => {
-            if (this.landingThrusterOsc) {
-                try { this.landingThrusterOsc.stop(); } catch(e){}
-                this.landingThrusterOsc.disconnect();
-                this.landingThrusterOsc = null;
-            }
-            if (this.landingThrusterFilter) {
-                this.landingThrusterFilter.disconnect();
-                this.landingThrusterFilter = null;
-            }
-            if (this.landingThrusterGain) {
-                this.landingThrusterGain.disconnect();
-                this.landingThrusterGain = null;
-            }
+            if (this.landingThrusterOsc) { try { this.landingThrusterOsc.stop(); } catch(e){} this.landingThrusterOsc.disconnect(); this.landingThrusterOsc = null; }
+            if (this.landingThrusterFilter) { this.landingThrusterFilter.disconnect(); this.landingThrusterFilter = null; }
+            if (this.landingThrusterGain) { this.landingThrusterGain.disconnect(); this.landingThrusterGain = null; }
         }, 600);
     }
   }
@@ -144,7 +230,6 @@ class AudioService {
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
-    // 1. Heavy Low Thud (Sine drop) - The "weight"
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(120, t);
@@ -159,7 +244,6 @@ class AudioService {
     osc.start(t);
     osc.stop(t + 0.4);
 
-    // 2. Metallic Clank (Bandpass Square) - The "gear"
     const metalOsc = ctx.createOscillator();
     metalOsc.type = 'square';
     metalOsc.frequency.setValueAtTime(200, t);
@@ -180,7 +264,6 @@ class AudioService {
     metalOsc.start(t);
     metalOsc.stop(t + 0.2);
 
-    // 3. Impact Hiss (Filtered Noise) - The "dust/hydraulics"
     const noise = ctx.createBufferSource();
     const bSize = ctx.sampleRate * 0.5;
     const b = ctx.createBuffer(1, bSize, ctx.sampleRate);
@@ -208,32 +291,21 @@ class AudioService {
     this.init();
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
-    
-    // Create a rhythmic high pitch chirp
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.value = 4000;
-    
     const gain = ctx.createGain();
     gain.gain.value = 0;
-    
-    // LFO for chirping rhythm
     const lfo = ctx.createOscillator();
     lfo.type = 'square';
-    lfo.frequency.value = 4; // 4 chirps per second roughly
-    
+    lfo.frequency.value = 4; 
     const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.05; // Modulation depth
-    
-    // Connect LFO to Gain
+    lfoGain.gain.value = 0.05; 
     lfo.connect(gain.gain);
-    
     osc.connect(gain);
     gain.connect(this.masterGain!);
-    
     osc.start();
     lfo.start();
-    
     this.ambienceNodes.push(osc, lfo, gain, lfoGain);
   }
 
@@ -253,12 +325,10 @@ class AudioService {
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
-    // Create a specific gain for the launch sequence to allow fading
     const seqGain = ctx.createGain();
     seqGain.connect(this.masterGain!);
     this.launchGain = seqGain;
 
-    // 1. Ignition Bang (Low Thud)
     const bangOsc = ctx.createOscillator();
     bangOsc.type = 'square';
     bangOsc.frequency.setValueAtTime(80, t);
@@ -268,26 +338,21 @@ class AudioService {
     bangGain.gain.setValueAtTime(0.6, t);
     bangGain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
     
-    // Lowpass filter for the bang to make it heavy
     const bangFilter = ctx.createBiquadFilter();
     bangFilter.type = 'lowpass';
     bangFilter.frequency.value = 200;
 
     bangOsc.connect(bangFilter);
     bangFilter.connect(bangGain);
-    bangGain.connect(seqGain); // Connect to sequence gain
+    bangGain.connect(seqGain); 
     bangOsc.start(t);
     bangOsc.stop(t + 0.4);
 
-    // 2. Engine Roar (Pink-ish Noise)
     const duration = 12.0;
     const bufferSize = ctx.sampleRate * duration;
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
-    // Simple noise generation
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-    }
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
 
     const noise = ctx.createBufferSource();
     noise.buffer = buffer;
@@ -295,19 +360,18 @@ class AudioService {
     const roarFilter = ctx.createBiquadFilter();
     roarFilter.type = 'lowpass';
     roarFilter.frequency.setValueAtTime(100, t);
-    roarFilter.frequency.linearRampToValueAtTime(800, t + 4); // Rev up
-    roarFilter.frequency.linearRampToValueAtTime(400, t + 10); // Fade out frequency
+    roarFilter.frequency.linearRampToValueAtTime(800, t + 4); 
+    roarFilter.frequency.linearRampToValueAtTime(400, t + 10); 
 
     const roarGain = ctx.createGain();
     roarGain.gain.setValueAtTime(0, t);
-    roarGain.gain.linearRampToValueAtTime(0.3, t + 0.5); // Fade in
+    roarGain.gain.linearRampToValueAtTime(0.3, t + 0.5);
     roarGain.gain.linearRampToValueAtTime(0.2, t + 8);
-    roarGain.gain.linearRampToValueAtTime(0, t + 12); // Fade out
+    roarGain.gain.linearRampToValueAtTime(0, t + 12); 
 
     noise.connect(roarFilter);
     roarFilter.connect(roarGain);
-    roarGain.connect(seqGain); // Connect to sequence gain
-    
+    roarGain.connect(seqGain); 
     noise.start(t);
     noise.stop(t + duration);
   }
@@ -315,16 +379,11 @@ class AudioService {
   stopLaunchSequence() {
     if (this.launchGain && this.ctx) {
         const t = this.ctx.currentTime;
-        // Fade out over 0.5 seconds
         this.launchGain.gain.cancelScheduledValues(t);
         this.launchGain.gain.setValueAtTime(this.launchGain.gain.value, t);
         this.launchGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
-        
         setTimeout(() => {
-            if (this.launchGain) {
-                this.launchGain.disconnect();
-                this.launchGain = null;
-            }
+            if (this.launchGain) { this.launchGain.disconnect(); this.launchGain = null; }
         }, 550);
     }
   }
@@ -337,53 +396,39 @@ class AudioService {
 
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
-    
     const gain = ctx.createGain();
     gain.connect(this.masterGain!);
 
-    // Filter for "siren" tone + Wah effect
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.Q.value = 2; // Resonant to emphasize the wah
+    filter.Q.value = 2; 
     filter.frequency.setValueAtTime(1000, t);
 
-    // Frequency Sweep: Descend then Ascend Scale
-    // D4 ~ 293 Hz
-    // B3 ~ 246 Hz
-    // D5 ~ 587 Hz
-    
     osc.frequency.setValueAtTime(293, t);
-    osc.frequency.linearRampToValueAtTime(246, t + 0.2); // Drop to B (The "lower to C, B" part)
-    // Ascend through "C, D, E, F, G, A, B, C, D" -> approximated by a sweep to D5
+    osc.frequency.linearRampToValueAtTime(246, t + 0.2); 
     osc.frequency.exponentialRampToValueAtTime(587, t + 1.0); 
     
-    // "Waee Wuaee Waee" - Wah-Wah Filter LFO
-    // We want roughly 3 pulses in the 1s duration
     const filterLfo = ctx.createOscillator();
     filterLfo.type = 'sine';
-    filterLfo.frequency.value = 3.5; // ~3.5 Hz for the pulses
+    filterLfo.frequency.value = 3.5; 
 
     const filterLfoGain = ctx.createGain();
-    filterLfoGain.gain.value = 600; // Modulate filter freq by +/- 600Hz
+    filterLfoGain.gain.value = 600; 
 
-    // Base filter frequency envelope
     filter.frequency.setValueAtTime(800, t);
     filter.frequency.linearRampToValueAtTime(1200, t + 1.0);
 
     filterLfo.connect(filterLfoGain);
     filterLfoGain.connect(filter.frequency);
     
-    // Base gain envelope
     gain.gain.setValueAtTime(0.2, t);
     gain.gain.linearRampToValueAtTime(0.3, t + 0.5);
     gain.gain.linearRampToValueAtTime(0, t + 1.2);
 
     osc.connect(filter);
     filter.connect(gain);
-    
     osc.start(t);
     filterLfo.start(t);
-    
     osc.stop(t + 1.2);
     filterLfo.stop(t + 1.2);
   }
@@ -465,12 +510,7 @@ class AudioService {
     
     noise.connect(filter);
     filter.connect(gain);
-    if (panner) {
-      gain.connect(panner);
-      panner.connect(this.masterGain!);
-    } else {
-      gain.connect(this.masterGain!);
-    }
+    if (panner) { gain.connect(panner); panner.connect(this.masterGain!); } else { gain.connect(this.masterGain!); }
 
     noise.start();
     noise.stop(ctx.currentTime + duration);
@@ -485,12 +525,10 @@ class AudioService {
     this.chargeOsc = ctx.createOscillator();
     this.chargeGain = ctx.createGain();
     
-    // "Weeo" Sound: Sine wave rising pitch 
     this.chargeOsc.type = 'sine';
     this.chargeOsc.frequency.setValueAtTime(200, ctx.currentTime); 
     this.chargeOsc.frequency.linearRampToValueAtTime(1000, ctx.currentTime + 2.0);
 
-    // Bandpass filter to emphasize the "ee" vowel quality as pitch rises
     const filter = ctx.createBiquadFilter();
     this.chargeFilter = filter;
     filter.type = 'bandpass';
@@ -508,24 +546,11 @@ class AudioService {
   }
 
   stopCharging() {
-    if (this.chargeOsc) {
-        try {
-            this.chargeOsc.stop();
-            this.chargeOsc.disconnect();
-        } catch(e) {}
-        this.chargeOsc = null;
-    }
-    if (this.chargeFilter) {
-        this.chargeFilter.disconnect();
-        this.chargeFilter = null;
-    }
-    if (this.chargeGain) {
-        this.chargeGain.disconnect();
-        this.chargeGain = null;
-    }
+    if (this.chargeOsc) { try { this.chargeOsc.stop(); this.chargeOsc.disconnect(); } catch(e) {} this.chargeOsc = null; }
+    if (this.chargeFilter) { this.chargeFilter.disconnect(); this.chargeFilter = null; }
+    if (this.chargeGain) { this.chargeGain.disconnect(); this.chargeGain = null; }
   }
 
-  // --- CAPACITOR CHARGE SOUND (Reactor + Bottle Fill) ---
   startCapacitorCharge() {
     this.init();
     if (!this.ctx || !this.enabled) return;
@@ -534,7 +559,6 @@ class AudioService {
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
-    // 1. REACTOR HUM (Sawtooth Low Rumble)
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     osc.frequency.setValueAtTime(50, t); 
@@ -552,23 +576,19 @@ class AudioService {
     humGain.connect(this.masterGain!);
     osc.start();
 
-    // 2. BOTTLE FILL (Resonant Noise Sweep)
     const bufferSize = ctx.sampleRate * 2; 
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-    }
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
     const noise = ctx.createBufferSource();
     noise.buffer = buffer;
     noise.loop = true;
 
-    // High-Q Bandpass filter sweeping up mimics filling cavity resonance
     const bottleFilter = ctx.createBiquadFilter();
     bottleFilter.type = 'bandpass';
     bottleFilter.Q.value = 15; 
     bottleFilter.frequency.setValueAtTime(200, t);
-    bottleFilter.frequency.exponentialRampToValueAtTime(1500, t + 4.0); // Sweep up over 4s
+    bottleFilter.frequency.exponentialRampToValueAtTime(1500, t + 4.0); 
 
     const bottleGain = ctx.createGain();
     bottleGain.gain.setValueAtTime(0, t);
@@ -579,31 +599,24 @@ class AudioService {
     bottleGain.connect(this.masterGain!);
     noise.start();
 
-    // Store references
     this.capOsc = osc;
     this.capGain = humGain;
     this.capFilter = humFilter;
-    
     this.bottleNode = noise;
     this.bottleFilter = bottleFilter;
     this.bottleGain = bottleGain;
   }
 
   stopCapacitorCharge() {
-      const t = this.ctx!.currentTime;
-      
-      if (this.capGain) {
-          this.capGain.gain.setTargetAtTime(0, t, 0.1);
-      }
-      if (this.bottleGain) {
-          this.bottleGain.gain.setTargetAtTime(0, t, 0.1);
-      }
+      if (!this.ctx) return;
+      const t = this.ctx.currentTime;
+      if (this.capGain) this.capGain.gain.setTargetAtTime(0, t, 0.1);
+      if (this.bottleGain) this.bottleGain.gain.setTargetAtTime(0, t, 0.1);
 
       setTimeout(() => {
           if (this.capOsc) { try { this.capOsc.stop(); } catch(e){} this.capOsc.disconnect(); this.capOsc = null; }
           if (this.capFilter) { this.capFilter.disconnect(); this.capFilter = null; }
           if (this.capGain) { this.capGain.disconnect(); this.capGain = null; }
-          
           if (this.bottleNode) { try { this.bottleNode.stop(); } catch(e){} this.bottleNode.disconnect(); this.bottleNode = null; }
           if (this.bottleFilter) { this.bottleFilter.disconnect(); this.bottleFilter = null; }
           if (this.bottleGain) { this.bottleGain.disconnect(); this.bottleGain = null; }
@@ -613,11 +626,9 @@ class AudioService {
   private getShipSoundParams(id: string) {
     let hash = 0;
     for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
-    
     const types: OscillatorType[] = ['sine', 'triangle', 'square', 'sawtooth'];
     const wave = types[Math.abs(hash) % 4];
-    const baseFreq = 150 + (Math.abs(hash * 3) % 400); // 150 - 550 Hz
-    
+    const baseFreq = 150 + (Math.abs(hash * 3) % 400); 
     return { wave, baseFreq };
   }
 
@@ -634,30 +645,23 @@ class AudioService {
     const ct = ctx.currentTime;
 
     if (type === 'flame') {
-        // Wind-like flame sound: Filtered noise
         const duration = 0.4;
         const bufferSize = ctx.sampleRate * duration;
         const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
         const data = buffer.getChannelData(0);
         for(let i=0; i<bufferSize; i++) data[i] = Math.random() * 2 - 1;
-        
         const noise = ctx.createBufferSource();
         noise.buffer = buffer;
-        
-        // Lowpass filter for "Shhh" sound
         const filter = ctx.createBiquadFilter();
         filter.type = 'lowpass';
         filter.frequency.setValueAtTime(300, ct);
         filter.frequency.linearRampToValueAtTime(100, ct + duration);
-        
-        g.gain.setValueAtTime(0.1, ct); // Lower volume
+        g.gain.setValueAtTime(0.1, ct); 
         g.gain.linearRampToValueAtTime(0, ct + duration);
-        
         noise.connect(filter);
         filter.connect(g);
         noise.start();
         noise.stop(ct + duration);
-
     } else if (type === 'laser') {
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
@@ -669,55 +673,31 @@ class AudioService {
       osc.start();
       osc.stop(ct + 0.1);
     } else if (type === 'puff' || type === 'cannon' || type === 'mega') {
-      // Ship-specific "Buf" sound
       let wave: OscillatorType = 'square';
       let freq = 150;
       let decay = 0.15;
       let vol = 0.1;
-
       if (variant) {
           const params = this.getShipSoundParams(variant);
           wave = params.wave;
           freq = params.baseFreq;
       }
-
-      if (type === 'puff') {
-          vol = 0.2; // Softer
-          decay = 0.1;
-      } else if (type === 'mega') {
-          vol = 0.4;
-          decay = 0.25;
-          wave = 'sawtooth'; // Always aggressive for mega
-          freq = 1800; // Original Zap sound but blended with ship tone
-      }
-
+      if (type === 'puff') { vol = 0.2; decay = 0.1; } 
+      else if (type === 'mega') { vol = 0.4; decay = 0.25; wave = 'sawtooth'; freq = 1800; }
       const osc = ctx.createOscillator();
       osc.type = wave;
-      
-      if (type === 'mega') {
-          // Sharp Zap
-          osc.frequency.setValueAtTime(freq, ct); 
-          osc.frequency.exponentialRampToValueAtTime(100, ct + decay);
-      } else {
-          // "Buf" drop
-          osc.frequency.setValueAtTime(freq, ct);
-          osc.frequency.exponentialRampToValueAtTime(50, ct + decay);
-      }
-
-      // Filter for muffling the "Buf"
+      if (type === 'mega') { osc.frequency.setValueAtTime(freq, ct); osc.frequency.exponentialRampToValueAtTime(100, ct + decay); } 
+      else { osc.frequency.setValueAtTime(freq, ct); osc.frequency.exponentialRampToValueAtTime(50, ct + decay); }
       const filter = ctx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(type === 'mega' ? 3000 : 800, ct);
       filter.frequency.exponentialRampToValueAtTime(type === 'mega' ? 500 : 100, ct + decay);
-
       g.gain.setValueAtTime(vol, ct);
       g.gain.exponentialRampToValueAtTime(0.001, ct + decay);
-
       osc.connect(filter);
       filter.connect(g);
       osc.start();
       osc.stop(ct + decay);
-
     } else if (type === 'missile') {
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
@@ -739,13 +719,10 @@ class AudioService {
       osc.start();
       osc.stop(ct + 0.3);
     } else if (type === 'rocket') {
-      // Hissing launch + thud
       const osc = ctx.createOscillator();
       osc.type = 'square';
       osc.frequency.setValueAtTime(80, ct);
       osc.frequency.exponentialRampToValueAtTime(20, ct + 0.2);
-      
-      // Noise
       const noise = ctx.createBufferSource();
       const bSize = ctx.sampleRate * 0.2;
       const b = ctx.createBuffer(1, bSize, ctx.sampleRate);
@@ -755,21 +732,18 @@ class AudioService {
       const nGain = ctx.createGain();
       nGain.gain.setValueAtTime(0.3, ct);
       nGain.gain.exponentialRampToValueAtTime(0.01, ct + 0.2);
-
       g.gain.setValueAtTime(0.15, ct);
       g.gain.linearRampToValueAtTime(0, ct + 0.2);
-
       osc.connect(g);
       noise.connect(nGain);
       nGain.connect(destination);
       osc.start(); osc.stop(ct + 0.2);
       noise.start(); noise.stop(ct + 0.2);
     } else if (type === 'emp') {
-      // Electric Zap
       const osc = ctx.createOscillator();
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(200, ct);
-      osc.frequency.linearRampToValueAtTime(1500, ct + 0.1); // Rapid rise
+      osc.frequency.linearRampToValueAtTime(1500, ct + 0.1); 
       g.gain.setValueAtTime(0.15, ct);
       g.gain.exponentialRampToValueAtTime(0.001, ct + 0.15);
       osc.connect(g);
@@ -786,7 +760,6 @@ class AudioService {
     const destination = panner ? panner : this.masterGain!;
     if (panner) panner.connect(this.masterGain!);
     g.connect(destination);
-
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     osc.frequency.setValueAtTime(1000, ctx.currentTime);
@@ -800,7 +773,6 @@ class AudioService {
 
   stopAllSfx() {
     if (this.ctx && this.ctx.state !== 'closed') {
-      // We don't necessarily want to close the context, but stop everything
       this.stop();
       this.stopCharging();
       this.stopCapacitorCharge();
@@ -808,24 +780,6 @@ class AudioService {
       this.stopLandingThruster();
       this.stopAmbience();
     }
-  }
-
-  stop() {
-    if (this.currentTrack) {
-      this.currentTrack.stop();
-      this.currentTrack = null;
-    }
-    if (this.introAudio) {
-      this.introAudio.pause();
-      this.introAudio.currentTime = 0;
-      this.introAudio = null;
-    }
-  }
-
-  playTrack(type: 'intro' | 'command' | 'map' | 'combat') {
-    this.init();
-    this.stop();
-    // Background music disabled as per request.
   }
 }
 
