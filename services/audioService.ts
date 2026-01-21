@@ -9,12 +9,12 @@ class AudioService {
   private introAudio: HTMLAudioElement | null = null;
   private intendedTrack: string | null = null; // Track we *want* to be playing
   
-  // Track Mapping - Using relative paths for better compatibility
+  // Track Mapping - Using Vercel Blob Storage
   private tracks: Record<string, string> = {
-      'intro': './assets/intro.mp3',
-      'command': './assets/hangar.mp3',
-      'map': './assets/map.mp3',
-      'combat': './assets/combat.mp3'
+      'intro': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/intro.mp3',
+      'command': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/hangar.mp3',
+      'map': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/map.mp3',
+      'combat': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/combat.mp3'
   };
 
   private activeNodes: Set<AudioNode> = new Set();
@@ -125,7 +125,8 @@ class AudioService {
       // Check if we are already playing this track
       if (this.introAudio) {
           // If the src matches, just ensure it's playing
-          if (this.introAudio.src.includes(path.replace('./', ''))) { 
+          // Check for filename match since full blob URL might differ slightly in params or protocol
+          if (this.introAudio.src === path || this.introAudio.src.includes(path.split('/').pop() || '')) { 
                if (this.introAudio.paused && this.volume > 0) {
                    this.introAudio.play().catch(e => { /* Expected if no interaction yet */ });
                }
@@ -138,6 +139,7 @@ class AudioService {
       }
 
       const audio = new Audio(path);
+      audio.crossOrigin = "anonymous"; // Best practice for remote resources
       audio.loop = true;
       audio.volume = this.volume;
       
