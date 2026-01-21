@@ -842,6 +842,7 @@ export default function App() {
             onComplete={handleWarpComplete} 
             weaponId={activeWeaponId}
             equippedWeapons={gameState.shipFittings[activeShipId].weapons}
+            destination={warpDestination === 'hangar' ? "HOME BASE" : `${gameState.currentPlanet?.name || 'UNKNOWN'} // ${gameState.currentPlanet?.quadrant || 'SECTOR'}`}
         />
       )}
 

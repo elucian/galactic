@@ -1,8 +1,9 @@
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { EquippedWeapon } from '../types.ts';
+import { audioService } from '../services/audioService.ts';
 
 interface WarpSequenceProps {
   shipConfig: ExtendedShipConfig;
@@ -11,304 +12,271 @@ interface WarpSequenceProps {
   onComplete: () => void;
   weaponId?: string;
   equippedWeapons?: (EquippedWeapon | null)[];
+  destination?: string;
 }
 
-const WarpSequence: React.FC<WarpSequenceProps> = ({ shipConfig, shipColors, shieldColor, onComplete, weaponId, equippedWeapons }) => {
+const WarpSequence: React.FC<WarpSequenceProps> = ({ 
+    shipConfig, 
+    shipColors, 
+    onComplete, 
+    weaponId, 
+    equippedWeapons,
+    destination = "UNKNOWN SECTOR"
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [shipScale, setShipScale] = useState(1);
-  const [shipOpacity, setShipOpacity] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  const [textVisible, setTextVisible] = useState(false);
+
+  // Animation State Logic - using ref to avoid re-renders during loop
+  const animRef = useRef({
+      frame: 0,
+      phase: 'drift' as 'drift' | 'power_on' | 'shrink' | 'warp' | 'expand' | 'cooldown' | 'finish',
+      
+      // Visual Props
+      containerScale: 1.0, 
+      
+      // Bubble Props
+      bubbleOpacity: 0.0,
+      bubbleBlur: 0.0,
+      
+      // Rotation Props
+      rotationAngle: 0.0,
+      rotationSpeed: 0.0005, // Initial drift speed
+  });
+
+  // Generate stars once - large field to cover rotation corners
+  const stars = useMemo(() => {
+      const diag = Math.hypot(window.innerWidth, window.innerHeight) * 1.5;
+      const starColors = ['#ffffff', '#e0f2fe', '#bae6fd', '#fcd34d', '#fbbf24'];
+      return Array.from({ length: 800 }).map(() => ({
+          x: (Math.random() - 0.5) * diag,
+          y: (Math.random() - 0.5) * diag,
+          size: Math.random() * 2.0 + 0.5,
+          color: starColors[Math.floor(Math.random() * starColors.length)],
+          alpha: 0.3 + Math.random() * 0.7
+      }));
+  }, []);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    let animId: number;
-    let startTime = Date.now();
-    
-    // TIMELINE:
-    // 0s - 2s: Shield Formation (Transparent -> Opaque)
-    // 2s - 5s: Acceleration (Shrink to dot, Vortex formation)
-    // 5s - 7s: Warp Tunnel (Spinning stars)
-    // 7s - 9s: Arrival (Bubble expands/fades, ship reappears)
-    
-    const TOTAL_DURATION = 9000;
+      audioService.startCharging();
 
-    const stars = Array.from({ length: 400 }).map(() => ({
-        x: (Math.random() - 0.5) * window.innerWidth * 2,
-        y: (Math.random() - 0.5) * window.innerHeight * 2,
-        z: Math.random() * 2000,
-        angle: Math.random() * Math.PI * 2,
-        radius: 100 + Math.random() * 800, // For spiral
-        color: Math.random() > 0.8 ? shieldColor : '#ffffff',
-        size: 0.5 + Math.random() * 1.5
-    }));
+      let rAF: number;
 
-    const loop = () => {
-        const now = Date.now();
-        const elapsed = now - startTime;
-        const width = canvas.width;
-        const height = canvas.height;
-        const cx = width / 2;
-        const cy = height / 2;
+      const loop = () => {
+          // Fullscreen canvas
+          const w = canvas.width = window.innerWidth;
+          const h = canvas.height = window.innerHeight;
+          const cx = w / 2;
+          const cy = h / 2;
+          
+          const s = animRef.current;
+          s.frame++;
 
-        if (elapsed > TOTAL_DURATION) {
-            onComplete();
-            return;
-        }
+          // --- STATE MACHINE (10s = ~600 frames) ---
+          
+          // 1. DRIFT (0s - 1.5s)
+          if (s.phase === 'drift') {
+              s.rotationSpeed = 0.0005; // Gentle drift
+              if (s.frame > 90) s.phase = 'power_on';
+          }
+          
+          // 2. POWER ON (1.5s - 3.5s)
+          else if (s.phase === 'power_on') {
+              // Bubble ON
+              s.bubbleOpacity = Math.min(0.85, s.bubbleOpacity + 0.015);
+              s.bubbleBlur = Math.min(8, s.bubbleBlur + 0.15);
+              
+              // Slight rotation ramp up
+              s.rotationSpeed += 0.0001; 
 
-        // Clear
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, width, height);
+              if (s.frame > 210) {
+                  s.phase = 'shrink';
+                  audioService.playLaunchSequence();
+              }
+          }
+          
+          // 3. SHRINK (3.5s - 5.5s)
+          else if (s.phase === 'shrink') {
+              // Ship Shrink
+              s.containerScale *= 0.94;
+              // Min scale 0.04 * 256px = ~10px visible size
+              if (s.containerScale < 0.04) s.containerScale = 0.04;
 
-        // --- ANIMATION PHASES ---
-        
-        // 1. SHIELD FORMATION (0-2s)
-        let bubbleAlpha = 0;
-        let bubbleScale = 1;
-        let starMode = 'static'; // static, streak, spiral
-        let warpSpeed = 0;
-        
-        if (elapsed < 2000) {
-            bubbleAlpha = elapsed / 2000; // 0 to 1
-            setShipScale(1);
-            setShipOpacity(1); // Ship visible inside initially?
-            // "Become opaque" implies hiding the ship eventually.
-            // Let's keep ship opacity 1, but draw bubble on top.
-        } 
-        // 2. ACCELERATION / SHRINK (2s-5s)
-        else if (elapsed < 5000) {
-            const p = (elapsed - 2000) / 3000;
-            bubbleAlpha = 1;
-            bubbleScale = 1 - (p * 0.95); // Shrink to 5%
-            setShipScale(bubbleScale);
-            starMode = 'streak';
-            warpSpeed = p * 50;
-        }
-        // 3. VORTEX (5s-7s)
-        else if (elapsed < 7000) {
-            bubbleAlpha = 1;
-            bubbleScale = 0.05;
-            setShipScale(0.05);
-            starMode = 'spiral';
-        }
-        // 4. ARRIVAL (7s-9s)
-        else {
-            const p = (elapsed - 7000) / 2000;
-            bubbleAlpha = 1 - p; // Fade out
-            // "Melt become very transparent and convert to shields"
-            // "Spaceship is small among the stars" -> Keep scale small?
-            // The prompt says "The landing planet grow... spaceship is small".
-            // So we keep the ship relatively small but maybe zoom in slightly from dot.
-            bubbleScale = 0.05 + (p * 0.25); // Grow back to 30% size (small)
-            setShipScale(bubbleScale);
-            starMode = 'static';
-            // Fade ship back in if it was hidden by opaque bubble
-            setShipOpacity(1); 
-        }
+              // Rotation Accelerate Exponentially
+              s.rotationSpeed *= 1.05;
+              
+              if (s.frame > 330) {
+                  s.phase = 'warp';
+              }
+          }
+          
+          // 4. WARP (5.5s - 7.5s)
+          else if (s.phase === 'warp') {
+              s.containerScale = 0.04;
+              
+              // Max Rotation Speed Cap increased for dizziness effect
+              s.rotationSpeed = Math.min(0.8, s.rotationSpeed * 1.02);
+              
+              if (s.frame > 450) {
+                  s.phase = 'expand';
+                  audioService.stopCharging();
+                  audioService.playSfx('buy');
+              }
+          }
+          
+          // 5. EXPAND (7.5s - 9.0s)
+          else if (s.phase === 'expand') {
+              // Ship Expand
+              s.containerScale += (1.0 - s.containerScale) * 0.1;
+              
+              // Rotation Decelerate
+              s.rotationSpeed *= 0.9;
+              
+              if (s.containerScale > 0.98) {
+                  s.containerScale = 1.0;
+                  s.phase = 'cooldown';
+              }
+          }
+          
+          // 6. COOLDOWN (9.0s - 10s)
+          else if (s.phase === 'cooldown') {
+              s.bubbleOpacity = Math.max(0, s.bubbleOpacity - 0.05);
+              s.bubbleBlur = Math.max(0, s.bubbleBlur - 0.5);
+              s.rotationSpeed = Math.max(0.0005, s.rotationSpeed * 0.9); // Back to drift
+              
+              if (s.bubbleOpacity <= 0) {
+                  s.phase = 'finish';
+                  setTextVisible(true);
+              }
+          }
+          
+          // 7. FINISH
+          else if (s.phase === 'finish') {
+              if (s.frame > 660) {
+                  onComplete();
+              }
+          }
 
-        // DRAW STARS
-        ctx.save();
-        ctx.translate(cx, cy);
-        
-        stars.forEach(s => {
-            let sx = 0, sy = 0, sz = s.size;
-            
-            if (starMode === 'static') {
-                // Simple 3D projection or static
-                const scale = 1000 / (s.z || 1);
-                sx = s.x; sy = s.y; // Simplified for static phase
-                // Drift
-                s.z -= 0.5;
-                if (s.z <= 0) s.z = 2000;
-                sx = (s.x / s.z) * 500;
-                sy = (s.y / s.z) * 500;
-            } else if (starMode === 'streak') {
-                s.z -= (10 + warpSpeed * 2);
-                if (s.z <= 0) s.z = 2000;
-                const scale = 1000 / s.z;
-                sx = s.x * scale * 0.001; // Use original x/y but scaled
-                sy = s.y * scale * 0.001; 
-                // Creating lines
-                ctx.strokeStyle = `rgba(255,255,255, ${Math.min(1, warpSpeed/20)})`;
-                ctx.lineWidth = sz * scale * 0.002;
-                ctx.beginPath();
-                ctx.moveTo(sx, sy);
-                ctx.lineTo(sx * 1.1, sy * 1.1);
-                ctx.stroke();
-                return; // Skip circle draw
-            } else if (starMode === 'spiral') {
-                // Vortex logic
-                // Angle increases over time
-                s.angle += 0.05;
-                s.radius -= 2;
-                if (s.radius < 10) s.radius = 800;
-                
-                sx = Math.cos(s.angle) * s.radius;
-                sy = Math.sin(s.angle) * s.radius;
-                
-                // Vortex trail
-                ctx.strokeStyle = s.color;
-                ctx.lineWidth = 1;
-                ctx.beginPath();
-                ctx.moveTo(sx, sy);
-                const tailX = Math.cos(s.angle - 0.2) * (s.radius + 10);
-                const tailY = Math.sin(s.angle - 0.2) * (s.radius + 10);
-                ctx.lineTo(tailX, tailY);
-                ctx.stroke();
-                return;
-            }
+          // --- UPDATE PHYSICS ---
+          s.rotationAngle += s.rotationSpeed;
 
-            ctx.fillStyle = s.color;
-            ctx.beginPath();
-            ctx.arc(sx, sy, Math.max(0.5, (1000/s.z)), 0, Math.PI * 2);
-            ctx.fill();
-        });
-        
-        ctx.restore();
+          // --- DRAW ---
+          // Clear background
+          ctx.fillStyle = '#000000';
+          ctx.fillRect(0, 0, w, h);
 
-        // DRAW BUBBLE
-        if (bubbleAlpha > 0) {
-            const baseRadius = Math.max(0, 150 * bubbleScale);
-            ctx.save();
-            ctx.translate(cx, cy);
-            
-            // "Opaque ... do not glow" -> Matte finish
-            // We use the shield color.
-            ctx.fillStyle = shieldColor;
-            ctx.globalAlpha = bubbleAlpha;
-            
-            // Draw sphere
-            ctx.beginPath();
-            ctx.arc(0, 0, baseRadius, 0, Math.PI * 2);
-            ctx.fill();
-            
-            // Add a slight rim light or "matte" shading
-            const grad = ctx.createRadialGradient(-baseRadius*0.3, -baseRadius*0.3, baseRadius*0.1, 0, 0, baseRadius);
-            grad.addColorStop(0, 'rgba(255,255,255,0.3)');
-            grad.addColorStop(1, 'rgba(0,0,0,0.1)');
-            ctx.fillStyle = grad;
-            ctx.fill();
+          // Draw Stars with Global Rotation
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(s.rotationAngle);
+          
+          // Optimization: Stars are pre-calculated relative to (0,0)
+          stars.forEach(st => {
+              ctx.fillStyle = st.color;
+              ctx.globalAlpha = st.alpha;
+              ctx.beginPath();
+              // Stretch stars slightly at high speeds for a radial blur effect
+              if (s.rotationSpeed > 0.1) {
+                  const dist = Math.hypot(st.x, st.y);
+                  const angle = Math.atan2(st.y, st.x);
+                  // Arc length approximation for streak
+                  const streakLen = Math.min(30, dist * s.rotationSpeed * 0.5);
+                  ctx.ellipse(st.x, st.y, streakLen, st.size, angle + Math.PI/2, 0, Math.PI*2);
+              } else {
+                  ctx.arc(st.x, st.y, st.size, 0, Math.PI * 2);
+              }
+              ctx.fill();
+          });
+          
+          ctx.restore();
 
-            ctx.restore();
-        }
+          // --- DOM UPDATES ---
+          if (containerRef.current) {
+              containerRef.current.style.transform = `scale(${s.containerScale})`;
+          }
+          if (bubbleRef.current) {
+              bubbleRef.current.style.opacity = s.bubbleOpacity.toString();
+              const blurVal = `blur(${s.bubbleBlur}px)`;
+              bubbleRef.current.style.backdropFilter = blurVal;
+              (bubbleRef.current.style as any).webkitBackdropFilter = blurVal;
+          }
 
-        animId = requestAnimationFrame(loop);
-    };
+          rAF = requestAnimationFrame(loop);
+      };
 
-    const resize = () => {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-    };
-    window.addEventListener('resize', resize);
-    resize();
-    animId = requestAnimationFrame(loop);
-
-    return () => {
-        cancelAnimationFrame(animId);
-        window.removeEventListener('resize', resize);
-    };
-  }, [shieldColor, onComplete]);
+      rAF = requestAnimationFrame(loop);
+      return () => {
+          cancelAnimationFrame(rAF);
+          audioService.stopCharging();
+          audioService.stopLaunchSequence();
+      };
+  }, [onComplete, stars]);
 
   return (
-    <div className="fixed inset-0 z-[5000] bg-black flex items-center justify-center overflow-hidden">
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
+    <div className="fixed inset-0 z-[5000] bg-black overflow-hidden flex items-center justify-center select-none font-mono">
       
-      {/* Ship Icon - visible initially, scales with bubble */}
+      {/* 1. Canvas (Rotates internally, DOM stays fixed) */}
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-0" />
+      
+      {/* 2. Main Container (Ship + Bubble) - SCALES */}
       <div 
-        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-48 h-48 pointer-events-none transition-opacity duration-300"
-        style={{ 
-            transform: `translate(-50%, -50%) scale(${shipScale})`, 
-            opacity: shipOpacity,
-            zIndex: 10 
-        }}
+        ref={containerRef}
+        className="relative z-20 w-64 h-64 flex items-center justify-center will-change-transform origin-center"
       >
-         <ShipIcon 
-            config={shipConfig} 
-            hullColor={shipColors.hull}
-            wingColor={shipColors.wings}
-            cockpitColor={shipColors.cockpit}
-            gunColor={shipColors.guns}
-            gunBodyColor={shipColors.gun_body}
-            engineColor={shipColors.engines}
-            nozzleColor={shipColors.nozzles}
-            showJets={true}
-            className="w-full h-full"
-            weaponId={weaponId}
-            equippedWeapons={equippedWeapons}
-         />
-         
-         {/* DOM Bubble Overlay */}
+         {/* THE SHIP (Layer 1) */}
+         <div className="absolute inset-0 z-10 flex items-center justify-center">
+             <ShipIcon 
+                config={shipConfig} 
+                hullColor={shipColors.hull}
+                wingColor={shipColors.wings}
+                cockpitColor={shipColors.cockpit}
+                gunColor={shipColors.guns}
+                gunBodyColor={shipColors.gun_body}
+                engineColor={shipColors.engines}
+                nozzleColor={shipColors.nozzles}
+                showJets={true}
+                className="w-full h-full drop-shadow-[0_0_15px_rgba(34,211,238,0.3)]"
+                weaponId={weaponId}
+                equippedWeapons={equippedWeapons}
+             />
+         </div>
+
+         {/* THE BUBBLE (Layer 2) */}
          <div 
-            className="absolute inset-[-20%] rounded-full transition-all duration-100"
-            style={{ 
-                backgroundColor: shieldColor, 
-                opacity: shipOpacity < 1 ? 1 : 0, 
+            ref={bubbleRef}
+            className="absolute -inset-10 rounded-full z-30 pointer-events-none will-change-transform"
+            style={{
+                background: 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.8) 0%, rgba(200,240,255,0.4) 40%, rgba(34,211,238,0.6) 85%, rgba(255,255,255,0.8) 100%)',
+                boxShadow: '0 0 30px rgba(34,211,238,0.5), inset 0 0 20px rgba(255,255,255,0.5)',
+                border: '1px solid rgba(255,255,255,0.6)',
+                opacity: 0, 
             }}
          />
       </div>
-      
-      {/* Upper Canvas for Bubble - z-index 20 */}
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-20 pointer-events-none" />
-      
-      {/* Background Canvas for Stars */}
-      <StarFieldCanvas shieldColor={shieldColor} phase={shipScale < 0.1 ? 'warp' : 'static'} /> 
 
-      <div className="absolute bottom-20 left-0 right-0 text-center z-30">
-          <h2 className="retro-font text-xl text-zinc-500 uppercase tracking-[0.5em] animate-pulse">
-              {shipScale < 0.1 ? "WARP TRAJECTORY" : "SHIELD HARMONICS"}
-          </h2>
-      </div>
+      {/* 3. Arrival Text - Positioned comfortably below the ship area */}
+      {textVisible && (
+          <div className="absolute top-[65%] left-0 right-0 text-center z-40 animate-in slide-in-from-bottom-8 fade-in duration-1000">
+              <h1 className="retro-font text-3xl md:text-5xl text-cyan-400 uppercase tracking-widest drop-shadow-[0_0_20px_rgba(34,211,238,0.8)]">
+                  {destination.includes('HOME') ? "DOCKING SEQ" : "ARRIVAL"}
+              </h1>
+              <div className="mt-4 inline-block px-6 py-2 bg-black/60 border border-cyan-500/30 rounded backdrop-blur-sm">
+                  <p className="text-white font-mono text-sm md:text-lg uppercase tracking-[0.3em]">
+                      {destination}
+                  </p>
+                  <p className="text-cyan-500 text-[10px] mt-2 animate-pulse">ENGAGING COMBAT SYSTEMS...</p>
+              </div>
+          </div>
+      )}
+
     </div>
   );
-};
-
-// Helper for Background Stars (Behind Ship)
-const StarFieldCanvas = ({ shieldColor, phase }: { shieldColor: string, phase: string }) => {
-    const ref = useRef<HTMLCanvasElement>(null);
-    useEffect(() => {
-        const ctx = ref.current?.getContext('2d');
-        if(!ctx) return;
-        let id: number;
-        const stars = Array.from({length:200}).map(() => ({
-            x: Math.random()*window.innerWidth, y: Math.random()*window.innerHeight, z: Math.random()*1000
-        }));
-        
-        const loop = () => {
-            if (ref.current) {
-                ctx.fillStyle = '#000';
-                ctx.fillRect(0,0,ref.current.width, ref.current.height);
-                const cx = ref.current.width/2;
-                const cy = ref.current.height/2;
-                
-                ctx.fillStyle = '#fff';
-                stars.forEach(s => {
-                    s.z -= (phase === 'warp' ? 20 : 0.5);
-                    if(s.z <= 0) { s.z = 1000; s.x = Math.random()*ref.current!.width; s.y = Math.random()*ref.current!.height; }
-                    const k = 1000/s.z;
-                    const x = (s.x - cx) * k + cx;
-                    const y = (s.y - cy) * k + cy;
-                    const sz = Math.max(0.5, k * 2);
-                    
-                    if (phase === 'warp') {
-                        ctx.strokeStyle = `rgba(255,255,255,${Math.min(1, k/2)})`;
-                        ctx.beginPath(); ctx.moveTo(x,y); 
-                        const x2 = (s.x - cx) * (k*1.1) + cx;
-                        const y2 = (s.y - cy) * (k*1.1) + cy;
-                        ctx.lineTo(x2, y2); ctx.stroke();
-                    } else {
-                        ctx.beginPath(); ctx.arc(x,y,sz,0,Math.PI*2); ctx.fill();
-                    }
-                });
-            }
-            id = requestAnimationFrame(loop);
-        };
-        loop();
-        return () => cancelAnimationFrame(id);
-    }, [phase]);
-    
-    return <canvas ref={ref} className="absolute inset-0 w-full h-full z-0" width={window.innerWidth} height={window.innerHeight} />
 };
 
 export default WarpSequence;

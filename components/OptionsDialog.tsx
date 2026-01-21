@@ -112,7 +112,7 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
       });
   };
 
-  const TabButton = ({ id, label }: { id: 'pilot' | 'audio' | 'system', label: string }) => (
+  const renderTabButton = (id: 'pilot' | 'audio' | 'system', label: string) => (
       <button 
           onClick={() => setActiveTab(id)} 
           className={`flex-1 py-3 text-center font-black uppercase ${btnSize} transition-colors ${activeTab === id ? 'bg-emerald-900/20 text-emerald-400 border-b-2 border-emerald-500' : 'bg-zinc-900/20 text-zinc-500 hover:text-zinc-300'}`}
@@ -122,17 +122,17 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
   );
 
   return (
-    <div className="fixed inset-0 z-[9600] bg-black/95 flex items-center justify-center p-2 backdrop-blur-md" onClick={(e) => e.stopPropagation()}>
-       <div className="w-full max-w-[96vw] bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col shadow-2xl h-[92vh]">
+    <div className="fixed inset-0 z-[9600] bg-black/95 flex items-center justify-center p-2 backdrop-blur-md" onClick={onClose}>
+       <div className="w-full max-w-[96vw] bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col shadow-2xl h-[92vh]" onClick={(e) => e.stopPropagation()}>
           <header className="p-3 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50 shrink-0">
               <h2 className={`retro-font text-emerald-400 ${titleSize} uppercase`}>System Configuration</h2>
               <button onClick={onClose} className={`text-zinc-500 ${btnSize} font-black hover:text-white`}>DONE</button>
           </header>
           
           <div className="flex border-b border-zinc-800 shrink-0">
-              <TabButton id="pilot" label="Pilot ID" />
-              <TabButton id="audio" label="Audio" />
-              <TabButton id="system" label="System" />
+              {renderTabButton('pilot', 'Pilot ID')}
+              {renderTabButton('audio', 'Audio')}
+              {renderTabButton('system', 'System')}
           </div>
 
           <div className="flex-grow p-4 md:p-6 overflow-hidden bg-black/40 flex flex-col relative">
