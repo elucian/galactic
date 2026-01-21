@@ -522,11 +522,11 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
       <div className={`
           transition-all duration-300 ease-in-out z-40 flex flex-col shadow-2xl overflow-hidden
           
-          /* Mobile / Tablet Portrait: Compact Bottom Right Panel */
-          fixed bottom-4 right-4 w-1/2 h-[25vh] rounded-xl border border-zinc-700/50 bg-zinc-900/90 backdrop-blur-md
+          /* Variable Width: 1/2 on mobile, 1/4 on tablet/medium, Fixed sidebar on large desktop */
+          fixed bottom-4 right-4 w-1/2 md:w-1/4 h-auto max-h-[80vh] rounded-xl border border-zinc-700/50 bg-zinc-900/60 backdrop-blur-md
           ${selectedPlanet ? 'translate-y-0 opacity-100' : 'translate-y-[120%] opacity-0 pointer-events-none'}
 
-          /* Desktop / Landscape: Full Height Right Sidebar */
+          /* Desktop / Landscape: Full Height Right Sidebar (Overrides fixed bottom positioning) */
           lg:relative lg:inset-auto lg:bottom-auto lg:left-auto lg:right-auto lg:translate-y-0
           lg:h-full lg:rounded-none lg:border-t-0 lg:border-b-0 lg:border-r-0 lg:border-l lg:border-zinc-800 lg:bg-zinc-950 lg:backdrop-blur-none
           lg:max-h-none lg:w-0
@@ -557,11 +557,11 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
               </button>
             </div>
 
-            {/* Scrollable Content Area - Hidden on Mobile to prevent clutter per request "put just the name, status and the button" */}
-            <div className="hidden lg:flex flex-grow flex-col overflow-y-auto custom-scrollbar p-3 lg:p-6 gap-3 lg:gap-6 z-10">
+            {/* Scrollable Content Area - Visible on all screens now */}
+            <div className="flex flex-grow flex-col overflow-y-auto custom-scrollbar p-3 lg:p-6 gap-3 lg:gap-6 z-10">
                
-               {/* PLANET IMAGE (Reduced height) */}
-               <div className="w-full h-24 lg:h-32 bg-black rounded-lg border-2 border-zinc-700 relative items-center justify-center overflow-hidden shadow-[inset_0_0_30px_rgba(0,0,0,1)] shrink-0 flex">
+               {/* PLANET IMAGE (Reduced height) - Hidden on mobile */}
+               <div className="hidden md:flex w-full h-24 lg:h-32 bg-black rounded-lg border-2 border-zinc-700 relative items-center justify-center overflow-hidden shadow-[inset_0_0_30px_rgba(0,0,0,1)] shrink-0">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_transparent_0%,_#000_100%)] z-10" />
                   <div className="w-16 h-16 lg:w-24 lg:h-24 rounded-full shadow-[inset_-12px_-12px_25px_rgba(0,0,0,0.9)] relative flex items-center justify-center" style={{ backgroundColor: selectedPlanet.color }}>
                      <div className="absolute inset-0 rounded-full shadow-[0_0_40px_currentColor] z-10" style={{ color: selectedPlanet.color }} />
@@ -595,32 +595,18 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
             {/* Fixed Footer for Buttons */}
             <div className="p-3 lg:p-6 border-t border-zinc-800/50 lg:border-zinc-800 bg-zinc-900/40 lg:bg-zinc-950 shrink-0 z-20 flex flex-col gap-2 mt-auto">
-                <div className="grid grid-cols-2 gap-2">
-                    <button 
-                        onClick={() => onLaunch(selectedPlanet)} 
-                        disabled={getPlanetStatus(selectedPlanet.id) === 'friendly'}
-                        className={`w-full py-2 lg:py-4 font-black uppercase tracking-[0.1em] text-[9px] lg:text-xs rounded shadow-lg transition-all 
-                        ${getPlanetStatus(selectedPlanet.id) === 'friendly' 
-                            ? 'bg-zinc-800 text-zinc-600 border border-zinc-700 cursor-not-allowed opacity-50' 
-                            : 'bg-red-700 border border-red-500 text-white hover:bg-red-600 hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(220,38,38,0.3)] animate-pulse'}`}
-                    >
-                       DEFEND PLANET
-                    </button>
-                    
-                    <button 
-                        onClick={() => onLaunch(selectedPlanet)} 
-                        disabled={getPlanetStatus(selectedPlanet.id) !== 'friendly'}
-                        className={`w-full py-2 lg:py-4 font-black uppercase tracking-[0.1em] text-[9px] lg:text-xs rounded shadow-lg transition-all 
-                        ${getPlanetStatus(selectedPlanet.id) !== 'friendly'
-                            ? 'bg-zinc-800 text-zinc-600 border border-zinc-700 cursor-not-allowed opacity-50' 
-                            : 'bg-emerald-600 border border-emerald-500 text-white hover:bg-emerald-500 hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.3)]'}`}
-                    >
-                       VISIT PLANET
-                    </button>
-                </div>
+                <button 
+                    onClick={() => onLaunch(selectedPlanet)} 
+                    className={`w-full py-2 lg:py-4 font-black uppercase tracking-[0.1em] text-[9px] lg:text-xs rounded shadow-lg transition-all 
+                    ${getPlanetStatus(selectedPlanet.id) === 'friendly' 
+                        ? 'bg-emerald-600 border border-emerald-500 text-white hover:bg-emerald-500 hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(16,185,129,0.3)]' 
+                        : 'bg-red-700 border border-red-500 text-white hover:bg-red-600 hover:scale-[1.02] active:scale-95 shadow-[0_0_15px_rgba(220,38,38,0.3)] animate-pulse'}`}
+                >
+                   {getPlanetStatus(selectedPlanet.id) === 'friendly' ? 'VISIT PLANET' : 'DEFEND PLANET'}
+                </button>
                 
                 {testMode && onTestLanding && (
-                    <button onClick={() => onTestLanding(selectedPlanet)} className="w-full py-1.5 lg:py-3 bg-orange-600/20 border border-orange-500 text-orange-500 font-black uppercase tracking-widest text-[8px] lg:text-[10px] rounded hover:bg-orange-600 hover:text-white transition-colors mt-1">
+                    <button onClick={() => onTestLanding(selectedPlanet)} className="w-full py-1.5 lg:py-3 bg-orange-600/20 border border-orange-500 text-orange-500 font-black uppercase tracking-widest text-[8px] lg:text-[10px] rounded hover:bg-orange-600 hover:text-white transition-colors">
                         TEST LANDING SEQUENCE
                     </button>
                 )}

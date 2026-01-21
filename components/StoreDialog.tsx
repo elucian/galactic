@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { SHIPS, WEAPONS, EXOTIC_WEAPONS } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { ExtendedShipConfig } from '../constants.ts';
@@ -18,6 +18,9 @@ interface StoreDialogProps {
 export const StoreDialog: React.FC<StoreDialogProps> = ({
   isOpen, onClose, inspectedShipId, setInspectedShipId, credits, replaceShip, fontSize, testMode
 }) => {
+  const [showDetailPanel, setShowDetailPanel] = useState(false);
+  const lastClickRef = useRef<{ id: string, time: number }>({ id: '', time: 0 });
+
   if (!isOpen || !inspectedShipId) return null;
 
   const titleSize = fontSize === 'small' ? 'text-[11px]' : (fontSize === 'large' ? 'text-[16px]' : 'text-[13px]');
@@ -67,15 +70,100 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
 
   const previewEquipped = getPreviewEquipped();
 
+  const handleShipClick = (id: string) => {
+      const now = Date.now();
+      if (lastClickRef.current.id === id && now - lastClickRef.current.time < 400) {
+          // Double Tap
+          setInspectedShipId(id);
+          setShowDetailPanel(true);
+      } else {
+          // Single Tap
+          setInspectedShipId(id);
+          lastClickRef.current = { id, time: now };
+      }
+  };
+
   return (
     <div className="fixed inset-0 z-[9900] bg-black/95 flex items-center justify-center p-4 backdrop-blur-2xl">
-        <div className="w-full max-w-5xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[90vh] shadow-2xl">
+        <div className="w-full max-w-5xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[90vh] shadow-2xl relative">
             <header className="p-4 border-b border-zinc-800 flex justify-between bg-zinc-900/50 shrink-0">
                 <h2 className={`retro-font text-emerald-500 ${titleSize} uppercase`}>Fleet Requisition</h2>
                 <button onClick={onClose} className={`text-red-500 font-black ${btnSize}`}>DONE</button>
             </header>
-            <div className="flex-grow flex overflow-hidden">
-                <div className="w-1/3 border-r border-zinc-800 bg-black/40 overflow-y-auto p-2 space-y-2">
+            <div className="flex-grow flex overflow-hidden relative">
+                
+                {/* MOBILE DETAIL OVERLAY PANEL */}
+                {showDetailPanel && (
+                    <div className="absolute inset-0 z-50 bg-zinc-950 flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200">
+                        {/* Overlay Header */}
+                        <div className="p-3 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/80 shrink-0">
+                            <span className="text-emerald-500 font-black uppercase tracking-widest text-xs">Ship Specs</span>
+                            <button 
+                                onClick={() => setShowDetailPanel(false)}
+                                className="w-8 h-8 flex items-center justify-center bg-zinc-800 rounded-full text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </div>
+
+                        {/* Scrollable Content (Slightly smaller vertically to fit footer) */}
+                        <div className="flex-grow overflow-y-auto p-4 flex flex-col items-center custom-scrollbar">
+                             <div className="text-center mb-2 shrink-0">
+                                <h2 className="text-xl font-black uppercase text-white leading-none mb-1">{ship.name}</h2>
+                                <p className="text-zinc-500 font-mono text-[10px] uppercase tracking-wide line-clamp-2">{ship.description}</p>
+                             </div>
+                             
+                             <div className="w-40 h-40 mb-4 relative shrink-0">
+                                <div className="absolute inset-0 bg-[radial-gradient(circle,_rgba(255,255,255,0.05)_0%,_transparent_70%)] pointer-events-none" />
+                                <ShipIcon 
+                                    config={ship} 
+                                    className="w-full h-full drop-shadow-[0_0_20px_rgba(0,0,0,0.5)]" 
+                                    showJets={false} 
+                                    equippedWeapons={previewEquipped as any} 
+                                    gunColor={currentWeaponColor} 
+                                />
+                             </div>
+
+                             {/* Stats Grid - Compact */}
+                             <div className="grid grid-cols-2 gap-2 w-full max-w-xs mb-2 shrink-0">
+                                <div className="bg-zinc-900/40 p-2 rounded border border-zinc-800/50 flex flex-col items-center">
+                                    <span className="text-[8px] text-zinc-500 uppercase font-black tracking-widest">Hold</span>
+                                    <span className="text-white font-black text-sm">{ship.maxCargo}</span>
+                                </div>
+                                <div className="bg-zinc-900/40 p-2 rounded border border-zinc-800/50 flex flex-col items-center">
+                                    <span className="text-[8px] text-zinc-500 uppercase font-black tracking-widest">Fuel</span>
+                                    <span className="text-white font-black text-sm">{ship.maxFuel}U</span>
+                                </div>
+                                <div className="bg-zinc-900/40 p-2 rounded border border-zinc-800/50 flex flex-col items-center">
+                                    <span className="text-[8px] text-zinc-500 uppercase font-black tracking-widest">Energy</span>
+                                    <span className="text-white font-black text-sm">{ship.maxEnergy}</span>
+                                </div>
+                                <div className="bg-zinc-900/40 p-2 rounded border border-zinc-800/50 flex flex-col items-center">
+                                    <span className="text-[8px] text-zinc-500 uppercase font-black tracking-widest">Slots</span>
+                                    <span className="text-emerald-400 font-black text-sm">{ship.isAlien ? (ship.defaultGuns === 1 ? '1' : '2') : '3'}</span>
+                                </div>
+                             </div>
+                        </div>
+
+                        {/* Fixed Footer */}
+                        <div className="p-4 border-t border-zinc-800 bg-zinc-900/90 shrink-0 flex flex-col gap-3">
+                            <div className="flex justify-between items-end">
+                                <span className="text-zinc-500 uppercase font-black text-[10px] tracking-widest">Requisition Cost</span>
+                                <span className={`text-xl font-black tabular-nums tracking-tight ${canAfford ? 'text-emerald-400' : 'text-red-500'}`}>${ship.price.toLocaleString()}</span>
+                            </div>
+                            <button 
+                                onClick={() => { replaceShip(ship.id); setShowDetailPanel(false); }}
+                                disabled={!canAfford}
+                                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:bg-zinc-800 text-white font-black uppercase tracking-[0.15em] rounded-lg shadow-lg text-xs transition-all active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                <span>Acquire Vessel</span>
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                            </button>
+                        </div>
+                    </div>
+                )}
+
+                <div className="w-full md:w-1/3 border-r border-zinc-800 bg-black/40 overflow-y-auto p-2 space-y-2">
                     {availableShips.map(s => {
                         const defaultWep = getDefaultWeaponId(s);
                         const wepColor = getWeaponColor(defaultWep);
@@ -85,7 +173,7 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                         if (s.isAlien && s.defaultGuns === 2) miniEquipped = [null, {id: defaultWep, count:1}, {id: defaultWep, count:1}];
 
                         return (
-                            <button key={s.id} onClick={() => setInspectedShipId(s.id)} className={`w-full p-3 flex items-center gap-3 border transition-all ${inspectedShipId === s.id ? 'bg-emerald-900/20 border-emerald-500' : 'bg-zinc-900/30 border-zinc-800'}`}>
+                            <button key={s.id} onClick={() => handleShipClick(s.id)} className={`w-full p-3 flex items-center gap-3 border transition-all ${inspectedShipId === s.id ? 'bg-emerald-900/20 border-emerald-500' : 'bg-zinc-900/30 border-zinc-800'}`}>
                                 <ShipIcon 
                                     config={s} 
                                     className="w-10 h-10" 
@@ -100,7 +188,7 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                         );
                     })}
                 </div>
-                <div className="w-2/3 flex flex-col h-full bg-zinc-900/10">
+                <div className="hidden md:flex md:w-2/3 flex-col h-full bg-zinc-900/10">
                     {ship && (
                     <>
                         <div className="flex-grow flex flex-col items-center justify-center relative p-6">

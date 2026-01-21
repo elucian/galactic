@@ -610,21 +610,24 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
           />
       </div>
       
-      {/* HUD */}
-      <div className="absolute top-8 left-8 right-8 flex justify-between items-start z-50 pointer-events-none">
-          <div className="flex gap-4">
+      {/* HUD - Redesigned for Mobile Verticality */}
+      <div className="absolute top-4 left-4 right-4 md:top-8 md:left-8 md:right-8 flex flex-row-reverse md:flex-row justify-between items-start z-50 pointer-events-none">
+          
+          {/* RIGHT SIDE (Mobile) / LEFT SIDE (Desktop) */}
+          <div className="flex flex-col md:flex-row gap-2 md:gap-4 items-end md:items-center">
               <Gauge value={altitude} max={30000} label="ALTITUDE" unit="METERS" color="#3b82f6" />
               <Gauge value={speed} max={1500} label="DESCENT" unit="KM/H" color="#facc15" />
               <Gauge value={visualFuel} max={maxFuel} label="FUEL" unit="UNITS" color="#ef4444" />
           </div>
           
-          <div className="flex flex-col items-end gap-2">
+          {/* LEFT SIDE (Mobile) / RIGHT SIDE (Desktop) */}
+          <div className="flex flex-col items-start md:items-end gap-2 mt-0">
               <span className={`text-[10px] font-black uppercase tracking-widest ${status.includes('CONTACT') ? 'text-white' : 'text-emerald-400'} animate-pulse`}>STATUS: {status}</span>
               <button 
                   onClick={() => onComplete()} 
-                  className="pointer-events-auto bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-white text-[10px] font-black uppercase px-6 py-3 rounded backdrop-blur-sm transition-all flex items-center gap-2"
+                  className="pointer-events-auto bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-white text-[10px] font-black uppercase px-4 py-3 md:px-6 md:py-3 rounded backdrop-blur-sm transition-all flex items-center gap-2 shadow-lg active:scale-95"
               >
-                  SKIP SEQUENCE <span className="text-[8px] text-zinc-500">space</span>
+                  SKIP SEQUENCE <span className="text-[8px] text-zinc-500 hidden sm:inline">space</span>
               </button>
           </div>
       </div>

@@ -20,7 +20,7 @@ interface CargoDialogProps {
 }
 
 // Button Component for Toolbar
-const ToolButton = ({ onClick, disabled, icon, vertical = false, sizeClass }: { onClick: () => void, disabled: boolean, icon: React.ReactNode, vertical?: boolean, sizeClass: string }) => (
+const ToolButton = ({ onClick, disabled, icon, vertical = false, sizeClass, rotateMobile = false }: { onClick: () => void, disabled: boolean, icon: React.ReactNode, vertical?: boolean, sizeClass: string, rotateMobile?: boolean }) => (
   <button 
     onClick={onClick} 
     disabled={disabled} 
@@ -33,18 +33,20 @@ const ToolButton = ({ onClick, disabled, icon, vertical = false, sizeClass }: { 
       }
     `}
   >
-    {icon}
+    <div className={`transition-transform duration-0 ${rotateMobile ? 'rotate-90 sm:rotate-0' : ''}`}>
+        {icon}
+    </div>
   </button>
 );
 
 const getCategory = (item: CargoItem) => {
     if (!item || !item.type) return 'RESOURCES';
     const t = item.type.toLowerCase();
-    if (['weapon', 'projectile', 'laser'].includes(t)) return 'WEAPONRY'; // Excluded 'gun'
+    if (['weapon', 'projectile', 'laser'].includes(t)) return 'WEAPONRY'; 
     if (['shield'].includes(t)) return 'DEFENSE';
     if (['missile', 'mine'].includes(t)) return 'ORDNANCE';
     if (['fuel', 'energy', 'repair'].includes(t)) return 'SUPPLIES';
-    return 'RESOURCES'; // Personal weapons (type: 'gun') fall here now
+    return 'RESOURCES'; 
 };
 
 const CATEGORY_ORDER = ['WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES'];
@@ -67,19 +69,13 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
       return [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].some(ex => ex.id === id);
   };
 
-  // SAFE ACCESS: Check if index is valid and item exists
   const selectedShipItem = (selectedCargoIdx !== null && fitting.cargo[selectedCargoIdx]) ? fitting.cargo[selectedCargoIdx] : undefined;
   const selectedReserveItem = (selectedReserveIdx !== null && reserves[selectedReserveIdx]) ? reserves[selectedReserveIdx] : undefined;
 
-  // Move Single active if ANY item selected
   const canMoveToReserve = !!selectedShipItem;
   const canMoveToShip = !!selectedReserveItem;
-
-  // Fast Move (Batch) active only if quantity > 1 (Pile)
   const canBatchToReserve = !!selectedShipItem && selectedShipItem.quantity > 1;
   const canBatchToShip = !!selectedReserveItem && selectedReserveItem.quantity > 1;
-
-  // Move All active if list not empty
   const canMoveAllToReserve = fitting.cargo.length > 0;
   const canMoveAllToShip = reserves.length > 0;
 
@@ -90,7 +86,7 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
 
       const grouped: Record<string, { item: CargoItem, originalIdx: number }[]> = {};
       items.forEach((item, idx) => {
-          if (!item) return; // Safety check for null/undefined items
+          if (!item) return; 
           const cat = getCategory(item);
           if (!grouped[cat]) grouped[cat] = [];
           grouped[cat].push({ item, originalIdx: idx });
@@ -117,7 +113,6 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                                   let iconColor = side === 'ship' ? "#10b981" : "#fbbf24"; 
                                   if (isExotic) iconColor = "#fb923c";
                                   else {
-                                      // Check Standard Weapon Colors
                                       const wDef = WEAPONS.find(w => w.id === item.id);
                                       if (wDef) {
                                            if (wDef.type === 'LASER') iconColor = wDef.beamColor || '#3b82f6';
@@ -125,7 +120,6 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                                       }
                                   }
                                   
-                                  // Specific Resource Colors (Ingots)
                                   if (cat === 'RESOURCES') {
                                       const t = item.type?.toLowerCase();
                                       if (t === 'chromium') iconColor = '#ef4444';
@@ -137,16 +131,15 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                                       else if (t === 'lithium') iconColor = '#e879f9';
                                       else if (t === 'tungsten') iconColor = '#475569';
                                       else if (t === 'silver') iconColor = '#cbd5e1';
-                                      else if (t === 'gun') iconColor = '#ec4899'; // Personal Weapon
+                                      else if (t === 'gun') iconColor = '#ec4899'; 
                                       else iconColor = '#facc15';
                                   }
 
-                                  // Specific Ordnance Colors
                                   if (cat === 'ORDNANCE') {
                                       if (item.id && item.id.includes('emp')) iconColor = "#3b82f6";
                                       else if (item.type === 'missile') iconColor = "#ef4444";
                                       else if (item.id && item.id.includes('red')) iconColor = "#ef4444";
-                                      else iconColor = "#fbbf24"; // Standard mine
+                                      else iconColor = "#fbbf24"; 
                                   }
 
                                   return (
@@ -171,16 +164,29 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[9000] bg-black/95 flex items-center justify-center p-4 sm:p-6 backdrop-blur-xl">
-       <div className="w-full max-w-6xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[85vh] shadow-[0_0_50px_rgba(0,0,0,0.8)]">
-          <header className="p-4 border-b border-zinc-800 flex justify-between bg-zinc-900/50 shrink-0">
-            <h2 className={`retro-font text-emerald-500 ${titleSize} uppercase`}>Logistics Transfer</h2>
+    <div className="fixed inset-0 z-[9000] bg-black/95 flex items-center justify-center sm:p-6 backdrop-blur-xl">
+       <div className="w-full max-w-6xl bg-zinc-950 border-0 sm:border-2 border-zinc-800 rounded-none sm:rounded-xl overflow-hidden flex flex-col h-full sm:h-[85vh] shadow-[0_0_50px_rgba(0,0,0,0.8)]">
+          
+          {/* HEADER */}
+          <header className="p-3 sm:p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950 shrink-0 relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-1 h-full bg-emerald-500"></div>
+            <div className="absolute -right-4 -top-4 w-16 h-16 bg-emerald-500/10 blur-xl rounded-full pointer-events-none"></div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:gap-4 pl-3">
+                <h2 className={`retro-font text-emerald-500 ${titleSize} uppercase leading-tight sm:leading-normal`}>
+                    <span className="block sm:inline">LOGISTICS</span>
+                    <span className="block sm:inline sm:ml-2 text-emerald-400/80">TRANSFER</span>
+                </h2>
+                <div className="hidden sm:block w-[1px] h-4 bg-zinc-800"></div>
+                <span className="text-[9px] text-zinc-500 font-mono hidden sm:block tracking-widest">MANIFEST MANAGEMENT</span>
+            </div>
             <button onClick={onClose} className={`${btnPadding} bg-emerald-600/10 border border-emerald-500 text-emerald-500 uppercase font-black ${btnSize} rounded hover:bg-emerald-600 hover:text-white transition-colors`}>DONE</button>
           </header>
+
           <div className="flex-grow flex flex-col sm:flex-row overflow-hidden">
              
-             {/* SHIP CARGO LEFT */}
-             <div className="w-full sm:flex-1 p-4 flex flex-col gap-4 border-r border-zinc-800 bg-zinc-900/20">
+             {/* SHIP CARGO LEFT (TOP ON MOBILE) */}
+             <div className="w-full flex-1 min-h-0 sm:flex-1 p-4 flex flex-col gap-4 border-r border-zinc-800 bg-zinc-900/20">
                 <div className="bg-zinc-900/80 p-3 rounded border border-zinc-800 flex justify-between items-center shadow-inner shrink-0">
                     <span className={`uppercase font-black text-emerald-400 ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>CARGO HOLD</span>
                     <span className={`font-black text-white ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{fitting.cargo.reduce((a,i)=>a+i.quantity,0)} / {shipConfig?.maxCargo}</span>
@@ -190,64 +196,66 @@ export const CargoDialog: React.FC<CargoDialogProps> = ({
                 </div>
              </div>
 
-             {/* CENTRAL TOOLS */}
-             <div className="w-full sm:w-20 p-3 flex flex-row sm:flex-col items-center justify-center gap-3 bg-zinc-950 border-x border-zinc-800 shrink-0">
+             {/* CENTRAL TOOLS (SINGLE ROW ON MOBILE) */}
+             <div className="w-full sm:w-20 p-2 sm:p-3 flex flex-row sm:flex-col items-center justify-center gap-2 sm:gap-3 bg-zinc-950 border-y sm:border-y-0 sm:border-x border-zinc-800 shrink-0">
                 
-                {/* To Ship Group */}
-                <div className="flex flex-col gap-2 w-full items-center">
+                {/* To Ship Group (From Reserve) */}
+                <div className="flex flex-row sm:flex-col gap-2">
+                    <ToolButton 
+                        sizeClass={toolBtnClass}
+                        onClick={() => onMoveAll('to_ship')} 
+                        disabled={!canMoveAllToShip}
+                        rotateMobile={true}
+                        icon={<svg width={iconSize*0.7} height={iconSize*0.7} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="19" x2="5" y2="12"></line><line x1="19" y1="5" x2="5" y2="12"></line><line x1="19" y1="21" x2="19" y2="3"></line></svg>}
+                    />
                     <ToolButton 
                         sizeClass={toolBtnClass}
                         onClick={() => onMoveItems('to_ship', true)} 
                         disabled={!canBatchToShip}
+                        rotateMobile={true}
                         icon={<svg width={iconSize*0.7} height={iconSize*0.7} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>}
                     />
                     <ToolButton 
                         sizeClass={toolBtnClass}
                         onClick={() => onMoveItems('to_ship', false)} 
                         disabled={!canMoveToShip}
+                        rotateMobile={true}
                         icon={<svg width={iconSize*0.7} height={iconSize*0.7} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>}
                     />
                 </div>
                 
+                <div className="h-full w-[1px] bg-zinc-800 block sm:hidden"></div>
                 <div className="h-[1px] w-full bg-zinc-800 hidden sm:block"></div>
                 
-                {/* To Reserve Group */}
-                <div className="flex flex-col gap-2 w-full items-center">
+                {/* To Reserve Group (From Ship) */}
+                <div className="flex flex-row sm:flex-col gap-2">
                     <ToolButton 
                         sizeClass={toolBtnClass}
                         onClick={() => onMoveItems('to_reserve', false)} 
                         disabled={!canMoveToReserve}
+                        rotateMobile={true}
                         icon={<svg width={iconSize*0.7} height={iconSize*0.7} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>}
                     />
                     <ToolButton 
                         sizeClass={toolBtnClass}
                         onClick={() => onMoveItems('to_reserve', true)} 
                         disabled={!canBatchToReserve}
+                        rotateMobile={true}
                         icon={<svg width={iconSize*0.7} height={iconSize*0.7} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>}
-                    />
-                </div>
-
-                <div className="h-[1px] w-full bg-zinc-800 hidden sm:block mt-auto mb-2"></div>
-
-                {/* Bulk Tape Tools */}
-                <div className="flex flex-col gap-2 w-full items-center">
-                    <ToolButton 
-                        sizeClass={toolBtnClass}
-                        onClick={() => onMoveAll('to_ship')} 
-                        disabled={!canMoveAllToShip}
-                        icon={<svg width={iconSize*0.7} height={iconSize*0.7} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="19" x2="5" y2="12"></line><line x1="19" y1="5" x2="5" y2="12"></line><line x1="19" y1="21" x2="19" y2="3"></line></svg>}
                     />
                     <ToolButton 
                         sizeClass={toolBtnClass}
                         onClick={() => onMoveAll('to_reserve')} 
                         disabled={!canMoveAllToReserve}
+                        rotateMobile={true}
                         icon={<svg width={iconSize*0.7} height={iconSize*0.7} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="19" x2="19" y2="12"></line><line x1="5" y1="5" x2="19" y2="12"></line><line x1="5" y1="21" x2="5" y2="3"></line></svg>}
                     />
                 </div>
+
              </div>
 
-             {/* RESERVE RIGHT */}
-             <div className="w-full sm:flex-1 p-4 flex flex-col gap-4 bg-zinc-900/40">
+             {/* RESERVE RIGHT (BOTTOM ON MOBILE) */}
+             <div className="w-full flex-1 min-h-0 sm:flex-1 p-4 flex flex-col gap-4 bg-zinc-900/40">
                 <div className="bg-zinc-900/80 p-3 rounded border border-zinc-800 flex justify-between items-center shadow-inner shrink-0">
                     <span className={`uppercase font-black text-amber-400 ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>STATION RESERVE</span>
                     <span className={`font-black text-white ${fontSize === 'large' ? 'text-[14px]' : (fontSize === 'medium' ? 'text-[12px]' : 'text-[11px]')}`}>{reserves.length} ITEMS</span>

@@ -197,6 +197,7 @@ export interface GameState {
   planetOrbitOffsets: Record<string, number>;
   universeStartTime: number;
   planetRegistry: Record<string, PlanetStatusData>;
+  lastSaveTime: number; // New field to track offline progression
 }
 
 export type DisplayMode = 'windowed' | 'fullscreen';

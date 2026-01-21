@@ -20,7 +20,7 @@ import WarpSequence from './components/WarpSequence.tsx';
 import GameEngine from './components/GameEngine.tsx';
 import LandingScene from './components/LandingScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_25_market'; 
+const SAVE_KEY = 'galactic_defender_beta_28_market'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -96,7 +96,8 @@ export default function App() {
       leaderboard: [],
       planetOrbitOffsets: initialOffsets,
       universeStartTime: Date.now(),
-      planetRegistry: initialRegistry
+      planetRegistry: initialRegistry,
+      lastSaveTime: Date.now()
     };
   };
 
@@ -106,7 +107,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (!parsed.settings.fontSize) parsed.settings.fontSize = 'medium';
         if (!parsed.customColors) parsed.customColors = ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'];
-        if (!parsed.leaderboard) parsed.leaderboard = []; // Ensure leaderboard exists
+        if (!parsed.leaderboard) parsed.leaderboard = []; 
         if (!parsed.marketListingsByPlanet) parsed.marketListingsByPlanet = {};
         if (!parsed.marketRefreshes) parsed.marketRefreshes = {};
         
@@ -136,6 +137,58 @@ export default function App() {
 
         if (parsed.pilotZoom === undefined) parsed.pilotZoom = 1.0;
 
+        // --- ALIEN INVASION PROGRESSION LOGIC ---
+        const now = Date.now();
+        const lastSave = parsed.lastSaveTime || now;
+        const elapsedHours = (now - lastSave) / (1000 * 60 * 60);
+        
+        // Progression starts after 8 hours of inactivity
+        if (elapsedHours >= 8) {
+            const invasionSteps = Math.floor(elapsedHours - 8) + 1; // 1 step per hour after 8h grace
+            let lostCount = 0;
+            const updatedRegistry = { ...parsed.planetRegistry };
+            
+            // Iterate reverse: Delta (p12) down to Beta (p4), stopping before p2/p1
+            // Planet IDs in PLANETS array are ordered roughly by difficulty
+            for (let i = PLANETS.length - 1; i >= 2; i--) {
+                if (lostCount >= invasionSteps) break;
+                
+                const p = PLANETS[i];
+                const status = updatedRegistry[p.id]?.status || p.status;
+                
+                if (status === 'friendly' || status === 'siege') {
+                    updatedRegistry[p.id] = { 
+                        ...updatedRegistry[p.id], 
+                        status: 'occupied', 
+                        wins: 0, 
+                        losses: 0 
+                    };
+                    lostCount++;
+                }
+            }
+
+            if (lostCount > 0) {
+                parsed.planetRegistry = updatedRegistry;
+                let msgText = `TIME LAPSE DETECTED: ${lostCount} SECTORS OVERRUN BY XENOS FORCES.`;
+                if (lostCount >= 4) msgText = "CRITICAL ALERT: OUTER RIM DEFENSES COLLAPSED DURING HYPER-SLEEP.";
+                if (updatedRegistry['p12'].status === 'occupied') msgText = "DELTA QUADRANT LOST. RECLAMATION REQUIRED.";
+                
+                const msg: any = {
+                    id: `invasion_${now}`,
+                    type: 'activity',
+                    category: 'combat',
+                    pilotName: 'COMMAND',
+                    pilotAvatar: '⚠️',
+                    text: msgText,
+                    timestamp: now
+                };
+                parsed.messages = [msg, ...parsed.messages];
+            }
+        }
+        
+        // Ensure lastSaveTime is updated to now on load
+        parsed.lastSaveTime = now;
+
         return { ...createInitialState(), ...parsed }; 
     } catch(e) { return createInitialState(); }
     return createInitialState();
@@ -150,6 +203,33 @@ export default function App() {
 
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
+
+  // --- RESET GAME LOGIC ---
+  const handleProfileReset = (pilotName: string, pilotAvatar: string) => {
+      const newState = createInitialState();
+      // Preserve settings but apply new identity
+      newState.settings = { ...gameState.settings };
+      newState.leaderboard = [...gameState.leaderboard];
+      newState.pilotName = pilotName;
+      newState.pilotAvatar = pilotAvatar;
+      
+      const welcomeMsg = {
+          id: `reset_${Date.now()}`,
+          type: 'activity',
+          category: 'system',
+          pilotName: 'SYSTEM',
+          pilotAvatar: '🔄',
+          text: `IDENTITY RECONFIGURED. WELCOME, ${pilotName}. SIMULATION RESET.`,
+          timestamp: Date.now()
+      };
+      // Explicitly cast to any to avoid strict TS issues in this simplified context if types slightly mismatch
+      newState.messages = [welcomeMsg as any, ...newState.messages];
+      
+      setGameState(newState);
+      setScreen('hangar');
+      triggerSystemMessage("PILOT PROFILE RESET", 'success');
+      audioService.playSfx('buy');
+  };
 
   // --- MARKET GENERATION LOGIC ---
   const generatePlanetMarket = (planetId: string): CargoItem[] => {
@@ -404,7 +484,9 @@ export default function App() {
   }, [gameState.pilotName]);
 
   useEffect(() => {
-    localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
+    // Update lastSaveTime before saving
+    const stateToSave = { ...gameState, lastSaveTime: Date.now() };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(stateToSave));
     audioService.updateVolume(gameState.settings.musicVolume);
     audioService.setEnabled(gameState.settings.musicEnabled);
   }, [gameState]);
@@ -679,6 +761,7 @@ export default function App() {
           const basePrice = baseDef?.price || item.price || 1000; 
           
           let multiplier = 0.5; 
+          // Fix: use planet instead of currentPlanet
           const isHabitable = ['#10b981', '#064e3b', '#60a5fa', '#3b82f6'].includes(planet.color);
           const isBarren = !isHabitable;
           const level = planet.difficulty;
@@ -910,6 +993,7 @@ export default function App() {
           onClose={() => setIsOptionsOpen(false)} 
           gameState={gameState} 
           setGameState={setGameState} 
+          onResetGame={handleProfileReset}
       />
       <StoreDialog 
           isOpen={isStoreOpen} 

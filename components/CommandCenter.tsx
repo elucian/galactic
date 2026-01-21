@@ -277,6 +277,21 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                             forceShieldScale={true}
                             isCapsule={isDestroyed}
                         />
+                        
+                        {/* MOBILE STATUS MESSAGE OVERLAY */}
+                        {isSelected && (
+                            <div className="absolute bottom-12 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none w-full px-8 flex justify-center sm:hidden">
+                                 <div className={`text-[8px] font-black uppercase tracking-widest text-center leading-tight whitespace-pre-wrap bg-black/60 backdrop-blur-sm px-2 py-1 rounded border border-zinc-800/50 shadow-sm ${
+                                      systemMessage.type === 'error' ? 'text-red-500' : 
+                                      systemMessage.type === 'success' ? 'text-blue-400' :
+                                      systemMessage.type === 'warning' ? 'text-amber-500' :
+                                      'text-emerald-500'
+                                  }`}>
+                                    {systemMessage.text}
+                                 </div>
+                            </div>
+                        )}
+
                         {/* OVERLAY UNIT NUMBER - Positioned over bottom of ship/shield area */}
                         <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
                             <span className={`text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] whitespace-nowrap bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded border ${isDestroyed ? 'text-red-500 border-red-500/30' : 'text-zinc-500 border-zinc-800/30'}`}>

@@ -51,9 +51,10 @@ interface OptionsDialogProps {
   onClose: () => void;
   gameState: GameState;
   setGameState: React.Dispatch<React.SetStateAction<GameState>>;
+  onResetGame: (pilotName: string, pilotAvatar: string) => void;
 }
 
-export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, gameState, setGameState }) => {
+export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, gameState, setGameState, onResetGame }) => {
   const [activeTab, setActiveTab] = useState<'pilot' | 'audio' | 'system'>('pilot');
   const [nameFocusVal, setNameFocusVal] = useState('');
 
@@ -88,28 +89,11 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
   };
 
   const handleAvatarSelect = (avatar: typeof AVATAR_LIST[0]) => {
-      setGameState(prev => {
-          const isDefaultName = AVATAR_LIST.some(a => a.label === prev.pilotName) || prev.pilotName === 'STRATOS';
-          const newName = isDefaultName ? avatar.label : prev.pilotName;
-          
-          // Announce Identity Change
-          const newMessages = [{
-              id: `sys_${Date.now()}`,
-              type: 'activity',
-              category: 'system',
-              pilotName: 'SYSTEM',
-              pilotAvatar: avatar.icon, // Display the user's NEW avatar
-              text: `IDENTITY UPDATE: BIOMETRICS RECONFIGURED TO ${avatar.label.toUpperCase()}`,
-              timestamp: Date.now()
-          }, ...prev.messages] as any[];
-
-          return {
-              ...prev,
-              pilotAvatar: avatar.icon,
-              pilotName: newName,
-              messages: newMessages
-          };
-      });
+      const isDefaultName = AVATAR_LIST.some(a => a.label === gameState.pilotName) || gameState.pilotName === 'STRATOS';
+      const newName = isDefaultName ? avatar.label : gameState.pilotName;
+      
+      // Full Reset Trigger with new Identity
+      onResetGame(newName, avatar.icon);
   };
 
   const renderTabButton = (id: 'pilot' | 'audio' | 'system', label: string) => (
@@ -148,22 +132,6 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                                 type="text" 
                                 value={gameState.pilotName || ''} 
                                 onFocus={(e) => setNameFocusVal(e.target.value)}
-                                onBlur={(e) => {
-                                    if (e.target.value !== nameFocusVal && e.target.value.trim() !== '') {
-                                        setGameState(prev => ({
-                                            ...prev,
-                                            messages: [{
-                                                id: `sys_${Date.now()}`,
-                                                type: 'activity',
-                                                category: 'system',
-                                                pilotName: 'SYSTEM',
-                                                pilotAvatar: prev.pilotAvatar,
-                                                text: `CALLSIGN REGISTERED: ${e.target.value.toUpperCase()}`,
-                                                timestamp: Date.now()
-                                            }, ...prev.messages]
-                                        }));
-                                    }
-                                }}
                                 onChange={e => setGameState(p => ({...p, pilotName: e.target.value.toUpperCase().slice(0, 12)}))} 
                                 className={`w-full bg-black border border-zinc-700 p-2 md:p-3 text-emerald-400 retro-font ${titleSize} outline-none uppercase focus:border-emerald-500 transition-colors rounded`} 
                             />
@@ -190,7 +158,7 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
 
                     {/* Avatar Grid (Flowing Flex) */}
                     <div className="bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/50 shadow-inner flex-grow flex flex-col min-h-0">
-                        <span className={`font-black uppercase text-zinc-500 mb-2 shrink-0 ${titleSize}`}>Select Identity</span>
+                        <span className={`font-black uppercase text-zinc-500 mb-2 shrink-0 ${titleSize}`}>Select Identity (RESETS PROGRESS)</span>
                         <div className="overflow-y-auto custom-scrollbar flex-grow pr-1">
                             <div className="flex flex-wrap gap-2 content-start">
                                 {AVATAR_LIST.map((a) => {

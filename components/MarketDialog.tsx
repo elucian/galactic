@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { CargoItem, Planet, ShipFitting, ShipConfig } from '../types.ts';
+import { CargoItem, Planet, ShipFitting, ShipConfig, WeaponType } from '../types.ts';
 import { WEAPONS, SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, AMMO_MARKET_ITEMS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, AMMO_CONFIG } from '../constants.ts';
 import { ItemSVG } from './Common.tsx';
 
@@ -21,7 +21,7 @@ interface MarketDialogProps {
   shipConfig?: ShipConfig | null;
 }
 
-const CATEGORY_ORDER = ['WEAPONRY', 'DEFENSE', 'ORDNANCE', 'SUPPLIES', 'RESOURCES', 'FOOD', 'GOODS', 'AMMO'];
+const CATEGORY_ORDER = ['WEAPONRY', 'DEFENSE', 'ORDNANCE', 'AMMO', 'SUPPLIES', 'GOODS', 'FOOD', 'RESOURCES'];
 
 const getCategory = (item: any) => {
     if (!item) return 'GOODS';
@@ -111,6 +111,10 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   const listContainerRef = useRef<HTMLDivElement>(null);
   const lastClickRef = useRef<{ idx: number, time: number }>({ idx: -1, time: 0 });
 
+  // Scrollbar state
+  const [scrollThumb, setScrollThumb] = useState({ h: 0, t: 0 });
+  const [hasScroll, setHasScroll] = useState(false);
+
   useEffect(() => {
       setSelectedItemIdx(null);
       setTransactionQty(1);
@@ -126,6 +130,47 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       if (isFilterOpen) document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isFilterOpen]);
+
+  // SCROLL MONITOR
+  useEffect(() => {
+      const el = listContainerRef.current;
+      if (!el) return;
+
+      const updateScroll = () => {
+          if (!el) return;
+          const { scrollTop, scrollHeight, clientHeight } = el;
+          const hasOverflow = scrollHeight > clientHeight + 1; // Tolerance for fractional pixels
+          
+          if (hasOverflow) {
+              setHasScroll(true);
+              const ratio = clientHeight / scrollHeight;
+              const h = Math.max(ratio * 100, 10);
+              const track = 100 - h;
+              const prog = scrollTop / (scrollHeight - clientHeight);
+              const t = prog * track;
+              setScrollThumb({ h, t });
+          } else {
+              setHasScroll(false);
+          }
+      };
+
+      // Observer for robust detection
+      const observer = new ResizeObserver(() => {
+          updateScroll();
+      });
+      observer.observe(el);
+      
+      // Also listen to scroll event to update thumb position
+      el.addEventListener('scroll', updateScroll);
+      
+      // Initial check
+      updateScroll();
+      
+      return () => {
+          observer.disconnect();
+          el.removeEventListener('scroll', updateScroll);
+      };
+  }, [marketTab, activeFilters, currentReserves, marketListings, isOpen]);
 
   const handleItemClick = (idx: number) => {
       const now = Date.now();
@@ -220,10 +265,10 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           // Primary Sort: Category Order
           if (idxA !== idxB) return idxA - idxB;
           
-          // Secondary Sort: Price Descending
+          // Secondary Sort: Price Ascending (Cheapest first)
           const priceA = a.price || 0;
           const priceB = b.price || 0;
-          if (priceB !== priceA) return priceB - priceA;
+          if (priceA !== priceB) return priceA - priceB;
           
           // Tertiary Sort: Name
           return a.name.localeCompare(b.name);
@@ -240,6 +285,26 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       const afford = Math.floor(credits / (price || 1));
       
       let spaceLimit = 99999;
+      let purchaseLimit = 99999; // User protection limit (per purchase)
+
+      const cat = getCategory(selectedItem);
+
+      // --- USER PROTECTION LIMITS ---
+      if (cat === 'WEAPONRY') {
+          const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === selectedItem.id);
+          if (wDef) {
+              if (wDef.type === WeaponType.LASER || selectedItem.id.includes('exotic')) {
+                  purchaseLimit = 1; // Energy/Exotic: 1 max
+              } else {
+                  purchaseLimit = 2; // Projectile: 2 max
+              }
+          } else {
+              purchaseLimit = 1;
+          }
+      } else if (cat === 'DEFENSE') {
+          purchaseLimit = 2; // Shields: 2 max
+      }
+
       if (shipFitting && shipConfig) {
           const t = selectedItem.type;
           const id = selectedItem.id;
@@ -269,7 +334,7 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           }
       }
 
-      return Math.max(0, Math.min(afford, spaceLimit, selectedItem.quantity));
+      return Math.max(0, Math.min(afford, spaceLimit, selectedItem.quantity, purchaseLimit));
   }, [selectedItem, marketTab, credits, shipFitting, shipConfig]);
 
   const cargoImpact = useMemo(() => {
@@ -433,7 +498,18 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           <div className="flex-grow flex flex-col md:flex-row overflow-hidden relative">
                 {/* LEFT PANEL: LISTING */}
                 <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col border-b-2 md:border-b-0 md:border-r-2 border-zinc-800 bg-zinc-900/20 relative">
-                    <div ref={listContainerRef} className="flex-grow overflow-y-auto custom-scrollbar p-2 space-y-1 pb-16">
+                    
+                    {/* VISUAL SCROLLBAR (MOBILE) */}
+                    {hasScroll && (
+                        <div className="absolute right-2 top-2 bottom-20 w-2 bg-zinc-800/50 rounded-full z-40 md:hidden pointer-events-none backdrop-blur-sm border border-white/10">
+                            <div 
+                                className="absolute w-full bg-emerald-500 rounded-full transition-all duration-75 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
+                                style={{ height: `${scrollThumb.h}%`, top: `${scrollThumb.t}%` }}
+                            />
+                        </div>
+                    )}
+
+                    <div ref={listContainerRef} className="flex-grow overflow-y-auto custom-scrollbar p-2 space-y-1 pb-16 relative">
                         {displayItems.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-40 opacity-30 mt-10">
                                 <span className="text-2xl text-zinc-600 mb-2">∅</span>
@@ -476,20 +552,22 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                     </div>
 
                     {/* SCROLL CONTROLS (Mobile Only) */}
-                    <div className="absolute bottom-4 right-4 flex flex-col gap-2 md:hidden z-30">
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleScroll('up'); }}
-                            className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
-                        >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
-                        </button>
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); handleScroll('down'); }}
-                            className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
-                        >
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-                        </button>
-                    </div>
+                    {hasScroll && (
+                        <div className="absolute bottom-4 right-4 flex flex-col gap-2 md:hidden z-30">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleScroll('up'); }}
+                                className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
+                            </button>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); handleScroll('down'); }}
+                                className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
+                            >
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {/* RIGHT PANEL: DETAILS & TRANSACTION */}
