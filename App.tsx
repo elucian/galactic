@@ -764,7 +764,7 @@ export default function App() {
                 </div>
             </div>
 
-            <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 25 - January 2026</div>
+            <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 28 - January 2026</div>
 
           </div>
         </div>

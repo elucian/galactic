@@ -50,22 +50,25 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   const fs = gameState.settings.fontSize || 'medium';
   
   // Dynamic Sizing Logic
-  const titleSize = fs === 'small' ? 'text-[11px]' : (fs === 'large' ? 'text-[16px]' : 'text-[13px]');
-  const btnSize = fs === 'small' ? 'text-[10px]' : (fs === 'large' ? 'text-[14px]' : 'text-[12px]');
-  const lblSize = fs === 'small' ? 'text-[8px]' : (fs === 'large' ? 'text-[12px]' : 'text-[10px]');
+  const titleSize = fs === 'small' ? 'text-[11px]' : (fs === 'large' ? 'text-[16px]' : (fs === 'extra-large' ? 'text-[18px]' : 'text-[13px]'));
+  const btnSize = fs === 'small' ? 'text-[10px]' : (fs === 'large' ? 'text-[14px]' : (fs === 'extra-large' ? 'text-[16px]' : 'text-[12px]'));
+  const lblSize = fs === 'small' ? 'text-[8px]' : (fs === 'large' ? 'text-[12px]' : (fs === 'extra-large' ? 'text-[14px]' : 'text-[10px]'));
   
   // Fleet Card Specific Sizes
-  const cardTitleSize = fs === 'small' ? 'text-[9px]' : (fs === 'large' ? 'text-[13px]' : 'text-[11px]');
-  const cardStatLabel = fs === 'small' ? 'text-[6px]' : (fs === 'large' ? 'text-[9px]' : 'text-[7px]');
-  const cardBtnText = fs === 'small' ? 'text-[7px]' : (fs === 'large' ? 'text-[10px]' : 'text-[8px]');
+  const cardTitleSize = fs === 'small' ? 'text-[9px]' : (fs === 'large' ? 'text-[13px]' : (fs === 'extra-large' ? 'text-[15px]' : 'text-[11px]'));
+  const cardStatLabel = fs === 'small' ? 'text-[6px]' : (fs === 'large' ? 'text-[9px]' : (fs === 'extra-large' ? 'text-[10px]' : 'text-[7px]'));
+  const cardBtnText = fs === 'small' ? 'text-[7px]' : (fs === 'large' ? 'text-[10px]' : (fs === 'extra-large' ? 'text-[12px]' : 'text-[8px]'));
 
-  // Avatar Size
-  const pilotIconSize = fs === 'small' ? 'w-10 h-10 text-xl' : (fs === 'large' ? 'w-16 h-16 text-4xl' : 'w-12 h-12 text-2xl');
+  // Avatar Size - Adjusted for larger options
+  const pilotIconSize = fs === 'small' ? 'w-10 h-10 text-xl' : (fs === 'large' ? 'w-16 h-16 text-3xl' : (fs === 'extra-large' ? 'w-20 h-20 text-5xl' : 'w-12 h-12 text-2xl'));
+  
   // Footer Icon Size
-  const footerIconClass = fs === 'small' ? 'w-10 h-10' : (fs === 'large' ? 'w-14 h-14' : 'w-12 h-12');
-  const footerIconText = fs === 'small' ? 'text-lg' : (fs === 'large' ? 'text-3xl' : 'text-2xl');
-  const footerSvgSize = fs === 'small' ? 'w-5 h-5' : (fs === 'large' ? 'w-8 h-8' : 'w-6 h-6');
-  const btnPad = fs === 'small' ? 'px-6 py-2' : (fs === 'large' ? 'px-8 py-4' : 'px-7 py-3');
+  const footerIconClass = fs === 'small' ? 'w-10 h-10' : (fs === 'large' ? 'w-14 h-14' : (fs === 'extra-large' ? 'w-16 h-16' : 'w-12 h-12'));
+  const footerIconText = fs === 'small' ? 'text-lg' : (fs === 'large' ? 'text-3xl' : (fs === 'extra-large' ? 'text-4xl' : 'text-2xl'));
+  const footerSvgSize = fs === 'small' ? 'w-5 h-5' : (fs === 'large' ? 'w-8 h-8' : (fs === 'extra-large' ? 'w-10 h-10' : 'w-6 h-6'));
+  
+  // Footer Button Padding - Reduced horizontal padding by 50%
+  const btnPad = fs === 'small' ? 'px-3 py-2' : (fs === 'large' ? 'px-4 py-4' : (fs === 'extra-large' ? 'px-5 py-5' : 'px-3.5 py-3'));
 
   const allShipsCompromised = gameState.ownedShips.every(ship => {
       const fitting = gameState.shipFittings[ship.instanceId];
@@ -101,11 +104,21 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   }, [itemsPerPage, maxIndex, startIndex]);
 
   const goNext = () => {
-      if (startIndex < maxIndex) setStartIndex(s => s + 1);
+      if (startIndex < maxIndex) {
+          const nextIndex = startIndex + 1;
+          setStartIndex(nextIndex);
+          // Auto-select the first visible ship in the new view
+          setActiveSlotIndex(nextIndex);
+      }
   };
   
   const goPrev = () => {
-      if (startIndex > 0) setStartIndex(s => s - 1);
+      if (startIndex > 0) {
+          const prevIndex = startIndex - 1;
+          setStartIndex(prevIndex);
+          // Auto-select the first visible ship in the new view
+          setActiveSlotIndex(prevIndex);
+      }
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -129,7 +142,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   return (
     <div className="flex-grow flex flex-col p-2 md:p-4 z-10 overflow-hidden relative w-full h-full bg-black">
       {/* HEADER TITLE */}
-      <div className="w-full text-center py-1 shrink-0 hidden md:block"><h1 className={`retro-font ${fs === 'small' ? 'text-[12px]' : (fs === 'large' ? 'text-[18px]' : 'text-[15px]')} text-emerald-500 uppercase tracking-[0.3em] opacity-80`}>COMMAND CENTER</h1></div>
+      <div className="w-full text-center py-1 shrink-0 hidden md:block"><h1 className={`retro-font ${fs === 'small' ? 'text-[12px]' : (fs === 'large' ? 'text-[18px]' : (fs === 'extra-large' ? 'text-[22px]' : 'text-[15px]'))} text-emerald-500 uppercase tracking-[0.3em] opacity-80`}>COMMAND CENTER</h1></div>
       
       {/* HEADER */}
       <div className="w-full h-14 bg-black border-y border-zinc-800 flex items-center justify-between px-3 md:px-4 shrink-0 shadow-sm relative">
@@ -203,7 +216,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                 className="h-full px-1.5 transition-all duration-300"
             >
                 <div 
-                    onClick={() => { setGameState(p => ({ ...p, selectedShipInstanceId: inst.instanceId })); setActiveSlotIndex(trueIdx); }} 
+                    onClick={() => { setActiveSlotIndex(trueIdx); }} 
                     className={`flex flex-col items-center rounded-xl transition-all cursor-pointer relative h-full border-2 p-2 w-full overflow-hidden
                     ${isSelected 
                         ? 'border-emerald-500 bg-zinc-900 shadow-[0_0_20px_rgba(16,185,129,0.1)] z-10' 
@@ -284,9 +297,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                         <div className="h-1.5 bg-black rounded-full overflow-hidden border border-zinc-700"><div className={`h-full transition-all duration-500 ${f.fuel < (config.maxFuel*0.2) ? 'bg-red-500 animate-pulse' : 'bg-indigo-500'}`} style={{ width: `${(f.fuel/config.maxFuel)*100}%` }} /></div>
                     </div>
                     <div className="grid grid-cols-3 gap-1 pt-1">
-                        <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>REPLACE</button>
-                        <button disabled={isDestroyed} onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 ${isDestroyed ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-white'} transition-colors`}>EQUIP</button>
-                        <button disabled={isDestroyed} onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 ${isDestroyed ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-white'} transition-colors`}>PAINT</button>
+                        <button onClick={(e) => { e.stopPropagation(); setActiveSlotIndex(trueIdx); setIsStoreOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>REPLACE</button>
+                        <button disabled={isDestroyed} onClick={(e) => { e.stopPropagation(); setActiveSlotIndex(trueIdx); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 ${isDestroyed ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-white'} transition-colors`}>EQUIP</button>
+                        <button disabled={isDestroyed} onClick={(e) => { e.stopPropagation(); setActiveSlotIndex(trueIdx); setIsPaintOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 ${isDestroyed ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-white'} transition-colors`}>PAINT</button>
                     </div>
                   </div>
                 </div>
