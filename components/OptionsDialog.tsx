@@ -139,7 +139,7 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
              {activeTab === 'pilot' && (
                  <div className="flex flex-col gap-4 h-full animate-in fade-in slide-in-from-bottom-2 duration-200">
                     
-                    {/* Top Row: Callsign & Icon Size - Aligned Top */}
+                    {/* Top Row: Callsign & Face Distance - Aligned Top */}
                     <div className="flex flex-col landscape:flex-row md:flex-row gap-4 shrink-0 items-start">
                         {/* Callsign Input */}
                         <div className="flex-1 w-full bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/50 shadow-inner">
@@ -169,10 +169,10 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                             />
                         </div>
                         
-                        {/* Icon Size Control (Formerly Face Distance) */}
+                        {/* Face Distance Control */}
                         <div className="flex-1 w-full bg-zinc-900/40 p-3 rounded-lg border border-zinc-800/50 shadow-inner">
                             <div className="flex flex-col items-start w-full gap-2">
-                                <span className={`font-black uppercase text-white ${titleSize}`}>ICON SIZE</span>
+                                <span className={`font-black uppercase text-white ${titleSize}`}>FACE DISTANCE</span>
                                 <div className="flex gap-1 bg-zinc-800 p-1 rounded w-full sm:w-auto">
                                     {[0.8, 1.0, 1.2, 1.4].map(zoom => (
                                         <button 
@@ -266,10 +266,10 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                      <div className="space-y-6 bg-zinc-900/40 p-6 rounded-lg border border-zinc-800/50 shadow-inner">
                         <h3 className={`font-black uppercase text-zinc-600 ${titleSize} border-b border-zinc-800 pb-2`}>System Configuration</h3>
 
-                        {/* Font Size (Formerly Interface Size) */}
+                        {/* Interface Scale */}
                         <div className="flex justify-between items-center">
                             <div className="flex flex-col">
-                                <span className={`font-black uppercase text-white ${titleSize}`}>Font Size</span>
+                                <span className={`font-black uppercase text-white ${titleSize}`}>Interface Size</span>
                                 <span className={`text-zinc-500 uppercase ${btnSize}`}>Text & UI Scaling</span>
                             </div>
                             <div className="flex gap-1 bg-zinc-800 p-1 rounded">
