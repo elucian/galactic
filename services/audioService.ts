@@ -11,10 +11,10 @@ class AudioService {
   
   // Track Mapping - Using relative paths for better compatibility
   private tracks: Record<string, string> = {
-      'intro': 'assets/intro.mp3',
-      'command': 'assets/hangar.mp3',
-      'map': 'assets/map.mp3',
-      'combat': 'assets/combat.mp3'
+      'intro': './assets/intro.mp3',
+      'command': './assets/hangar.mp3',
+      'map': './assets/map.mp3',
+      'combat': './assets/combat.mp3'
   };
 
   private activeNodes: Set<AudioNode> = new Set();
@@ -41,6 +41,7 @@ class AudioService {
   private landingThrusterFilter: BiquadFilterNode | null = null;
   private ambienceNodes: AudioNode[] = [];
 
+  // Called explicitly on user interaction (click) by App.tsx
   init() {
     // 1. Create AudioContext if it doesn't exist
     if (!this.ctx) {
@@ -61,18 +62,13 @@ class AudioService {
         this.ctx.resume().catch(e => console.debug("AudioContext resume failed", e));
     }
 
-    // 3. Retry playing background music if it was blocked
-    // This is crucial: if we tried to play before but were blocked, retry now that we have interaction
-    if (this.introAudio && this.introAudio.paused && this.enabled && this.volume > 0) {
-        const playPromise = this.introAudio.play();
-        if (playPromise !== undefined) {
-            playPromise.catch(e => {
-                // Still blocked or other error (e.g. file not found), log it but don't crash
-                console.warn("Retry music play failed:", e);
-            });
+    // 3. Retry playing background music if it was blocked or pending
+    if (this.introAudio) {
+        if (this.introAudio.paused && this.enabled && this.volume > 0) {
+            this.introAudio.play().catch(e => console.warn("Retry music play failed:", e));
         }
-    } else if (this.intendedTrack && !this.introAudio && this.enabled && this.volume > 0) {
-        // If we intended to play a track but it failed to even load/start, try loading it again
+    } else if (this.intendedTrack && this.enabled && this.volume > 0) {
+        // If we have an intended track but no audio element yet (or it failed), try loading now
         this.loadAndPlay(this.intendedTrack);
     }
   }
@@ -88,29 +84,28 @@ class AudioService {
   updateVolume(v: number) {
     this.volume = v;
     
-    // Update SFX Volume
+    // Update SFX Volume (if Context exists)
     if (this.masterGain && this.ctx) {
         this.masterGain.gain.setTargetAtTime(this.enabled ? v : 0, this.ctx.currentTime, 0.1);
     }
 
-    // Update Music Volume
+    // Update Music Volume (HTML5 Audio)
     if (this.enabled && v > 0) {
         if (this.introAudio) {
-            // Update existing track volume
             this.introAudio.volume = v;
-            // Resume if it was paused due to 0 volume or initial autoplay block
-            if (this.introAudio.paused) {
+            // If it was paused purely due to zero volume, resume it
+            if (this.introAudio.paused && this.introAudio.src) {
                 const playPromise = this.introAudio.play();
                 if (playPromise !== undefined) {
-                    playPromise.catch(e => console.warn("Resume failed (interaction needed?):", e));
+                    playPromise.catch(e => { /* Ignore autoplay blocks here, waiting for interaction */ });
                 }
             }
         } else if (this.intendedTrack) {
-            // Volume raised from 0, load the intended track now
+            // Volume raised, track intended, try loading
             this.loadAndPlay(this.intendedTrack);
         }
     } else {
-        // Volume is 0 or disabled
+        // Mute/Disable
         if (this.introAudio) {
             this.introAudio.pause();
         }
@@ -130,10 +125,9 @@ class AudioService {
       // Check if we are already playing this track
       if (this.introAudio) {
           // If the src matches, just ensure it's playing
-          // We check for the filename presence in the src url to handle full vs relative paths
-          if (this.introAudio.src.includes(path)) { 
+          if (this.introAudio.src.includes(path.replace('./', ''))) { 
                if (this.introAudio.paused && this.volume > 0) {
-                   this.introAudio.play().catch(e => console.warn("Play blocked:", e));
+                   this.introAudio.play().catch(e => { /* Expected if no interaction yet */ });
                }
                return; 
           }
@@ -147,19 +141,17 @@ class AudioService {
       audio.loop = true;
       audio.volume = this.volume;
       
-      // Add error listener to help debug file issues
       audio.addEventListener('error', (e) => {
-          console.error(`Error loading audio file: ${path}`, e);
-          const error = (e.target as HTMLAudioElement).error;
-          if (error) console.error("Audio Error Details:", error.code, error.message);
+          console.warn(`Error loading audio file: ${path}`, e);
       });
 
+      // Try to play immediately. If blocked, it catches.
+      // The `init()` call from App.tsx (on click) will retry this later.
       const playPromise = audio.play();
       if (playPromise !== undefined) {
           playPromise.catch(error => {
-              console.warn(`Audio play blocked for ${trackId}:`, error);
-              // We intentionally leave it paused. 
-              // App.tsx handleInteraction will call init() which will try .play() again.
+              // This is expected on initial load without user gesture.
+              // We suppress the console warning to avoid clutter, as we handle it in init()
           });
       }
       
@@ -167,20 +159,18 @@ class AudioService {
   }
 
   playTrack(type: 'intro' | 'command' | 'map' | 'combat') {
-    this.init();
+    // IMPORTANT: Do NOT call this.init() here.
+    // Calling init() triggers new AudioContext(), which throws a warning if done on page load (useEffect).
+    // We rely on App.tsx to call init() on the first user click.
     
-    // Always update intention
     this.intendedTrack = type;
 
-    // Check Constraints: If volume 0 or disabled, do NOT load/play
+    // Only attempt to load if enabled and volume is up
     if (!this.enabled || this.volume <= 0) {
-        if (this.introAudio) {
-            this.introAudio.pause();
-        }
+        if (this.introAudio) this.introAudio.pause();
         return;
     }
 
-    // Load and play
     this.loadAndPlay(type);
   }
 
@@ -192,8 +182,10 @@ class AudioService {
     }
   }
 
+  // --- SFX Methods (These implicitly call init because they need Context) ---
+
   startLandingThruster() {
-    this.init();
+    this.init(); // SFX needs context
     if (!this.ctx || !this.enabled) return;
     const ctx = this.ctx;
     
