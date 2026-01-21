@@ -42,13 +42,34 @@ class AudioService {
   private ambienceNodes: AudioNode[] = [];
 
   init() {
-    if (this.ctx) return;
-    const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
-    if (AudioContextClass) {
-        this.ctx = new AudioContextClass();
-        this.masterGain = this.ctx.createGain();
-        this.masterGain.connect(this.ctx.destination);
-        this.updateVolume(this.volume);
+    // 1. Create AudioContext if it doesn't exist
+    if (!this.ctx) {
+        const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
+        if (AudioContextClass) {
+            this.ctx = new AudioContextClass();
+            this.masterGain = this.ctx.createGain();
+            this.masterGain.connect(this.ctx.destination);
+            // Apply initial volume to the new context
+            if (this.masterGain) {
+                this.masterGain.gain.setValueAtTime(this.enabled ? this.volume : 0, this.ctx.currentTime);
+            }
+        }
+    }
+
+    // 2. Resume Context if suspended (Browser Autoplay Policy)
+    if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(e => console.debug("AudioContext resume failed", e));
+    }
+
+    // 3. Retry playing background music if it was blocked
+    if (this.introAudio && this.introAudio.paused && this.enabled && this.volume > 0) {
+        const playPromise = this.introAudio.play();
+        if (playPromise !== undefined) {
+            playPromise.catch(e => {
+                // Still blocked, will try again on next interaction
+                console.debug("Retry play failed", e);
+            });
+        }
     }
   }
 
@@ -88,7 +109,6 @@ class AudioService {
         // Volume is 0 or disabled
         if (this.introAudio) {
             this.introAudio.pause();
-            // Optional: Unload to save memory if specifically desired
         }
     }
   }
@@ -127,7 +147,7 @@ class AudioService {
           playPromise.catch(error => {
               console.warn(`Audio play blocked for ${trackId}:`, error);
               // We intentionally leave it paused. 
-              // App.tsx handleInteraction will call init() -> updateVolume() which will try .play() again on user gesture.
+              // App.tsx handleInteraction will call init() which will try .play() again.
           });
       }
       
@@ -144,11 +164,6 @@ class AudioService {
     if (!this.enabled || this.volume <= 0) {
         if (this.introAudio) {
             this.introAudio.pause();
-            // Don't nullify immediately to allow resume, but if switching tracks we might want to?
-            // Actually, if we switch tracks while mute, we shouldn't load the new one.
-            // If we are just pausing the current one, we keep it.
-            // But if 'type' is different from current, we should probably prepare to switch.
-            // For now, simple pause is enough.
         }
         return;
     }
