@@ -19,7 +19,7 @@ interface ShipIconProps {
   activePart?: ShipPart;
   onPartSelect?: (part: ShipPart) => void;
   showJets?: boolean;
-  jetType?: 'combustion' | 'ion'; // New prop for jet style
+  jetType?: 'combustion' | 'ion'; // Default to Blue Ion
   showGear?: boolean;
   shield?: Shield | null;
   secondShield?: Shield | null;
@@ -28,6 +28,7 @@ interface ShipIconProps {
   equippedWeapons?: (EquippedWeapon | null)[];
   weaponFireTimes?: { [key: number]: number }; // slot index -> timestamp
   forceShieldScale?: boolean; // Force scale down to shield size even if no shield present
+  isCapsule?: boolean; // New prop for Escape Capsule mode
 }
 
 export const ShipIcon: React.FC<ShipIconProps> = ({
@@ -45,7 +46,7 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
   activePart,
   onPartSelect,
   showJets = false,
-  jetType = 'ion', // Default to Blue Ion
+  jetType = 'ion', 
   showGear = false,
   shield,
   secondShield,
@@ -53,7 +54,8 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
   weaponId,
   equippedWeapons,
   weaponFireTimes,
-  forceShieldScale = false
+  forceShieldScale = false,
+  isCapsule = false
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   
@@ -146,23 +148,61 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
     canvas.width = 300;
     canvas.height = 300;
     
-    // Set scale and translation
     const scale = shouldScaleDown ? 1.7 : 3;
-    // To center 50,50 in 300,300 with scale S:
-    // (50 * S) + T = 150  =>  T = 150 - 50*S
-    // S=1.7 => 150 - 85 = 65
-    // S=3 => 150 - 150 = 0
     const translate = shouldScaleDown ? 65 : 0; 
 
-    // Clear entire canvas before transformations
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
 
-    // Apply transform
     ctx.translate(translate, translate);
     ctx.scale(scale, scale);
+
+    // --- CAPSULE MODE ---
+    if (isCapsule) {
+        ctx.save();
+        ctx.translate(50, 50);
+        
+        // Hull (Egg Shape)
+        ctx.fillStyle = hullColor || '#e2e8f0'; // Light Grey/White
+        ctx.beginPath();
+        // Draw an egg shape: wider bottom, narrower top
+        ctx.ellipse(0, 5, 18, 24, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+
+        // Cockpit Glass (Large, central)
+        ctx.fillStyle = cockpitColor || '#0ea5e9';
+        ctx.beginPath();
+        ctx.ellipse(0, -2, 10, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Glint
+        ctx.fillStyle = 'rgba(255,255,255,0.7)';
+        ctx.beginPath();
+        ctx.ellipse(-4, -6, 3, 5, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Small Engine at bottom
+        ctx.fillStyle = engineColor || '#334155';
+        ctx.fillRect(-6, 26, 12, 6);
+        
+        // Tiny Jet
+        if (showJets) {
+             ctx.fillStyle = '#f97316';
+             ctx.beginPath();
+             ctx.moveTo(-4, 32);
+             ctx.lineTo(0, 45);
+             ctx.lineTo(4, 32);
+             ctx.fill();
+        }
+
+        ctx.restore();
+        return;
+    }
 
     const { wingStyle, hullShapeType } = config;
     const engineLocs = getEngineCoordinates(config);
@@ -618,7 +658,7 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
           animRef.current = requestAnimationFrame(animate);
           return () => { if(animRef.current) cancelAnimationFrame(animRef.current); };
       }
-  }, [config, hullColor, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, barColor, activePart, showJets, jetType, showGear, shield, secondShield, fullShields, equippedWeapons, weaponFireTimes, forceShieldScale]);
+  }, [config, hullColor, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, barColor, activePart, showJets, jetType, showGear, shield, secondShield, fullShields, equippedWeapons, weaponFireTimes, forceShieldScale, isCapsule]);
 
   return <canvas ref={canvasRef} className={className} onClick={handleClick} />;
 };

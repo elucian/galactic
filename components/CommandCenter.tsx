@@ -72,6 +72,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       return (fitting?.health || 0) <= 0;
   });
 
+  const selectedShipDestroyed = gameState.shipFittings[gameState.selectedShipInstanceId || '']?.health <= 0;
+
   useEffect(() => {
     const updateLayout = () => {
       const w = window.innerWidth;
@@ -185,6 +187,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           const config = SHIPS.find(s => s.id === inst.shipTypeId);
           if (!config || !f) return null;
           const isSelected = gameState.selectedShipInstanceId === inst.instanceId;
+          const isDestroyed = f.health <= 0;
           
           const s1 = f.shieldId ? (f.shieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.shieldId) || null) : null;
           const s2 = f.secondShieldId ? (f.secondShieldId === 'dev_god_mode' ? { id: 'dev_god_mode', name: 'DEV', color: '#ffffff', visualType: 'full', capacity: 9999, regenRate: 100, energyCost: 0 } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === f.secondShieldId) || null) : null;
@@ -222,8 +225,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                       )}
 
                       {/* SHIP NAME CENTERED */}
-                      <span className={`retro-font ${cardTitleSize} text-emerald-500 uppercase truncate text-center px-10 w-full`}>
-                          {config.name}
+                      <span className={`retro-font ${cardTitleSize} ${isDestroyed ? 'text-red-500 line-through' : 'text-emerald-500'} uppercase truncate text-center px-10 w-full`}>
+                          {isDestroyed ? "RESCUE POD" : config.name}
                       </span>
 
                       {/* EMBEDDED NAV NEXT */}
@@ -259,11 +262,12 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                             fullShields={true}
                             equippedWeapons={f.weapons}
                             forceShieldScale={true}
+                            isCapsule={isDestroyed}
                         />
                         {/* OVERLAY UNIT NUMBER - Positioned over bottom of ship/shield area */}
                         <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
-                            <span className="text-[10px] sm:text-xs font-black text-zinc-500 uppercase tracking-[0.2em] whitespace-nowrap bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded border border-zinc-800/30">
-                                UNIT 0{trueIdx + 1}
+                            <span className={`text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] whitespace-nowrap bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded border ${isDestroyed ? 'text-red-500 border-red-500/30' : 'text-zinc-500 border-zinc-800/30'}`}>
+                                {isDestroyed ? "STATUS: KIA" : `UNIT 0${trueIdx + 1}`}
                             </span>
                         </div>
                     </div>
@@ -281,8 +285,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                     </div>
                     <div className="grid grid-cols-3 gap-1 pt-1">
                         <button onClick={(e) => { e.stopPropagation(); setIsStoreOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>REPLACE</button>
-                        <button onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>EQUIP</button>
-                        <button onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-white transition-colors`}>PAINT</button>
+                        <button disabled={isDestroyed} onClick={(e) => { e.stopPropagation(); setIsLoadoutOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 ${isDestroyed ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-white'} transition-colors`}>EQUIP</button>
+                        <button disabled={isDestroyed} onClick={(e) => { e.stopPropagation(); setIsPaintOpen(true); }} className={`py-2 bg-zinc-900 ${cardBtnText} uppercase font-black rounded border border-zinc-700 hover:bg-zinc-800 ${isDestroyed ? 'text-zinc-700 cursor-not-allowed' : 'text-zinc-400 hover:text-white'} transition-colors`}>PAINT</button>
                     </div>
                   </div>
                 </div>
@@ -326,8 +330,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           </div>
 
           <div className="flex gap-2 items-center">
-            <button onClick={onRepair} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white`}>REPAIR</button>
-            <button onClick={onRefuel} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white`}>REFUEL</button>
+            <button disabled={selectedShipDestroyed} onClick={onRepair} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed`}>REPAIR</button>
+            <button disabled={selectedShipDestroyed} onClick={onRefuel} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed`}>REFUEL</button>
             <div className="w-[1px] h-8 bg-zinc-800 mx-1 hidden md:block landscape:block"/>
             {allShipsCompromised ? (
                 <button onClick={() => setScreen('intro')} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-red-600 border-2 border-red-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all hover:scale-105 active:scale-95 animate-pulse`}>ABORT</button>

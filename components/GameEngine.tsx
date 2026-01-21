@@ -1228,55 +1228,78 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         const height = cvs.height = window.innerHeight;
         s.frame++;
 
-        const speed = 9;
-        
-        let targetThrottle = 0;
-        let left = s.keys.has('ArrowLeft') || s.keys.has('KeyA') || s.keys.has('Numpad4');
-        let right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
-
-        if (hasTiltRef.current) {
-            const isLandscape = window.innerWidth > window.innerHeight;
-            let tiltVal = 0;
-            if (isLandscape) {
-                tiltVal = tiltRef.current.beta;
-            } else {
-                tiltVal = tiltRef.current.gamma;
-            }
-
-            if (tiltVal < -5) {
-                left = true;
-                s.px -= Math.abs(tiltVal) * 0.2; 
-            } else if (tiltVal > 5) {
-                right = true;
-                s.px += Math.abs(tiltVal) * 0.2;
-            }
-            
-            if (Math.abs(tiltVal) > 5) {
-                targetRef.current = null;
-            }
+        // Energy Regeneration: 2.0 base + Scaling
+        // Vanguard (5k) -> 2.05
+        // Behemoth (450k) -> 6.5
+        if (!s.isCapacitorCharging) {
+            const regenRate = 2.0 + (activeShip.config.price / 100000);
+            s.energy = Math.min(maxEnergy, s.energy + regenRate);
         }
 
-        if (s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8')) targetThrottle = 1;
-        else if (s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2')) targetThrottle = -1;
+        const speed = 9;
+        
+        // Critical Fuel Check
+        const fuelLimit = maxFuel * 0.1;
+        const isDistress = !s.rescueMode && s.fuel <= fuelLimit && s.water <= 0;
 
-        if (targetRef.current) {
-            const dx = targetRef.current.x - s.px;
-            const dy = targetRef.current.y - s.py;
-            const dist = Math.hypot(dx, dy);
-            
-            if (dist < 10) {
-                targetRef.current = null;
-                targetThrottle = 0;
-            } else {
-                const angle = Math.atan2(dy, dx);
-                s.px += Math.cos(angle) * 12;
-                s.py += Math.sin(angle) * 12;
-                const xComp = Math.cos(angle);
-                const yComp = Math.sin(angle);
-                if (xComp < -0.5) left = true;
-                if (xComp > 0.5) right = true;
-                if (yComp < -0.5) targetThrottle = 1; 
-                if (yComp > 0.5) targetThrottle = -1; 
+        if (isDistress && s.frame % 180 === 0) {
+            setHud(h => ({...h, alert: "CRITICAL FUEL - ABORT IMMEDIATELY", alertType: 'alert'}));
+            audioService.playAlertSiren();
+        }
+
+        let targetThrottle = 0;
+        let left = false;
+        let right = false;
+
+        // Input Processing (Disabled in Distress)
+        if (!isDistress) {
+            left = s.keys.has('ArrowLeft') || s.keys.has('KeyA') || s.keys.has('Numpad4');
+            right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
+
+            if (hasTiltRef.current) {
+                const isLandscape = window.innerWidth > window.innerHeight;
+                let tiltVal = 0;
+                if (isLandscape) {
+                    tiltVal = tiltRef.current.beta;
+                } else {
+                    tiltVal = tiltRef.current.gamma;
+                }
+
+                if (tiltVal < -5) {
+                    left = true;
+                    s.px -= Math.abs(tiltVal) * 0.2; 
+                } else if (tiltVal > 5) {
+                    right = true;
+                    s.px += Math.abs(tiltVal) * 0.2;
+                }
+                
+                if (Math.abs(tiltVal) > 5) {
+                    targetRef.current = null;
+                }
+            }
+
+            if (s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8')) targetThrottle = 1;
+            else if (s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2')) targetThrottle = -1;
+
+            if (targetRef.current) {
+                const dx = targetRef.current.x - s.px;
+                const dy = targetRef.current.y - s.py;
+                const dist = Math.hypot(dx, dy);
+                
+                if (dist < 10) {
+                    targetRef.current = null;
+                    targetThrottle = 0;
+                } else {
+                    const angle = Math.atan2(dy, dx);
+                    s.px += Math.cos(angle) * 12;
+                    s.py += Math.sin(angle) * 12;
+                    const xComp = Math.cos(angle);
+                    const yComp = Math.sin(angle);
+                    if (xComp < -0.5) left = true;
+                    if (xComp > 0.5) right = true;
+                    if (yComp < -0.5) targetThrottle = 1; 
+                    if (yComp > 0.5) targetThrottle = -1; 
+                }
             }
         }
 
@@ -1291,8 +1314,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         
         s.py = Math.max(50, Math.min(height - 150, s.py));
 
-        if (s.keys.has('ArrowLeft') || s.keys.has('KeyA')) s.px -= speed;
-        if (s.keys.has('ArrowRight') || s.keys.has('KeyD')) s.px += speed;
+        if (!isDistress) {
+            if (s.keys.has('ArrowLeft') || s.keys.has('KeyA')) s.px -= speed;
+            if (s.keys.has('ArrowRight') || s.keys.has('KeyD')) s.px += speed;
+        }
         
         s.px = Math.max(30, Math.min(width-30, s.px));
 
@@ -1312,11 +1337,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         if (s.rescueMode) {
             const driftSpeed = 3;
-            if (isMoving) {
-               if (s.currentThrottle > 0) s.py -= driftSpeed;
-               if (s.currentThrottle < 0) s.py += driftSpeed;
-               s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
-            }
+            // Drifting in rescue mode
+            if (s.currentThrottle > 0) s.py -= driftSpeed;
+            if (s.currentThrottle < 0) s.py += driftSpeed;
+            s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
+            
             if (s.frame % 8 === 0) { 
                  s.particles.push({ 
                      x: s.px, 
@@ -1330,11 +1355,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             }
         } else {
             if (isMoving) {
-                let consumption = 0.005; 
-                if (s.currentThrottle > 0.1) consumption += 0.002 * s.currentThrottle;
+                let effort = 0.005; 
+                if (Math.abs(s.currentThrottle) > 0.1) effort += 0.002 * Math.abs(s.currentThrottle);
                 
-                if (s.fuel > 0) { s.fuel = Math.max(0, s.fuel - consumption); s.usingWater = false; } else if (s.water > 0) { s.water = Math.max(0, s.water - (consumption * 0.5)); s.usingWater = true; } else { isMoving = false; }
-                if (s.water > 0) s.water = Math.max(0, s.water - 0.01);
+                // Priority: Water -> Fuel (until 10%)
+                if (s.water > 0) {
+                    s.usingWater = true;
+                    // Water is consumed ~10x rate of fuel for movement balance
+                    s.water = Math.max(0, s.water - (effort * 10.0)); 
+                } else if (s.fuel > fuelLimit) {
+                    s.usingWater = false;
+                    s.fuel = Math.max(fuelLimit, s.fuel - effort);
+                } else {
+                    // Out of fuel above limit? Should be caught by distress logic, 
+                    // but force stop if somehow we got here
+                    isMoving = false;
+                }
             }
             if (s.hp < 30) {
                 if (s.frame % 5 === 0) s.particles.push({ x: s.px + (Math.random()-0.5)*20, y: s.py + 10, vx: (Math.random()-0.5)*1, vy: 2, life: 0.8, color: '#777', size: 3 + Math.random()*3 });
@@ -1343,10 +1379,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
         
         const isFiring = s.keys.has('Space') || inputRef.current.main;
-
-        if (!s.isCapacitorCharging) {
-            s.energy = Math.min(maxEnergy, s.energy + 1.0); 
-        }
         
         if (!s.rescueMode) {
             Object.keys(s.gunStates).forEach(keyStr => {
@@ -2363,6 +2395,61 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     ctx.save(); 
     ctx.scale(scale, scale); 
     ctx.translate(-50, -50); 
+    
+    // --- CAPSULE MODE ---
+    if (isRescue) {
+        ctx.save();
+        ctx.translate(50, 50);
+        
+        // Hull (Egg Shape)
+        ctx.fillStyle = '#e2e8f0'; // Light Grey/White
+        ctx.beginPath();
+        ctx.ellipse(0, 5, 20, 28, 0, 0, Math.PI * 2); 
+        ctx.fill();
+        ctx.strokeStyle = '#475569';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Cockpit Glass (Large)
+        ctx.fillStyle = cockpitColor || '#0ea5e9';
+        ctx.beginPath();
+        ctx.ellipse(0, -2, 12, 16, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Glint
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.beginPath();
+        ctx.ellipse(-4, -6, 3, 5, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Small Engine at bottom
+        ctx.fillStyle = engineColor || '#334155';
+        ctx.fillRect(-6, 28, 12, 6);
+        
+        // Tiny Jet
+        if (movement?.up) {
+             ctx.fillStyle = '#f97316';
+             ctx.beginPath();
+             ctx.moveTo(-4, 34);
+             ctx.lineTo(0, 48); // Longer flame when thrusting
+             ctx.lineTo(4, 34);
+             ctx.fill();
+        } else {
+             // Idle flame
+             ctx.fillStyle = '#f97316';
+             ctx.globalAlpha = 0.6;
+             ctx.beginPath();
+             ctx.moveTo(-3, 34);
+             ctx.lineTo(0, 40);
+             ctx.lineTo(3, 34);
+             ctx.fill();
+        }
+
+        ctx.restore();
+        ctx.restore();
+        return;
+    }
+
     const { wingStyle, hullShapeType } = config; 
     const engineLocs = getEngineCoordinates(config); 
     
