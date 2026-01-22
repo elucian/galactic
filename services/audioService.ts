@@ -2,8 +2,12 @@
 class AudioService {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
-  private volume: number = 0.3;
-  private enabled: boolean = true;
+  private sfxGain: GainNode | null = null; // Dedicated SFX bus
+  
+  private musicVolume: number = 0.3;
+  private sfxVolume: number = 0.5;
+  private musicEnabled: boolean = true;
+  private sfxEnabled: boolean = true;
   
   // Background Music State
   private introAudio: HTMLAudioElement | null = null;
@@ -50,10 +54,13 @@ class AudioService {
             this.ctx = new AudioContextClass();
             this.masterGain = this.ctx.createGain();
             this.masterGain.connect(this.ctx.destination);
-            // Apply initial volume to the new context
-            if (this.masterGain) {
-                this.masterGain.gain.setValueAtTime(this.enabled ? this.volume : 0, this.ctx.currentTime);
-            }
+            
+            // Create dedicated SFX bus
+            this.sfxGain = this.ctx.createGain();
+            this.sfxGain.connect(this.masterGain);
+            
+            // Apply initial volumes
+            this.updateSfxState();
         }
     }
 
@@ -63,14 +70,7 @@ class AudioService {
     }
 
     // 3. Retry playing background music if it was blocked or pending
-    if (this.introAudio) {
-        if (this.introAudio.paused && this.enabled && this.volume > 0) {
-            this.introAudio.play().catch(e => console.warn("Retry music play failed:", e));
-        }
-    } else if (this.intendedTrack && this.enabled && this.volume > 0) {
-        // If we have an intended track but no audio element yet (or it failed), try loading now
-        this.loadAndPlay(this.intendedTrack);
-    }
+    this.updateMusicState();
   }
 
   private createPanner(x: number): StereoPannerNode | null {
@@ -81,40 +81,71 @@ class AudioService {
     return panner;
   }
 
-  updateVolume(v: number) {
-    this.volume = v;
-    
-    // Update SFX Volume (if Context exists)
-    if (this.masterGain && this.ctx) {
-        this.masterGain.gain.setTargetAtTime(this.enabled ? v : 0, this.ctx.currentTime, 0.1);
-    }
+  private updateMusicState() {
+      if (this.introAudio) {
+          this.introAudio.volume = this.musicVolume;
+          if (this.musicEnabled) {
+              if (this.introAudio.paused && this.introAudio.src) {
+                  this.introAudio.play().catch(e => { /* Autoplay block expected */ });
+              }
+          } else {
+              this.introAudio.pause();
+          }
+      } else if (this.musicEnabled && this.intendedTrack && this.musicVolume > 0) {
+          // If enabled, intended, and no audio yet, load it
+          this.loadAndPlay(this.intendedTrack);
+      }
+  }
 
-    // Update Music Volume (HTML5 Audio)
-    if (this.enabled && v > 0) {
-        if (this.introAudio) {
-            this.introAudio.volume = v;
-            // If it was paused purely due to zero volume, resume it
-            if (this.introAudio.paused && this.introAudio.src) {
-                const playPromise = this.introAudio.play();
-                if (playPromise !== undefined) {
-                    playPromise.catch(e => { /* Ignore autoplay blocks here, waiting for interaction */ });
+  private updateSfxState() {
+      if (this.sfxGain && this.ctx) {
+          const target = this.sfxEnabled ? this.sfxVolume : 0;
+          this.sfxGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.1);
+      }
+  }
+
+  setMusicVolume(v: number) {
+    this.musicVolume = v;
+    this.updateMusicState();
+  }
+
+  setSfxVolume(v: number) {
+    this.sfxVolume = v;
+    this.updateSfxState();
+  }
+
+  setMusicEnabled(e: boolean) {
+    this.musicEnabled = e;
+    this.updateMusicState();
+
+    // Update Reactor/Capacitor volumes immediately when music toggles
+    // Logic: If Music ON -> 0 volume. If Music OFF -> Reduced volume (~0.25).
+    if (this.ctx) {
+        const t = this.ctx.currentTime;
+        const targetVol = e ? 0 : 0.25; 
+
+        // Force update existing nodes if they are playing
+        const updateNode = (node: GainNode | null) => {
+            if (node) {
+                try {
+                    node.gain.cancelScheduledValues(t);
+                    node.gain.setValueAtTime(node.gain.value, t);
+                    node.gain.linearRampToValueAtTime(targetVol, t + 0.2);
+                } catch (err) {
+                    console.warn("Error updating audio node gain", err);
                 }
             }
-        } else if (this.intendedTrack) {
-            // Volume raised, track intended, try loading
-            this.loadAndPlay(this.intendedTrack);
-        }
-    } else {
-        // Mute/Disable
-        if (this.introAudio) {
-            this.introAudio.pause();
-        }
+        };
+
+        updateNode(this.chargeGain);
+        updateNode(this.capGain);
+        updateNode(this.bottleGain);
     }
   }
 
-  setEnabled(e: boolean) {
-    this.enabled = e;
-    this.updateVolume(this.volume);
+  setSfxEnabled(e: boolean) {
+    this.sfxEnabled = e;
+    this.updateSfxState();
   }
 
   // Internal helper to actually load the file
@@ -124,71 +155,66 @@ class AudioService {
 
       // Check if we are already playing this track
       if (this.introAudio) {
-          // If the src matches, just ensure it's playing
-          // Check for filename match since full blob URL might differ slightly in params or protocol
-          if (this.introAudio.src === path || this.introAudio.src.includes(path.split('/').pop() || '')) { 
-               if (this.introAudio.paused && this.volume > 0) {
-                   this.introAudio.play().catch(e => { /* Expected if no interaction yet */ });
+          const currentSrc = this.introAudio.src;
+          const fileName = path.split('/').pop() || '';
+          
+          if (currentSrc === path || (fileName && currentSrc.includes(fileName))) { 
+               if (this.introAudio.paused && this.musicEnabled && this.musicVolume > 0) {
+                   this.introAudio.play().catch(e => { });
                }
                return; 
           }
-          // Otherwise stop the old one
+          
+          this.introAudio.onerror = null;
+          this.introAudio.onended = null;
           this.introAudio.pause();
           this.introAudio.src = "";
+          this.introAudio.load();
           this.introAudio = null;
       }
 
-      const audio = new Audio(path);
-      audio.crossOrigin = "anonymous"; // Best practice for remote resources
-      audio.loop = true;
-      audio.volume = this.volume;
-      
-      audio.addEventListener('error', (e) => {
-          console.warn(`Error loading audio file: ${path}`, e);
-      });
+      if (!this.musicEnabled) return;
 
-      // Try to play immediately. If blocked, it catches.
-      // The `init()` call from App.tsx (on click) will retry this later.
+      const audio = new Audio(path);
+      audio.crossOrigin = "anonymous";
+      audio.loop = true;
+      audio.volume = this.musicVolume;
+      
+      audio.onerror = (e) => {
+          if (this.introAudio === audio) {
+              console.warn(`Error loading audio file: ${path}`, e);
+          }
+      };
+
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-          playPromise.catch(error => {
-              // This is expected on initial load without user gesture.
-              // We suppress the console warning to avoid clutter, as we handle it in init()
-          });
+          playPromise.catch(error => {});
       }
       
       this.introAudio = audio;
   }
 
   playTrack(type: 'intro' | 'command' | 'map' | 'combat') {
-    // IMPORTANT: Do NOT call this.init() here.
-    // Calling init() triggers new AudioContext(), which throws a warning if done on page load (useEffect).
-    // We rely on App.tsx to call init() on the first user click.
-    
     this.intendedTrack = type;
-
-    // Only attempt to load if enabled and volume is up
-    if (!this.enabled || this.volume <= 0) {
-        if (this.introAudio) this.introAudio.pause();
-        return;
+    if (this.musicEnabled && this.musicVolume > 0) {
+        this.loadAndPlay(type);
     }
-
-    this.loadAndPlay(type);
   }
 
   stop() {
     this.intendedTrack = null;
     if (this.introAudio) {
+      this.introAudio.onerror = null;
       this.introAudio.pause();
       this.introAudio = null;
     }
   }
 
-  // --- SFX Methods (These implicitly call init because they need Context) ---
+  // --- SFX Methods ---
 
   startLandingThruster() {
-    this.init(); // SFX needs context
-    if (!this.ctx || !this.enabled) return;
+    this.init();
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     
     const bufferSize = ctx.sampleRate * 4;
@@ -215,7 +241,7 @@ class AudioService {
 
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(this.masterGain!);
+    gain.connect(this.sfxGain); // Connect to SFX bus
     
     noise.start();
     
@@ -247,7 +273,7 @@ class AudioService {
 
   playLandThud() {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
@@ -261,7 +287,7 @@ class AudioService {
     gain.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
     
     osc.connect(gain);
-    gain.connect(this.masterGain!);
+    gain.connect(this.sfxGain);
     osc.start(t);
     osc.stop(t + 0.4);
 
@@ -281,7 +307,7 @@ class AudioService {
 
     metalOsc.connect(metalFilter);
     metalFilter.connect(metalGain);
-    metalGain.connect(this.masterGain!);
+    metalGain.connect(this.sfxGain);
     metalOsc.start(t);
     metalOsc.stop(t + 0.2);
 
@@ -303,14 +329,14 @@ class AudioService {
 
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseGain);
-    noiseGain.connect(this.masterGain!);
+    noiseGain.connect(this.sfxGain);
     noise.start(t);
     noise.stop(t + 0.4);
   }
 
   startCrickets() {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const osc = ctx.createOscillator();
     osc.type = 'sine';
@@ -324,7 +350,7 @@ class AudioService {
     lfoGain.gain.value = 0.05; 
     lfo.connect(gain.gain);
     osc.connect(gain);
-    gain.connect(this.masterGain!);
+    gain.connect(this.sfxGain); // Ambience on SFX bus
     osc.start();
     lfo.start();
     this.ambienceNodes.push(osc, lfo, gain, lfoGain);
@@ -342,12 +368,12 @@ class AudioService {
 
   playLaunchSequence() {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
     const seqGain = ctx.createGain();
-    seqGain.connect(this.masterGain!);
+    seqGain.connect(this.sfxGain); // Connect to SFX bus
     this.launchGain = seqGain;
 
     const bangOsc = ctx.createOscillator();
@@ -411,14 +437,14 @@ class AudioService {
 
   playAlertSiren() {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const t = ctx.currentTime;
 
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
     const gain = ctx.createGain();
-    gain.connect(this.masterGain!);
+    gain.connect(this.sfxGain); // SFX
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
@@ -456,10 +482,10 @@ class AudioService {
 
   playSfx(type: 'click' | 'transition' | 'denied' | 'buy') {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const g = ctx.createGain();
-    g.connect(this.masterGain!);
+    g.connect(this.sfxGain); // SFX
 
     if (type === 'click') {
       const osc = ctx.createOscillator();
@@ -507,7 +533,7 @@ class AudioService {
 
   playExplosion(pan: number = 0, scale: number = 1.0) {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const duration = 0.5 * scale;
     
@@ -531,7 +557,7 @@ class AudioService {
     
     noise.connect(filter);
     filter.connect(gain);
-    if (panner) { gain.connect(panner); panner.connect(this.masterGain!); } else { gain.connect(this.masterGain!); }
+    if (panner) { gain.connect(panner); panner.connect(this.sfxGain); } else { gain.connect(this.sfxGain); }
 
     noise.start();
     noise.stop(ctx.currentTime + duration);
@@ -539,7 +565,7 @@ class AudioService {
 
   startCharging() {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     if (this.chargeOsc) return;
 
     const ctx = this.ctx;
@@ -547,22 +573,27 @@ class AudioService {
     this.chargeGain = ctx.createGain();
     
     this.chargeOsc.type = 'sine';
-    this.chargeOsc.frequency.setValueAtTime(200, ctx.currentTime); 
-    this.chargeOsc.frequency.linearRampToValueAtTime(1000, ctx.currentTime + 2.0);
+    this.chargeOsc.frequency.setValueAtTime(400, ctx.currentTime); 
+    this.chargeOsc.frequency.linearRampToValueAtTime(1500, ctx.currentTime + 2.0);
 
     const filter = ctx.createBiquadFilter();
     this.chargeFilter = filter;
     filter.type = 'bandpass';
     filter.Q.value = 2;
-    filter.frequency.setValueAtTime(300, ctx.currentTime);
-    filter.frequency.linearRampToValueAtTime(1200, ctx.currentTime + 2.0);
+    filter.frequency.setValueAtTime(500, ctx.currentTime);
+    filter.frequency.linearRampToValueAtTime(1800, ctx.currentTime + 2.0);
 
-    this.chargeGain.gain.setValueAtTime(0, ctx.currentTime);
-    this.chargeGain.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.2);
+    // Initial Gain Logic:
+    // If music is ON, starting volume is 0.
+    // If music is OFF, starting volume is 0.25 (audible reduced volume).
+    const startVol = this.musicEnabled ? 0 : 0.25;
+    
+    this.chargeGain.gain.setValueAtTime(0, ctx.currentTime); 
+    this.chargeGain.gain.linearRampToValueAtTime(startVol, ctx.currentTime + 0.2);
 
     this.chargeOsc.connect(filter);
     filter.connect(this.chargeGain);
-    this.chargeGain.connect(this.masterGain!);
+    this.chargeGain.connect(this.sfxGain); // SFX
     this.chargeOsc.start();
   }
 
@@ -574,7 +605,7 @@ class AudioService {
 
   startCapacitorCharge() {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     if (this.capOsc) return;
 
     const ctx = this.ctx;
@@ -582,19 +613,22 @@ class AudioService {
 
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(50, t); 
+    osc.frequency.setValueAtTime(100, t); 
 
     const humFilter = ctx.createBiquadFilter();
     humFilter.type = 'lowpass';
-    humFilter.frequency.setValueAtTime(120, t);
+    humFilter.frequency.setValueAtTime(400, t);
     
     const humGain = ctx.createGain();
+    
+    // Initial Gain Logic
+    const humVol = this.musicEnabled ? 0 : 0.25;
     humGain.gain.setValueAtTime(0, t);
-    humGain.gain.linearRampToValueAtTime(0.15, t + 0.5);
+    humGain.gain.linearRampToValueAtTime(humVol, t + 0.5);
 
     osc.connect(humFilter);
     humFilter.connect(humGain);
-    humGain.connect(this.masterGain!);
+    humGain.connect(this.sfxGain); // SFX
     osc.start();
 
     const bufferSize = ctx.sampleRate * 2; 
@@ -608,16 +642,19 @@ class AudioService {
     const bottleFilter = ctx.createBiquadFilter();
     bottleFilter.type = 'bandpass';
     bottleFilter.Q.value = 15; 
-    bottleFilter.frequency.setValueAtTime(200, t);
-    bottleFilter.frequency.exponentialRampToValueAtTime(1500, t + 4.0); 
+    bottleFilter.frequency.setValueAtTime(600, t);
+    bottleFilter.frequency.exponentialRampToValueAtTime(4000, t + 4.0); 
 
     const bottleGain = ctx.createGain();
+    
+    // Initial Gain Logic
+    const bottleVol = this.musicEnabled ? 0 : 0.25;
     bottleGain.gain.setValueAtTime(0, t);
-    bottleGain.gain.linearRampToValueAtTime(0.1, t + 0.5);
+    bottleGain.gain.linearRampToValueAtTime(bottleVol, t + 0.5);
 
     noise.connect(bottleFilter);
     bottleFilter.connect(bottleGain);
-    bottleGain.connect(this.masterGain!);
+    bottleGain.connect(this.sfxGain); // SFX
     noise.start();
 
     this.capOsc = osc;
@@ -655,12 +692,12 @@ class AudioService {
 
   playWeaponFire(type: 'laser' | 'cannon' | 'missile' | 'mine' | 'rocket' | 'emp' | 'mega' | 'puff' | 'flame', pan: number = 0, variant?: string) {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const g = ctx.createGain();
     const panner = this.createPanner(pan);
-    const destination = panner ? panner : this.masterGain!;
-    if (panner) panner.connect(this.masterGain!);
+    const destination = panner ? panner : this.sfxGain!;
+    if (panner) panner.connect(this.sfxGain!);
     g.connect(destination);
 
     const ct = ctx.currentTime;
@@ -774,12 +811,12 @@ class AudioService {
 
   playShieldHit(pan: number = 0) {
     this.init();
-    if (!this.ctx || !this.enabled) return;
+    if (!this.ctx || !this.sfxGain) return;
     const ctx = this.ctx;
     const g = ctx.createGain();
     const panner = this.createPanner(pan);
-    const destination = panner ? panner : this.masterGain!;
-    if (panner) panner.connect(this.masterGain!);
+    const destination = panner ? panner : this.sfxGain!;
+    if (panner) panner.connect(this.sfxGain!);
     g.connect(destination);
     const osc = ctx.createOscillator();
     osc.type = 'sine';

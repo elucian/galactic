@@ -487,8 +487,12 @@ export default function App() {
     // Update lastSaveTime before saving
     const stateToSave = { ...gameState, lastSaveTime: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(stateToSave));
-    audioService.updateVolume(gameState.settings.musicVolume);
-    audioService.setEnabled(gameState.settings.musicEnabled);
+    
+    // Separate update calls for music and sfx controls
+    audioService.setMusicVolume(gameState.settings.musicVolume);
+    audioService.setSfxVolume(gameState.settings.sfxVolume);
+    audioService.setMusicEnabled(gameState.settings.musicEnabled);
+    audioService.setSfxEnabled(gameState.settings.sfxEnabled);
   }, [gameState]);
 
   useEffect(() => {
@@ -505,6 +509,8 @@ export default function App() {
     else audioService.stop();
   }, [screen]);
 
+  // ... rest of file (uiStyles, repairSelected, etc.) remains unchanged
+  
   const uiStyles = useMemo(() => {
       const s = gameState.settings.fontSize;
       if (s === 'small') return { btn: 'text-xs', beta: 'text-[8px]', container: 'w-64', spacing: 'gap-3' };
