@@ -95,7 +95,10 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       if (isDay) {
           if (p.quadrant === QuadrantType.BETA) skyGradient = ['#7f1d1d', '#fecaca'];
           else if (p.quadrant === QuadrantType.GAMA) skyGradient = ['#1e3a8a', '#bfdbfe'];
-          else if (p.quadrant === QuadrantType.DELTA) skyGradient = ['#3b0764', '#e9d5ff'];
+          else if (p.quadrant === QuadrantType.DELTA) {
+              // Red Sky for Delta Day
+              skyGradient = ['#450a0a', '#991b1b']; 
+          }
           else skyGradient = ['#0369a1', '#bae6fd']; // Normal Blue Sky
       } else {
           // Night Sky - Dark with slight tint of quadrant
@@ -124,7 +127,11 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
     hasThudded: false,
     hasAmbienceStarted: false,
     internalFuel: currentFuel, 
-    targetFuel: Math.max(0, currentFuel - LANDING_COST)
+    targetFuel: Math.max(0, currentFuel - LANDING_COST),
+    // Dynamic Sky Objects
+    redDwarfAngle: 0,
+    redDwarfTrail: [] as {x: number, y: number, alpha: number}[],
+    comet: null as { x: number, y: number, vx: number, vy: number, length: number } | null
   });
 
   // AUDIO HANDLING
@@ -154,22 +161,30 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
       const s = stateRef.current;
       const p = planet as Planet;
       
-      // 1. STARS
+      // 1. STARS - Reduced Size for realism
       const starCount = env.isDay ? 20 : 150;
       s.stars = Array.from({ length: starCount }).map(() => ({ 
           x: Math.random(), 
           y: Math.random(), 
-          size: Math.random() * 1.5 + 0.5, 
+          size: Math.random() * 0.8 + 0.2, // Smaller stars (0.2 to 1.0)
           alpha: env.isDay ? 0.3 : (Math.random() * 0.5 + 0.5) 
       }));
 
-      // 2. SKY OBJECTS (Sun/Moon)
+      // 2. SKY OBJECTS (Sun/Moon/Comet)
       const skyObjects = [];
       if (env.isDay) {
-          // Draw Sun
-          skyObjects.push({ 
-              x: 0.8, y: 0.2, size: 40, color: env.sunColor, type: 'sun', z: 5 
-          });
+          if (p.quadrant === QuadrantType.DELTA) {
+              // Special Black Hole object that we'll handle custom rendering for
+              skyObjects.push({ 
+                  x: 0.8, y: 0.2, size: 40, color: env.sunColor, type: 'black_hole', z: 5 
+              });
+              s.redDwarfAngle = Math.random() * Math.PI * 2;
+          } else {
+              // Draw Sun
+              skyObjects.push({ 
+                  x: 0.8, y: 0.2, size: 40, color: env.sunColor, type: 'sun', z: 5 
+              });
+          }
       } else {
           // Draw Moons at night
           const moons = p.moons || [];
@@ -184,6 +199,19 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
                   phase: Math.random(),
                   z: 20 
               });
+          }
+          
+          // Gamma Comet Logic
+          if (p.quadrant === QuadrantType.GAMA && Math.random() < 0.6) {
+              // Sometimes see a comet
+              skyObjects.push({ type: 'comet_marker' }); // Just a marker to trigger custom render
+              s.comet = {
+                  x: Math.random() * 0.4,
+                  y: 0.1 + Math.random() * 0.2,
+                  vx: 0.00005,
+                  vy: 0.00002,
+                  length: 60 + Math.random() * 40
+              };
           }
       }
       s.environmentDetails.skyObjects = skyObjects;
@@ -387,8 +415,8 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
           ctx.fillStyle = grad; 
           ctx.fillRect(0, 0, w, h);
 
-          // Stars (Night only or faint day)
-          if (elapsed < TOUCHDOWN_TIME) s.starScrollY += 0.05;
+          // Stars (Night only or faint day) - SLOW MOVING, SMALL
+          if (elapsed < TOUCHDOWN_TIME) s.starScrollY += 0.005; // Reduced from 0.05
           ctx.fillStyle = '#ffffff'; 
           s.stars.forEach(star => { 
               const sy = (star.y * h - s.starScrollY * star.size * 50) % h; 
@@ -397,12 +425,103 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
           }); 
           ctx.globalAlpha = 1.0;
 
-          // Sky Objects (Sun/Moon)
+          // Sky Objects (Sun/Moon/Black Hole/Comet)
           const skyOffset = viewOffset * 0.1;
           s.environmentDetails.skyObjects.forEach(obj => {
+              // Custom handling for comet logic update
+              if (obj.type === 'comet_marker' && s.comet) {
+                  const c = s.comet;
+                  c.x += c.vx; c.y += c.vy; // Slow movement
+                  const cx = c.x * w; 
+                  const cy = (c.y * h) - skyOffset; 
+                  
+                  // Draw Tail
+                  const tailGrad = ctx.createLinearGradient(cx, cy, cx - c.length, cy - (c.length/2));
+                  tailGrad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+                  tailGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                  ctx.fillStyle = tailGrad;
+                  ctx.beginPath();
+                  ctx.moveTo(cx, cy);
+                  ctx.lineTo(cx - c.length, cy - 10);
+                  ctx.lineTo(cx - c.length, cy + 10);
+                  ctx.fill();
+
+                  // Draw Head
+                  ctx.fillStyle = '#fff';
+                  ctx.shadowColor = '#a5f3fc'; ctx.shadowBlur = 10;
+                  ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+                  return;
+              }
+
               const mx = obj.x * w; 
               const my = (obj.y * h) - skyOffset; 
-              if (obj.type === 'sun') {
+              
+              if (obj.type === 'black_hole') {
+                  const scale = 1.0;
+                  const celX = mx; const celY = my;
+                  // Scale dimensions
+                  const bhRadius = 50 * scale;
+                  const bhCore = 12 * scale;
+                  // Removed rings as requested
+
+                  // 1. Draw Jets (Vertical Beams)
+                  const jetW = 4 * scale;
+                  const jetH = 200 * scale;
+                  
+                  // Top Jet
+                  const jetGradTop = ctx.createLinearGradient(celX, celY, celX, celY - jetH);
+                  jetGradTop.addColorStop(0, 'rgba(168, 85, 247, 0.8)');
+                  jetGradTop.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = jetGradTop;
+                  ctx.fillRect(celX - jetW/2, celY - jetH, jetW, jetH);
+                  
+                  // Bottom Jet
+                  const jetGradBot = ctx.createLinearGradient(celX, celY, celX, celY + jetH);
+                  jetGradBot.addColorStop(0, 'rgba(168, 85, 247, 0.8)');
+                  jetGradBot.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = jetGradBot;
+                  ctx.fillRect(celX - jetW/2, celY, jetW, jetH);
+
+                  // 2. Draw Black Hole Core
+                  const bhGlow = ctx.createRadialGradient(celX, celY, 10 * scale, celX, celY, bhRadius);
+                  bhGlow.addColorStop(0, '#000000');
+                  bhGlow.addColorStop(0.4, '#7f1d1d');
+                  bhGlow.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = bhGlow;
+                  ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill();
+                  
+                  ctx.fillStyle = '#000';
+                  ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15 * scale;
+                  ctx.beginPath(); ctx.arc(celX, celY, bhCore, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+
+                  // 4. Red Dwarf Companion (Fast Orbiting)
+                  s.redDwarfAngle += 0.05; 
+                  const wdRx = 100 * scale; 
+                  const wdRy = 25 * scale;
+                  const wdX = celX + Math.cos(s.redDwarfAngle) * wdRx;
+                  const wdY = celY + Math.sin(s.redDwarfAngle) * wdRy;
+                  
+                  // Trail
+                  s.redDwarfTrail.push({x: wdX, y: wdY, alpha: 1.0});
+                  if (s.redDwarfTrail.length > 25) s.redDwarfTrail.shift();
+                  
+                  ctx.lineCap = 'round';
+                  s.redDwarfTrail.forEach((tp, i) => {
+                      const size = (1 + (i/25)*4) * scale;
+                      const alpha = (i/25) * 0.7;
+                      ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`;
+                      ctx.beginPath(); ctx.arc(tp.x, tp.y, size, 0, Math.PI*2); ctx.fill();
+                  });
+
+                  // Star (Red Dwarf)
+                  ctx.fillStyle = '#fca5a5';
+                  ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 15 * scale;
+                  ctx.beginPath(); ctx.arc(wdX, wdY, 6 * scale, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+
+              } else if (obj.type === 'sun') {
                   ctx.save();
                   const shine = ctx.createRadialGradient(mx, my, obj.size * 0.5, mx, my, obj.size * 3);
                   shine.addColorStop(0, obj.color); shine.addColorStop(1, 'rgba(0,0,0,0)');

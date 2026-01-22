@@ -82,7 +82,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
 
-      audioService.startCharging();
+      // (Charging audio start removed)
 
       let rAF: number;
 
@@ -143,7 +143,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
               
               if (s.frame > 450) {
                   s.phase = 'expand';
-                  audioService.stopCharging();
+                  // (Stop Charging audio removed here)
                   audioService.playSfx('buy');
               }
           }
@@ -259,7 +259,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
       rAF = requestAnimationFrame(loop);
       return () => {
           cancelAnimationFrame(rAF);
-          audioService.stopCharging();
+          // (Stop Charging audio removed in cleanup)
           audioService.stopLaunchSequence();
       };
   }, [onComplete, stars, wanderers]);

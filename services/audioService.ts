@@ -23,19 +23,6 @@ class AudioService {
 
   private activeNodes: Set<AudioNode> = new Set();
   
-  // Charge Sound State
-  private chargeOsc: OscillatorNode | null = null;
-  private chargeGain: GainNode | null = null;
-  private chargeFilter: BiquadFilterNode | null = null;
-
-  // Capacitor Sound State
-  private capOsc: OscillatorNode | null = null;
-  private capGain: GainNode | null = null;
-  private capFilter: BiquadFilterNode | null = null;
-  private bottleNode: AudioBufferSourceNode | null = null;
-  private bottleFilter: BiquadFilterNode | null = null;
-  private bottleGain: GainNode | null = null;
-
   // Launch Sound State
   private launchGain: GainNode | null = null;
 
@@ -117,30 +104,6 @@ class AudioService {
   setMusicEnabled(e: boolean) {
     this.musicEnabled = e;
     this.updateMusicState();
-
-    // Update Reactor/Capacitor volumes immediately when music toggles
-    // Logic: If Music ON -> 0 volume. If Music OFF -> Reduced volume (~0.25).
-    if (this.ctx) {
-        const t = this.ctx.currentTime;
-        const targetVol = e ? 0 : 0.25; 
-
-        // Force update existing nodes if they are playing
-        const updateNode = (node: GainNode | null) => {
-            if (node) {
-                try {
-                    node.gain.cancelScheduledValues(t);
-                    node.gain.setValueAtTime(node.gain.value, t);
-                    node.gain.linearRampToValueAtTime(targetVol, t + 0.2);
-                } catch (err) {
-                    console.warn("Error updating audio node gain", err);
-                }
-            }
-        };
-
-        updateNode(this.chargeGain);
-        updateNode(this.capGain);
-        updateNode(this.bottleGain);
-    }
   }
 
   setSfxEnabled(e: boolean) {
@@ -563,124 +526,6 @@ class AudioService {
     noise.stop(ctx.currentTime + duration);
   }
 
-  startCharging() {
-    this.init();
-    if (!this.ctx || !this.sfxGain) return;
-    if (this.chargeOsc) return;
-
-    const ctx = this.ctx;
-    this.chargeOsc = ctx.createOscillator();
-    this.chargeGain = ctx.createGain();
-    
-    this.chargeOsc.type = 'sine';
-    this.chargeOsc.frequency.setValueAtTime(400, ctx.currentTime); 
-    this.chargeOsc.frequency.linearRampToValueAtTime(1500, ctx.currentTime + 2.0);
-
-    const filter = ctx.createBiquadFilter();
-    this.chargeFilter = filter;
-    filter.type = 'bandpass';
-    filter.Q.value = 2;
-    filter.frequency.setValueAtTime(500, ctx.currentTime);
-    filter.frequency.linearRampToValueAtTime(1800, ctx.currentTime + 2.0);
-
-    // Initial Gain Logic:
-    // If music is ON, starting volume is 0.
-    // If music is OFF, starting volume is 0.25 (audible reduced volume).
-    const startVol = this.musicEnabled ? 0 : 0.25;
-    
-    this.chargeGain.gain.setValueAtTime(0, ctx.currentTime); 
-    this.chargeGain.gain.linearRampToValueAtTime(startVol, ctx.currentTime + 0.2);
-
-    this.chargeOsc.connect(filter);
-    filter.connect(this.chargeGain);
-    this.chargeGain.connect(this.sfxGain); // SFX
-    this.chargeOsc.start();
-  }
-
-  stopCharging() {
-    if (this.chargeOsc) { try { this.chargeOsc.stop(); this.chargeOsc.disconnect(); } catch(e) {} this.chargeOsc = null; }
-    if (this.chargeFilter) { this.chargeFilter.disconnect(); this.chargeFilter = null; }
-    if (this.chargeGain) { this.chargeGain.disconnect(); this.chargeGain = null; }
-  }
-
-  startCapacitorCharge() {
-    this.init();
-    if (!this.ctx || !this.sfxGain) return;
-    if (this.capOsc) return;
-
-    const ctx = this.ctx;
-    const t = ctx.currentTime;
-
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(100, t); 
-
-    const humFilter = ctx.createBiquadFilter();
-    humFilter.type = 'lowpass';
-    humFilter.frequency.setValueAtTime(400, t);
-    
-    const humGain = ctx.createGain();
-    
-    // Initial Gain Logic
-    const humVol = this.musicEnabled ? 0 : 0.25;
-    humGain.gain.setValueAtTime(0, t);
-    humGain.gain.linearRampToValueAtTime(humVol, t + 0.5);
-
-    osc.connect(humFilter);
-    humFilter.connect(humGain);
-    humGain.connect(this.sfxGain); // SFX
-    osc.start();
-
-    const bufferSize = ctx.sampleRate * 2; 
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
-    noise.loop = true;
-
-    const bottleFilter = ctx.createBiquadFilter();
-    bottleFilter.type = 'bandpass';
-    bottleFilter.Q.value = 15; 
-    bottleFilter.frequency.setValueAtTime(600, t);
-    bottleFilter.frequency.exponentialRampToValueAtTime(4000, t + 4.0); 
-
-    const bottleGain = ctx.createGain();
-    
-    // Initial Gain Logic
-    const bottleVol = this.musicEnabled ? 0 : 0.25;
-    bottleGain.gain.setValueAtTime(0, t);
-    bottleGain.gain.linearRampToValueAtTime(bottleVol, t + 0.5);
-
-    noise.connect(bottleFilter);
-    bottleFilter.connect(bottleGain);
-    bottleGain.connect(this.sfxGain); // SFX
-    noise.start();
-
-    this.capOsc = osc;
-    this.capGain = humGain;
-    this.capFilter = humFilter;
-    this.bottleNode = noise;
-    this.bottleFilter = bottleFilter;
-    this.bottleGain = bottleGain;
-  }
-
-  stopCapacitorCharge() {
-      if (!this.ctx) return;
-      const t = this.ctx.currentTime;
-      if (this.capGain) this.capGain.gain.setTargetAtTime(0, t, 0.1);
-      if (this.bottleGain) this.bottleGain.gain.setTargetAtTime(0, t, 0.1);
-
-      setTimeout(() => {
-          if (this.capOsc) { try { this.capOsc.stop(); } catch(e){} this.capOsc.disconnect(); this.capOsc = null; }
-          if (this.capFilter) { this.capFilter.disconnect(); this.capFilter = null; }
-          if (this.capGain) { this.capGain.disconnect(); this.capGain = null; }
-          if (this.bottleNode) { try { this.bottleNode.stop(); } catch(e){} this.bottleNode.disconnect(); this.bottleNode = null; }
-          if (this.bottleFilter) { this.bottleFilter.disconnect(); this.bottleFilter = null; }
-          if (this.bottleGain) { this.bottleGain.disconnect(); this.bottleGain = null; }
-      }, 150);
-  }
-
   private getShipSoundParams(id: string) {
     let hash = 0;
     for (let i = 0; i < id.length; i++) hash = id.charCodeAt(i) + ((hash << 5) - hash);
@@ -832,8 +677,6 @@ class AudioService {
   stopAllSfx() {
     if (this.ctx && this.ctx.state !== 'closed') {
       this.stop();
-      this.stopCharging();
-      this.stopCapacitorCharge();
       this.stopLaunchSequence();
       this.stopLandingThruster();
       this.stopAmbience();

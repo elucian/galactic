@@ -569,7 +569,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     paused: false,
     active: true,
     swivelMode: false,
-    isCharging: false,
     chargeLevel: 0,
     hasFiredOverload: false,
     lastRapidFire: 0,
@@ -583,12 +582,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     overload: 0,
     overdrive: false,
     overdriveFirstShot: false,
-    charging: false, 
     shakeX: 0,
     shakeY: 0,
     shakeDecay: 0.9,
     capacitor: 0,
-    isCapacitorCharging: false,
     salvoTimer: 0,
     lastSalvoFire: 0,
     currentThrottle: 0, 
@@ -660,8 +657,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       return () => { 
           window.removeEventListener('resize', handleResize);
           window.removeEventListener('deviceorientation', handleOrientation);
-          audioService.stopCharging(); 
-          audioService.stopCapacitorCharge();
       };
   }, []);
 
@@ -1231,10 +1226,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         // Energy Regeneration: 2.0 base + Scaling
         // Vanguard (5k) -> 2.05
         // Behemoth (450k) -> 6.5
-        if (!s.isCapacitorCharging) {
-            const regenRate = 2.0 + (activeShip.config.price / 100000);
-            s.energy = Math.min(maxEnergy, s.energy + regenRate);
-        }
+        // (Capacitor charging audio logic removed)
+        const regenRate = 2.0 + (activeShip.config.price / 100000);
+        s.energy = Math.min(maxEnergy, s.energy + regenRate);
 
         const speed = 9;
         
@@ -1436,18 +1430,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     const drainRate = Math.max(0.2, 1.5 - (price / 80000));
 
                     s.energy = Math.max(0, s.energy - drainRate);
-                    if (!s.isCapacitorCharging) {
-                        audioService.startCapacitorCharge();
-                        s.isCapacitorCharging = true;
-                    }
-                } else {
-                    if (s.isCapacitorCharging) { audioService.stopCapacitorCharge(); s.isCapacitorCharging = false; }
-                }
-            } else {
-                if (s.isCapacitorCharging) {
-                    audioService.stopCapacitorCharge();
-                    s.isCapacitorCharging = false;
-                }
+                } 
             }
 
             if (s.energy < maxEnergy * 0.1) {
@@ -2379,9 +2362,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               s.hp = 0; s.rescueMode = true; 
               s.asteroids = []; s.bullets = [];
               
-              audioService.stopCapacitorCharge();
-              s.isCapacitorCharging = false;
-
               createExplosion(s.px, s.py, '#ef4444', 50, 'boss'); 
               audioService.playExplosion(0, 2.0);
               setHud(h => ({...h, alert: "CRITICAL FAILURE - CAPSULE EJECTED", alertType: 'alert'}));

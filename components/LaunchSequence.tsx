@@ -100,9 +100,11 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
     celestialX: 0.7, // Relative 0-1
     celestialY: 0.15, // Relative 0-1
     moonPhase: 0,
-    // White Dwarf Companion (Delta Sector)
-    whiteDwarfAngle: 0,
-    whiteDwarfTrail: [] as {x: number, y: number, alpha: number}[]
+    // Red Dwarf Companion (Delta Sector)
+    redDwarfAngle: 0,
+    redDwarfTrail: [] as {x: number, y: number, alpha: number}[],
+    // Gamma Comet
+    comet: null as { x: number, y: number, vx: number, vy: number, length: number } | null
   });
 
   // Skip Handler
@@ -139,7 +141,10 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       
       if (timeOfDay === 'day') {
           if (p.quadrant === QuadrantType.BETA) { skyColorTop = '#fca5a5'; skyColorBot = '#fecaca'; }
-          else if (p.quadrant === QuadrantType.DELTA) { skyColorTop = '#020617'; skyColorBot = '#1e1b4b'; }
+          else if (p.quadrant === QuadrantType.DELTA) { 
+              // Red sky for Delta Day
+              skyColorTop = '#450a0a'; skyColorBot = '#7f1d1d'; 
+          }
           else { skyColorTop = '#0ea5e9'; skyColorBot = '#bae6fd'; }
       }
 
@@ -164,7 +169,21 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       s.celestialX = 0.2 + Math.random() * 0.6; // Random horizontal position
       s.celestialY = 0.15 + Math.random() * 0.1; // Random height (high)
       s.moonPhase = Math.random(); 
-      s.whiteDwarfAngle = Math.random() * Math.PI * 2;
+      s.redDwarfAngle = Math.random() * Math.PI * 2;
+
+      // Comet Init (Gamma Night)
+      if ((planet as Planet).quadrant === QuadrantType.GAMA && environment.timeOfDay === 'night') {
+          // "Sometimes" -> 60% chance
+          if (Math.random() < 0.6) {
+              s.comet = {
+                  x: Math.random() * 0.4, // Left side
+                  y: 0.1 + Math.random() * 0.2,
+                  vx: 0.00005, // Very Slow movement
+                  vy: 0.00002,
+                  length: 60 + Math.random() * 40
+              };
+          }
+      }
 
       // Stars
       s.stars = Array.from({length: environment.starDensity}).map(() => ({
@@ -409,6 +428,31 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               ctx.globalAlpha = 1;
           }
 
+          // Gamma Comet
+          if (s.comet) {
+              const c = s.comet;
+              c.x += c.vx; c.y += c.vy; // Slow movement
+              const cx = c.x * w; 
+              const cy = (c.y * h) + (s.viewY * 0.02); // Parallax
+              
+              // Draw Tail
+              const tailGrad = ctx.createLinearGradient(cx, cy, cx - c.length, cy - (c.length/2));
+              tailGrad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+              tailGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+              ctx.fillStyle = tailGrad;
+              ctx.beginPath();
+              ctx.moveTo(cx, cy);
+              ctx.lineTo(cx - c.length, cy - 10);
+              ctx.lineTo(cx - c.length, cy + 10);
+              ctx.fill();
+
+              // Draw Head
+              ctx.fillStyle = '#fff';
+              ctx.shadowColor = '#a5f3fc'; ctx.shadowBlur = 10;
+              ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
+              ctx.shadowBlur = 0;
+          }
+
           // CELESTIAL BODY (Sun/Moon)
           // Removed spaceRatio check to keep sun visible during orbit insertion
           const celParallax = s.viewY * 0.002; // Reduced parallax to keep it stable on screen
@@ -420,71 +464,67 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
 
           if (environment.timeOfDay === 'day') {
                   if ((planet as Planet).quadrant === QuadrantType.DELTA) {
-                      // BLACK HOLE (Delta Sector) with Occlusion Logic
+                      // BLACK HOLE with JETS and ORBITING RED DWARF (Delta Sector)
                       
                       // Scale dimensions
                       const bhRadius = 50 * celScale;
                       const bhCore = 12 * celScale;
-                      const ringRx = 60 * celScale;
-                      const ringRy = 12 * celScale;
+                      // Removed rings as requested
 
-                      // 1. Draw Back Ring (Hidden tail)
-                      const rotation = -0.2;
+                      // 1. Draw Jets (Vertical Beams)
+                      const jetW = 4 * celScale;
+                      const jetH = 200 * celScale;
                       
-                      ctx.strokeStyle = 'rgba(168, 85, 247, 0.4)'; // Dim purple back
-                      ctx.lineWidth = 2 * celScale;
-                      ctx.beginPath();
-                      // Top half visually is roughly PI to 2PI in standard ellipse space if not rotated much
-                      // With -0.2 rot, back is roughly the upper arc.
-                      ctx.ellipse(celX, celY, ringRx, ringRy, rotation, Math.PI, 2 * Math.PI);
-                      ctx.stroke();
+                      // Top Jet
+                      const jetGradTop = ctx.createLinearGradient(celX, celY, celX, celY - jetH);
+                      jetGradTop.addColorStop(0, 'rgba(168, 85, 247, 0.8)');
+                      jetGradTop.addColorStop(1, 'rgba(0,0,0,0)');
+                      ctx.fillStyle = jetGradTop;
+                      ctx.fillRect(celX - jetW/2, celY - jetH, jetW, jetH);
+                      
+                      // Bottom Jet
+                      const jetGradBot = ctx.createLinearGradient(celX, celY, celX, celY + jetH);
+                      jetGradBot.addColorStop(0, 'rgba(168, 85, 247, 0.8)');
+                      jetGradBot.addColorStop(1, 'rgba(0,0,0,0)');
+                      ctx.fillStyle = jetGradBot;
+                      ctx.fillRect(celX - jetW/2, celY, jetW, jetH);
 
-                      // 2. Draw Black Hole Core
+                      // 2. Draw Black Hole Core with Red Glow
                       const bhGlow = ctx.createRadialGradient(celX, celY, 10 * celScale, celX, celY, bhRadius);
                       bhGlow.addColorStop(0, '#000000');
-                      bhGlow.addColorStop(0.4, '#a855f7');
+                      bhGlow.addColorStop(0.4, '#7f1d1d'); // Deep Red
                       bhGlow.addColorStop(1, 'rgba(0,0,0,0)');
                       ctx.fillStyle = bhGlow;
                       ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill();
                       
                       ctx.fillStyle = '#000';
-                      ctx.shadowColor = '#fff'; ctx.shadowBlur = 15 * celScale;
+                      ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15 * celScale;
                       ctx.beginPath(); ctx.arc(celX, celY, bhCore, 0, Math.PI*2); ctx.fill();
                       ctx.shadowBlur = 0;
 
-                      // 3. Draw Front Ring
-                      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; // Bright front
-                      ctx.lineWidth = 2 * celScale;
-                      ctx.beginPath();
-                      ctx.ellipse(celX, celY, ringRx, ringRy, rotation, 0, Math.PI);
-                      ctx.stroke();
-
-                      // 4. White Dwarf Companion (Orbiting)
-                      s.whiteDwarfAngle += 0.02;
+                      // 4. Red Dwarf Companion (Fast Orbiting)
+                      s.redDwarfAngle += 0.05; // Fast orbit
                       const wdRx = 100 * celScale; 
                       const wdRy = 25 * celScale;
-                      const wdX = celX + Math.cos(s.whiteDwarfAngle) * wdRx;
-                      const wdY = celY + Math.sin(s.whiteDwarfAngle) * wdRy;
+                      const wdX = celX + Math.cos(s.redDwarfAngle) * wdRx;
+                      const wdY = celY + Math.sin(s.redDwarfAngle) * wdRy;
                       
                       // Trail
-                      s.whiteDwarfTrail.push({x: wdX, y: wdY, alpha: 1.0});
-                      if (s.whiteDwarfTrail.length > 20) s.whiteDwarfTrail.shift();
+                      s.redDwarfTrail.push({x: wdX, y: wdY, alpha: 1.0});
+                      if (s.redDwarfTrail.length > 25) s.redDwarfTrail.shift();
                       
                       ctx.lineCap = 'round';
-                      s.whiteDwarfTrail.forEach((tp, i) => {
-                          const size = (1 + (i/20)*3) * celScale;
-                          const alpha = (i/20) * 0.6;
-                          ctx.fillStyle = `rgba(165, 243, 252, ${alpha})`;
+                      s.redDwarfTrail.forEach((tp, i) => {
+                          const size = (1 + (i/25)*4) * celScale;
+                          const alpha = (i/25) * 0.7;
+                          ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`; // Red trail
                           ctx.beginPath(); ctx.arc(tp.x, tp.y, size, 0, Math.PI*2); ctx.fill();
                       });
 
-                      // Star
-                      const isBehind = Math.sin(s.whiteDwarfAngle) < 0; // Simple z-sort approximation
-                      // If strictly implementing z-sort, draw order changes. 
-                      // Here drawing on top is fine as it orbits "around".
-                      ctx.fillStyle = '#ffffff';
-                      ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 10 * celScale;
-                      ctx.beginPath(); ctx.arc(wdX, wdY, 4 * celScale, 0, Math.PI*2); ctx.fill();
+                      // Star (Red Dwarf)
+                      ctx.fillStyle = '#fca5a5'; // Bright Red/Pink core
+                      ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 15 * celScale;
+                      ctx.beginPath(); ctx.arc(wdX, wdY, 6 * celScale, 0, Math.PI*2); ctx.fill();
                       ctx.shadowBlur = 0;
 
                   } else {
