@@ -14,7 +14,33 @@ interface WarpSequenceProps {
   equippedWeapons?: (EquippedWeapon | null)[];
   destination?: string;
   isCapsule?: boolean; // New prop for escape pod mode
+  isFriendly?: boolean; // New prop for arrival message context
+  fontSize?: 'small' | 'medium' | 'large' | 'extra-large';
 }
+
+const BATTLE_MESSAGES = [
+    "PREPARE FOR BATTLE",
+    "GOOD HUNTING",
+    "STAY ALIVE",
+    "BE BRAVE",
+    "WEAPONS FREE",
+    "NO MERCY",
+    "ENGAGE AT WILL",
+    "INTO THE ABYSS",
+    "SYSTEMS HOT",
+    "TARGETS LOCKED",
+    "DEFEND THE SECTOR",
+    "VICTORY OR DEATH"
+];
+
+// Helper to get colors based on sector string
+const getWandererColors = (sector: string | null) => {
+    const s = (sector || '').toUpperCase();
+    if (s.includes('BETA')) return ['#ef4444', '#f97316', '#fca5a5']; // Red/Orange
+    if (s.includes('GAMA')) return ['#3b82f6', '#22d3ee', '#8b5cf6']; // Blue/Cyan/Purple
+    if (s.includes('DELTA')) return ['#a855f7', '#db2777', '#4c1d95']; // Purple/Pink
+    return ['#ffffff', '#fef08a', '#e0f2fe']; // Default/Alpha (White/Yellow/LightBlue)
+};
 
 const WarpSequence: React.FC<WarpSequenceProps> = ({ 
     shipConfig, 
@@ -23,17 +49,36 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
     weaponId, 
     equippedWeapons,
     destination = "UNKNOWN SECTOR",
-    isCapsule = false
+    isCapsule = false,
+    isFriendly = false,
+    fontSize = 'medium'
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const bubbleRef = useRef<HTMLDivElement>(null);
   const [textVisible, setTextVisible] = useState(false);
+  const [statusText, setStatusText] = useState<string | null>(null);
+  const [battleMsg, setBattleMsg] = useState("");
+
+  // Select random message on mount
+  useEffect(() => {
+      setBattleMsg(BATTLE_MESSAGES[Math.floor(Math.random() * BATTLE_MESSAGES.length)]);
+  }, []);
+
+  // Parse Destination String (Format: "NAME // SECTOR")
+  const destParts = useMemo(() => {
+      const parts = destination.split(' // ');
+      return {
+          name: parts[0] || "UNKNOWN",
+          sector: parts[1] || null
+      };
+  }, [destination]);
 
   // Animation State Logic - using ref to avoid re-renders during loop
   const animRef = useRef({
       frame: 0,
       phase: 'drift' as 'drift' | 'power_on' | 'shrink' | 'warp' | 'expand' | 'cooldown' | 'finish',
+      lastPhase: 'drift', // Track phase changes for text updates
       
       // Visual Props
       containerScale: 1.0, 
@@ -45,7 +90,47 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
       // Rotation Props
       rotationAngle: 0.0,
       rotationSpeed: 0.0005, // Initial drift speed
+
+      // Wanderers State (Mutable)
+      wanderers: Array.from({length: 3}).map(() => ({
+          x: Math.random() * window.innerWidth,
+          y: Math.random() * window.innerHeight,
+          vx: (Math.random() - 0.5) * 0.8,
+          vy: (Math.random() - 0.5) * 0.8,
+          size: Math.random() * 1.5 + 1.0,
+          color: '#ffffff', // Initial color (will be updated or start generic)
+      })),
+      wandererOpacity: 1.0,
+      hasRecolored: false,
   });
+
+  // Calculate font size class based on prop
+  const statusSizeClass = useMemo(() => {
+      switch(fontSize) {
+          case 'small': return 'text-xs tracking-[0.2em]';
+          case 'large': return 'text-xl tracking-[0.3em]';
+          case 'extra-large': return 'text-2xl tracking-[0.3em]';
+          default: return 'text-base tracking-[0.25em]'; // medium
+      }
+  }, [fontSize]);
+
+  const arrivalTitleSize = useMemo(() => {
+      switch(fontSize) {
+          case 'small': return 'text-xl md:text-2xl';
+          case 'large': return 'text-4xl md:text-6xl';
+          case 'extra-large': return 'text-5xl md:text-7xl';
+          default: return 'text-3xl md:text-5xl'; // medium
+      }
+  }, [fontSize]);
+
+  const arrivalSubSize = useMemo(() => {
+      switch(fontSize) {
+          case 'small': return 'text-[10px] md:text-xs';
+          case 'large': return 'text-sm md:text-lg';
+          case 'extra-large': return 'text-base md:text-xl';
+          default: return 'text-xs md:text-sm'; // medium
+      }
+  }, [fontSize]);
 
   // 1. ROTATING STARFIELD (Background)
   // Crisp, small, shimmering
@@ -63,26 +148,11 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
       }));
   }, []);
 
-  // 2. WANDERERS (Independent Movers)
-  // 3 stars moving linearly across the screen, ignoring rotation
-  const wanderers = useMemo(() => {
-      return Array.from({length: 3}).map(() => ({
-          x: Math.random() * window.innerWidth,
-          y: Math.random() * window.innerHeight,
-          vx: (Math.random() - 0.5) * 0.8, // Slow drift
-          vy: (Math.random() - 0.5) * 0.8,
-          size: Math.random() * 1.5 + 1.0,
-          color: '#ffffff'
-      }));
-  }, []);
-
   useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
-
-      // (Charging audio start removed)
 
       let rAF: number;
 
@@ -98,6 +168,14 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
 
           // --- STATE MACHINE (10s = ~600 frames) ---
           
+          // Check for phase transitions to update status text
+          if (s.phase !== s.lastPhase) {
+              if (s.phase === 'power_on') setStatusText("HYPERDRIVE ACTIVE");
+              if (s.phase === 'shrink') setStatusText("WARP TRAVEL"); // Stars spin here
+              if (s.phase === 'expand') setStatusText(null); // Disappear
+              s.lastPhase = s.phase;
+          }
+
           // 1. DRIFT (0s - 1.5s)
           if (s.phase === 'drift') {
               s.rotationSpeed = 0.0005; // Gentle drift
@@ -129,6 +207,9 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
               // Rotation Accelerate Exponentially
               s.rotationSpeed *= 1.05;
               
+              // Fade out wanderers
+              s.wandererOpacity = Math.max(0, s.wandererOpacity - 0.05);
+
               if (s.frame > 330) {
                   s.phase = 'warp';
               }
@@ -137,6 +218,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
           // 4. WARP (5.5s - 7.5s)
           else if (s.phase === 'warp') {
               s.containerScale = 0.04;
+              s.wandererOpacity = 0; // Ensure hidden
               
               // Max Rotation Speed Cap increased for dizziness effect
               s.rotationSpeed = Math.min(0.8, s.rotationSpeed * 1.02);
@@ -155,6 +237,22 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
               
               // Rotation Decelerate
               s.rotationSpeed *= 0.9;
+              
+              // Recolor & Respawn Wanderers if not done
+              if (!s.hasRecolored) {
+                  const newColors = getWandererColors(destParts.sector);
+                  s.wanderers.forEach(wnd => {
+                      // Reset position randomly to ensure they appear fresh
+                      wnd.x = Math.random() * w;
+                      wnd.y = Math.random() * h;
+                      // Pick new color
+                      wnd.color = newColors[Math.floor(Math.random() * newColors.length)];
+                  });
+                  s.hasRecolored = true;
+              }
+
+              // Fade In Wanderers
+              s.wandererOpacity = Math.min(1.0, s.wandererOpacity + 0.05);
               
               if (s.containerScale > 0.98) {
                   s.containerScale = 1.0;
@@ -218,29 +316,31 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
 
           // 2. Draw Independent Wanderers (Static Frame of Reference)
           // These move linearly across the screen, creating depth/parallax against the rotation
-          ctx.save();
-          wanderers.forEach(wnd => {
-              // Update position
-              wnd.x += wnd.vx;
-              wnd.y += wnd.vy;
-              
-              // Wrap
-              if (wnd.x < 0) wnd.x = w;
-              if (wnd.x > w) wnd.x = 0;
-              if (wnd.y < 0) wnd.y = h;
-              if (wnd.y > h) wnd.y = 0;
+          if (s.wandererOpacity > 0) {
+              ctx.save();
+              ctx.globalAlpha = s.wandererOpacity * 0.9;
+              s.wanderers.forEach(wnd => {
+                  // Update position
+                  wnd.x += wnd.vx;
+                  wnd.y += wnd.vy;
+                  
+                  // Wrap
+                  if (wnd.x < 0) wnd.x = w;
+                  if (wnd.x > w) wnd.x = 0;
+                  if (wnd.y < 0) wnd.y = h;
+                  if (wnd.y > h) wnd.y = 0;
 
-              // Draw
-              ctx.fillStyle = wnd.color;
-              ctx.shadowColor = wnd.color;
-              ctx.shadowBlur = 4; // Slight glow for wanderers
-              ctx.globalAlpha = 0.9;
-              ctx.beginPath();
-              ctx.arc(wnd.x, wnd.y, wnd.size, 0, Math.PI * 2);
-              ctx.fill();
-              ctx.shadowBlur = 0;
-          });
-          ctx.restore();
+                  // Draw
+                  ctx.fillStyle = wnd.color;
+                  ctx.shadowColor = wnd.color;
+                  ctx.shadowBlur = 4; // Slight glow for wanderers
+                  ctx.beginPath();
+                  ctx.arc(wnd.x, wnd.y, wnd.size, 0, Math.PI * 2);
+                  ctx.fill();
+                  ctx.shadowBlur = 0;
+              });
+              ctx.restore();
+          }
 
           // --- DOM UPDATES ---
           if (containerRef.current) {
@@ -262,7 +362,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
           // (Stop Charging audio removed in cleanup)
           audioService.stopLaunchSequence();
       };
-  }, [onComplete, stars, wanderers]);
+  }, [onComplete, stars, destParts]); // Updated dependencies
 
   return (
     <div className="fixed inset-0 z-[5000] bg-black overflow-hidden flex items-center justify-center select-none font-mono">
@@ -311,18 +411,27 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
          />
       </div>
 
-      {/* 3. Arrival Text - Positioned comfortably below the ship area */}
+      {/* 3. Status Text (Hyperdrive / Warp) */}
+      {statusText && (
+          <div className="absolute bottom-[20%] left-0 right-0 text-center z-40 animate-pulse">
+              <h2 className={`retro-font ${statusSizeClass} ${isCapsule ? 'text-red-400' : 'text-cyan-400'} uppercase drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]`}>
+                  {statusText}
+              </h2>
+          </div>
+      )}
+
+      {/* 4. Arrival Text - Positioned comfortably below the ship area */}
       {textVisible && (
           <div className="absolute top-[65%] left-0 right-0 text-center z-40 animate-in slide-in-from-bottom-8 fade-in duration-1000">
-              <h1 className={`retro-font text-3xl md:text-5xl uppercase tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.5)] ${isCapsule ? 'text-red-500' : 'text-cyan-400'}`}>
-                  {isCapsule ? "RESCUE SIGNAL" : (destination.includes('HOME') ? "DOCKING SEQ" : "ARRIVAL")}
+              <h1 className={`retro-font ${arrivalTitleSize} uppercase tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.5)] ${isCapsule ? 'text-red-500' : 'text-cyan-400'}`}>
+                  {isCapsule ? "RESCUE SIGNAL" : destParts.name}
               </h1>
               <div className="mt-4 inline-block px-6 py-2 bg-black/60 border border-zinc-700 rounded backdrop-blur-sm">
-                  <p className="text-white font-mono text-sm md:text-lg uppercase tracking-[0.3em]">
-                      {destination}
-                  </p>
-                  <p className={`${isCapsule ? 'text-red-400' : 'text-cyan-500'} text-[10px] mt-2 animate-pulse`}>
-                      {isCapsule ? "MEDICAL TEAMS ALERTED..." : "ENGAGING COMBAT SYSTEMS..."}
+                  <p className={`${isCapsule ? 'text-red-400' : 'text-cyan-500'} ${arrivalSubSize} font-mono uppercase tracking-[0.3em] animate-pulse`}>
+                      {isCapsule 
+                        ? "MEDICAL TEAMS ALERTED..." 
+                        : (isFriendly ? (destParts.sector ? `WELCOME TO ${destParts.sector} SECTOR` : "DOCKING SEQUENCE") : battleMsg)
+                      }
                   </p>
               </div>
           </div>

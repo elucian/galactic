@@ -44,41 +44,58 @@ const getCategory = (item: any) => {
 
 // HELPER: Stats Calculation for Display
 const getItemStats = (item: any) => {
-    let power = 0;
-    let disruption = 0;
+    let hullDps = 0;
+    let shieldDps = 0;
+    let power = 0; // for defense/ordnance visual
+    let disruption = 0; // for defense/ordnance visual
     const cat = getCategory(item);
+
+    // DPS Calculation Helper
+    // Returns { hull, shield } DPS based on damage multipliers
+    const calcDps = (damage: number, fireRate: number, type: string) => {
+        let pMult = 1.0;
+        let dMult = 1.0;
+        if (type === 'LASER' || type.includes('electric') || type.includes('phaser')) {
+            pMult = 0.4; dMult = 1.5;
+        } else if (type === 'PROJECTILE' || type.includes('vulcan') || type.includes('cannon')) {
+            pMult = 1.2; dMult = 0.4;
+        }
+        return {
+            hull: damage * fireRate * pMult,
+            shield: damage * fireRate * dMult
+        };
+    };
 
     if (cat === 'AMMO') {
         const conf = AMMO_CONFIG[item.id as keyof typeof AMMO_CONFIG];
         if (conf) {
-            power = conf.damageMult * 18; 
-            if (item.id === 'cobalt') disruption = 70;
-            else if (item.id === 'explosive') disruption = 90;
-            else if (item.id === 'titanium') disruption = 20;
-            else if (item.id === 'iridium') disruption = 40;
-            else disruption = 5;
+            // Ammo is a multiplier, visual bar only
+            power = conf.damageMult * 20; 
+            disruption = 10; // Generic ammo mostly physical
+            if (item.id === 'cobalt') { power = 60; disruption = 40; } // Cobalt breaks shields well
+            if (item.id === 'explosive') { power = 90; disruption = 20; }
         }
     } else if (cat === 'WEAPONRY') {
         const w = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === item.id);
         if (w) {
-            power = Math.min(100, w.damage * 1.5); 
-            if (w.id.includes('emp') || w.id.includes('ion')) disruption = 90;
-            else if (w.id.includes('laser')) disruption = 30;
-            else disruption = 10;
+            const dps = calcDps(w.damage, w.fireRate, w.type);
+            hullDps = dps.hull;
+            shieldDps = dps.shield;
         }
     } else if (cat === 'DEFENSE') {
         const s = [...SHIELDS, ...EXOTIC_SHIELDS].find(x => x.id === item.id);
         if (s) {
+            // Visualize Capacity vs Regen
             power = Math.min(100, s.capacity / 30); 
             disruption = Math.min(100, s.regenRate * 3); 
         }
     } else if (cat === 'ORDNANCE') {
-        if (item.id && item.id.includes('emp')) { power = 20; disruption = 100; }
+        if (item.id && item.id.includes('emp')) { power = 0; disruption = 100; }
         else if (item.id && item.id.includes('red')) { power = 100; disruption = 80; }
-        else { power = 85; disruption = 20; }
+        else { power = 85; disruption = 50; }
     }
 
-    return { power: Math.min(100, power), disruption: Math.min(100, disruption) };
+    return { hullDps: Math.round(hullDps), shieldDps: Math.round(shieldDps), power, disruption };
 };
 
 // HELPER: Price Level
@@ -104,6 +121,8 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   const [selectedItemIdx, setSelectedItemIdx] = useState<number | null>(null);
   const [transactionQty, setTransactionQty] = useState(1);
   const [showMobileDetails, setShowMobileDetails] = useState(false);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [itemsPerPage, setItemsPerPage] = useState(6);
   
   const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [pendingFilters, setPendingFilters] = useState<string[]>(CATEGORY_ORDER);
@@ -111,14 +130,11 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
   const listContainerRef = useRef<HTMLDivElement>(null);
   const lastClickRef = useRef<{ idx: number, time: number }>({ idx: -1, time: 0 });
 
-  // Scrollbar state
-  const [scrollThumb, setScrollThumb] = useState({ h: 0, t: 0 });
-  const [hasScroll, setHasScroll] = useState(false);
-
   useEffect(() => {
       setSelectedItemIdx(null);
       setTransactionQty(1);
       setShowMobileDetails(false);
+      setCurrentPage(0);
   }, [marketTab, isOpen]);
 
   useEffect(() => {
@@ -131,46 +147,30 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isFilterOpen]);
 
-  // SCROLL MONITOR
+  // Dynamic Item Count Calculation
   useEffect(() => {
-      const el = listContainerRef.current;
-      if (!el) return;
-
-      const updateScroll = () => {
-          if (!el) return;
-          const { scrollTop, scrollHeight, clientHeight } = el;
-          const hasOverflow = scrollHeight > clientHeight + 1; // Tolerance for fractional pixels
+      if (!listContainerRef.current) return;
+      
+      const calcItems = () => {
+          if (!listContainerRef.current) return;
+          const h = listContainerRef.current.clientHeight;
+          // Approximate item heights based on font size + padding + border
+          let itemHeight = 66; // Medium default
+          if (fontSize === 'small') itemHeight = 54;
+          if (fontSize === 'large') itemHeight = 80;
+          if (fontSize === 'extra-large') itemHeight = 92;
           
-          if (hasOverflow) {
-              setHasScroll(true);
-              const ratio = clientHeight / scrollHeight;
-              const h = Math.max(ratio * 100, 10);
-              const track = 100 - h;
-              const prog = scrollTop / (scrollHeight - clientHeight);
-              const t = prog * track;
-              setScrollThumb({ h, t });
-          } else {
-              setHasScroll(false);
-          }
+          const count = Math.floor(h / itemHeight);
+          // Ensure at least 4 items to prevent broken UI
+          setItemsPerPage(Math.max(4, count));
       };
 
-      // Observer for robust detection
-      const observer = new ResizeObserver(() => {
-          updateScroll();
-      });
-      observer.observe(el);
-      
-      // Also listen to scroll event to update thumb position
-      el.addEventListener('scroll', updateScroll);
-      
-      // Initial check
-      updateScroll();
-      
-      return () => {
-          observer.disconnect();
-          el.removeEventListener('scroll', updateScroll);
-      };
-  }, [marketTab, activeFilters, currentReserves, marketListings, isOpen]);
+      const observer = new ResizeObserver(calcItems);
+      observer.observe(listContainerRef.current);
+      calcItems(); // Initial
+
+      return () => observer.disconnect();
+  }, [fontSize, isOpen]);
 
   const handleItemClick = (idx: number) => {
       const now = Date.now();
@@ -184,17 +184,6 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           setSelectedItemIdx(idx);
       }
       lastClickRef.current = { idx, time: now };
-  };
-
-  const handleScroll = (direction: 'up' | 'down') => {
-      if (listContainerRef.current) {
-          const h = listContainerRef.current.clientHeight;
-          const scrollAmount = h * 0.8;
-          listContainerRef.current.scrollBy({ 
-              top: direction === 'up' ? -scrollAmount : scrollAmount, 
-              behavior: 'smooth' 
-          });
-      }
   };
 
   const displayItems = useMemo(() => {
@@ -275,6 +264,23 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       });
   }, [marketTab, marketListings, currentReserves, activeFilters, currentPlanet]);
 
+  // Reset page logic
+  useEffect(() => {
+      // If filtering reduces items such that current page is invalid, reset to last valid page
+      const totalP = Math.ceil(displayItems.length / itemsPerPage);
+      if (currentPage >= totalP && totalP > 0) {
+          setCurrentPage(Math.max(0, totalP - 1));
+      }
+  }, [displayItems.length, itemsPerPage]);
+
+  // Reset to page 0 on tab change explicitly
+  useEffect(() => {
+      setCurrentPage(0);
+  }, [marketTab]);
+
+  const totalPages = Math.ceil(displayItems.length / itemsPerPage);
+  const paginatedItems = displayItems.slice(currentPage * itemsPerPage, (currentPage + 1) * itemsPerPage);
+
   const selectedItem = selectedItemIdx !== null ? displayItems[selectedItemIdx] : null;
 
   const maxTransaction = useMemo(() => {
@@ -285,24 +291,23 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       const afford = Math.floor(credits / (price || 1));
       
       let spaceLimit = 99999;
-      let purchaseLimit = 99999; // User protection limit (per purchase)
+      let purchaseLimit = 99999; 
 
       const cat = getCategory(selectedItem);
 
-      // --- USER PROTECTION LIMITS ---
       if (cat === 'WEAPONRY') {
           const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === selectedItem.id);
           if (wDef) {
               if (wDef.type === WeaponType.LASER || selectedItem.id.includes('exotic')) {
-                  purchaseLimit = 1; // Energy/Exotic: 1 max
+                  purchaseLimit = 1; 
               } else {
-                  purchaseLimit = 2; // Projectile: 2 max
+                  purchaseLimit = 2; 
               }
           } else {
               purchaseLimit = 1;
           }
       } else if (cat === 'DEFENSE') {
-          purchaseLimit = 2; // Shields: 2 max
+          purchaseLimit = 2; 
       }
 
       if (shipFitting && shipConfig) {
@@ -312,7 +317,6 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           const isOmega = id === 'ord_mine_red';
           const isMissile = t === 'missile';
           const isMine = t === 'mine';
-          // Ammo logic handled via cargo space
           
           const currentLoad = shipFitting.cargo.reduce((acc, c) => acc + c.quantity, 0);
           const freeCargo = Math.max(0, shipConfig.maxCargo - currentLoad);
@@ -388,11 +392,9 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
 
   if (!isOpen) return null;
 
-  // Dynamic Size Classes
   const titleSize = fontSize === 'small' ? 'text-[11px]' : (fontSize === 'large' ? 'text-[16px]' : 'text-[13px]');
   const btnSize = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[14px]' : 'text-[12px]');
   const iconSize = fontSize === 'small' ? 22 : (fontSize === 'large' ? 32 : 26);
-  // Large Icon for Panel
   const largeIconSize = fontSize === 'small' ? 64 : (fontSize === 'large' ? 96 : 80);
   const descSize = fontSize === 'small' ? 'text-[9px]' : (fontSize === 'large' ? 'text-[13px]' : 'text-[11px]');
   const statLabelSize = fontSize === 'small' ? 'text-[7px]' : (fontSize === 'large' ? 'text-[10px]' : 'text-[8px]');
@@ -439,8 +441,10 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       return iconColor;
   };
 
-  const itemStats = selectedItem ? getItemStats(selectedItem) : { power: 0, disruption: 0 };
-  const showStats = selectedItem && (itemStats.power > 0 || itemStats.disruption > 0);
+  const itemStats = selectedItem ? getItemStats(selectedItem) : { hullDps: 0, shieldDps: 0, power: 0, disruption: 0 };
+  const cat = selectedItem ? getCategory(selectedItem) : 'GOODS';
+  const showWeaponStats = selectedItem && cat === 'WEAPONRY';
+  const showStats = selectedItem && (showWeaponStats || itemStats.power > 0 || itemStats.disruption > 0);
   const priceLevel = selectedItem ? getPriceLevel(selectedItem) : { label: '---', color: '#fff', val: 0 };
   const totalPrice = selectedItem ? (selectedItem.price || 0) * transactionQty : 0;
 
@@ -499,39 +503,32 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                 {/* LEFT PANEL: LISTING */}
                 <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col border-b-2 md:border-b-0 md:border-r-2 border-zinc-800 bg-zinc-900/20 relative">
                     
-                    {/* VISUAL SCROLLBAR (MOBILE) */}
-                    {hasScroll && (
-                        <div className="absolute right-2 top-2 bottom-20 w-2 bg-zinc-800/50 rounded-full z-40 md:hidden pointer-events-none backdrop-blur-sm border border-white/10">
-                            <div 
-                                className="absolute w-full bg-emerald-500 rounded-full transition-all duration-75 shadow-[0_0_8px_rgba(16,185,129,0.6)]"
-                                style={{ height: `${scrollThumb.h}%`, top: `${scrollThumb.t}%` }}
-                            />
-                        </div>
-                    )}
-
-                    <div ref={listContainerRef} className="flex-grow overflow-y-auto custom-scrollbar p-2 space-y-1 pb-16 relative">
+                    <div ref={listContainerRef} className="flex-grow overflow-y-hidden p-2 space-y-1">
                         {displayItems.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-40 opacity-30 mt-10">
                                 <span className="text-2xl text-zinc-600 mb-2">∅</span>
                                 <span className="text-[10px] font-black uppercase text-zinc-500">No Listings Found</span>
                             </div>
                         ) : (
-                            displayItems.map((item, idx) => {
-                                const isSelected = selectedItemIdx === idx;
+                            paginatedItems.map((item, idx) => {
+                                const globalIdx = currentPage * itemsPerPage + idx;
+                                const isSelected = selectedItemIdx === globalIdx;
                                 const color = getItemColor(item);
                                 const currentCategory = getCategory(item);
-                                const prevCategory = idx > 0 ? getCategory(displayItems[idx - 1]) : null;
-                                const showHeader = currentCategory !== prevCategory;
+                                
+                                const prevGlobalIdx = globalIdx - 1;
+                                const prevCategory = prevGlobalIdx >= 0 ? getCategory(displayItems[prevGlobalIdx]) : null;
+                                const showHeader = currentCategory !== prevCategory || idx === 0;
 
                                 return (
-                                    <React.Fragment key={idx}>
+                                    <React.Fragment key={globalIdx}>
                                         {showHeader && (
-                                            <div className="sticky top-0 z-20 bg-zinc-950/90 backdrop-blur border-y border-zinc-800 py-1.5 px-3 text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] mt-3 mb-1 shadow-sm">
+                                            <div className="bg-zinc-950/90 backdrop-blur border-y border-zinc-800 py-1.5 px-3 text-[9px] font-black text-zinc-500 uppercase tracking-[0.2em] mt-3 mb-1 shadow-sm">
                                                 {currentCategory}
                                             </div>
                                         )}
                                         <div 
-                                            onClick={() => handleItemClick(idx)}
+                                            onClick={() => handleItemClick(globalIdx)}
                                             className={`flex justify-between items-center p-3 rounded cursor-pointer border transition-all ${isSelected ? 'bg-white/5 border-white shadow-lg z-10' : 'bg-zinc-900/40 border-zinc-800 hover:bg-zinc-800'}`}
                                         >
                                             <div className="flex items-center gap-3">
@@ -551,23 +548,45 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                         )}
                     </div>
 
-                    {/* SCROLL CONTROLS (Mobile Only) */}
-                    {hasScroll && (
-                        <div className="absolute bottom-4 right-4 flex flex-col gap-2 md:hidden z-30">
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); handleScroll('up'); }}
-                                className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
-                            >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
-                            </button>
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); handleScroll('down'); }}
-                                className="w-10 h-10 bg-zinc-800/90 border border-zinc-600 rounded flex items-center justify-center text-zinc-300 shadow-lg active:scale-95"
-                            >
-                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-                            </button>
-                        </div>
-                    )}
+                    {/* PAGINATION FOOTER */}
+                    <div className="p-3 border-t border-zinc-800 bg-zinc-950 flex justify-between items-center shrink-0 shadow-[0_-5px_15px_rgba(0,0,0,0.5)] z-30 h-16">
+                        {totalPages > 1 ? (
+                            <>
+                                <button 
+                                    onClick={() => currentPage > 0 && setCurrentPage(p => p - 1)}
+                                    disabled={currentPage === 0}
+                                    className={`w-12 h-10 flex items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-[9px] font-black uppercase tracking-wider transition-all ${currentPage === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:border-white hover:text-white active:scale-95'}`}
+                                >
+                                    Prev
+                                </button>
+                                
+                                <div className="flex gap-2">
+                                    {totalPages <= 8 ? (
+                                        Array.from({ length: totalPages }).map((_, i) => (
+                                            <div 
+                                                key={i} 
+                                                className={`rounded-full transition-all duration-300 ${i === currentPage ? 'bg-emerald-500 w-2 h-2 scale-125 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-zinc-700 w-1.5 h-1.5'}`}
+                                            />
+                                        ))
+                                    ) : (
+                                        <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">
+                                            PAGE {currentPage + 1} / {totalPages}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <button 
+                                    onClick={() => currentPage < totalPages - 1 && setCurrentPage(p => p + 1)}
+                                    disabled={currentPage === totalPages - 1}
+                                    className={`w-12 h-10 flex items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-[9px] font-black uppercase tracking-wider transition-all ${currentPage === totalPages - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:border-white hover:text-white active:scale-95'}`}
+                                >
+                                    Next
+                                </button>
+                            </>
+                        ) : (
+                            <div className="w-full text-center text-zinc-700 text-[9px] font-black uppercase tracking-[0.2em] opacity-50">END OF LIST</div>
+                        )}
+                    </div>
                 </div>
 
                 {/* RIGHT PANEL: DETAILS & TRANSACTION */}
@@ -630,25 +649,34 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
 
                                 {/* ATTRIBUTES & TRENDS */}
                                 <div className="grid grid-cols-1 gap-4">
-                                     {/* Stats (If Weapon/Shield) */}
+                                     {/* Stats (If Weapon/Shield/Ordnance) */}
                                      {showStats && (
                                          <div className="grid grid-cols-2 gap-3">
                                             <div className="bg-zinc-900/50 rounded border border-zinc-800 p-2 flex flex-col gap-1">
                                                 <div className="flex justify-between items-end">
-                                                    <span className={`${statLabelSize} font-black uppercase text-zinc-500 tracking-widest`}>{getCategory(selectedItem) === 'DEFENSE' ? 'PROTECTION' : 'POWER'}</span>
-                                                    <span className={`${statLabelSize} font-mono text-zinc-400`}>{Math.round(itemStats.power)}%</span>
+                                                    <span className={`${statLabelSize} font-black uppercase text-zinc-500 tracking-widest`}>
+                                                        {showWeaponStats ? 'HULL DPS' : (cat === 'DEFENSE' ? 'PROTECTION' : 'POWER')}
+                                                    </span>
+                                                    <span className={`${statLabelSize} font-mono text-zinc-400`}>
+                                                        {showWeaponStats ? itemStats.hullDps : Math.round(itemStats.power)}{showWeaponStats ? '' : '%'}
+                                                    </span>
                                                 </div>
                                                 <div className="w-full h-1 bg-black rounded-full overflow-hidden">
-                                                    <div className="h-full bg-red-500" style={{ width: `${itemStats.power}%` }} />
+                                                    {/* Weapon Stats use calculated Hull DPS, Others use generic power */}
+                                                    <div className="h-full bg-red-500" style={{ width: `${Math.min(100, showWeaponStats ? itemStats.hullDps/10 : itemStats.power)}%` }} />
                                                 </div>
                                             </div>
                                             <div className="bg-zinc-900/50 rounded border border-zinc-800 p-2 flex flex-col gap-1">
                                                 <div className="flex justify-between items-end">
-                                                    <span className={`${statLabelSize} font-black uppercase text-zinc-500 tracking-widest`}>{getCategory(selectedItem) === 'DEFENSE' ? 'REGEN' : 'DISRUPTION'}</span>
-                                                    <span className={`${statLabelSize} font-mono text-zinc-400`}>{Math.round(itemStats.disruption)}%</span>
+                                                    <span className={`${statLabelSize} font-black uppercase text-zinc-500 tracking-widest`}>
+                                                        {showWeaponStats ? 'SHIELD DPS' : (cat === 'DEFENSE' ? 'REGEN' : 'DISRUPTION')}
+                                                    </span>
+                                                    <span className={`${statLabelSize} font-mono text-zinc-400`}>
+                                                        {showWeaponStats ? itemStats.shieldDps : Math.round(itemStats.disruption)}{showWeaponStats ? '' : '%'}
+                                                    </span>
                                                 </div>
                                                 <div className="w-full h-1 bg-black rounded-full overflow-hidden">
-                                                    <div className="h-full bg-blue-500" style={{ width: `${itemStats.disruption}%` }} />
+                                                    <div className="h-full bg-blue-500" style={{ width: `${Math.min(100, showWeaponStats ? itemStats.shieldDps/10 : itemStats.disruption)}%` }} />
                                                 </div>
                                             </div>
                                          </div>

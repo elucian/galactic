@@ -937,6 +937,8 @@ export default function App() {
             equippedWeapons={gameState.shipFittings[activeShipId].weapons}
             destination={warpDestination === 'hangar' ? "HOME BASE" : `${gameState.currentPlanet?.name || 'UNKNOWN'} // ${gameState.currentPlanet?.quadrant || 'SECTOR'}`}
             isCapsule={gameState.shipFittings[activeShipId]?.health <= 0}
+            isFriendly={warpDestination === 'hangar' || warpDestination === 'landing'}
+            fontSize={gameState.settings.fontSize || 'medium'}
         />
       )}
 
