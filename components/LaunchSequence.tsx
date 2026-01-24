@@ -218,7 +218,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
 
       // --- BIRDS ---
       s.birds = [];
-      if (environment.isHabitable) {
+      if (environment.isHabitable && environment.timeOfDay === 'day') {
           s.birds = Array.from({length: 15}).map(() => ({
               x: (Math.random() - 0.5) * 2000,
               y: -Math.random() * 600 - 100, 
@@ -675,7 +675,8 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       ctx.save(); ctx.translate(f.x, f.y);
                       ctx.fillStyle = f.color;
                       ctx.fillRect(-f.w/2, -f.h, f.w, f.h);
-                      ctx.fillStyle = environment.timeOfDay === 'night' ? '#fbbf24' : '#1e293b'; 
+                      // FIXED: Blue windows in day, Yellow in night. Removed flicker.
+                      ctx.fillStyle = environment.timeOfDay === 'night' ? '#fbbf24' : '#60a5fa'; 
                       for(let by = -f.h + 5; by < -5; by += 12) {
                           for(let bx = -f.w/2 + 5; bx < f.w/2 - 5; bx += 8) {
                               if (Math.random() > 0.4) ctx.fillRect(bx, by, 4, 6);
@@ -879,7 +880,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           </div>
           
           <div className="flex flex-col items-end gap-2">
-              <span className={`text-[10px] font-black uppercase tracking-widest ${phase === 'ignition' ? 'text-orange-500 animate-pulse' : 'text-emerald-400'}`}>STATUS: {statusText}</span>
+              <span className={`text-[10px] font-black uppercase tracking-widest ${phase === 'ignition' ? 'text-orange-400 animate-pulse' : 'text-emerald-400'}`}>STATUS: {statusText}</span>
               <button 
                   onClick={() => onComplete()} 
                   className="pointer-events-auto bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-white text-[10px] font-black uppercase px-6 py-3 rounded backdrop-blur-sm transition-all flex items-center gap-2"

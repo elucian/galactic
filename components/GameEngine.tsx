@@ -17,6 +17,8 @@ const ASTEROID_VARIANTS = [
 ];
 
 const FIRE_COLORS = ['#ef4444', '#f97316', '#facc15', '#ffffff', '#fbbf24'];
+const DRAGON_COLORS = ['#ef4444', '#facc15', '#3b82f6', '#f97316', '#ffffff'];
+const OCTO_COLORS = ['#22c55e', '#3b82f6', '#f97316', '#ef4444', '#a855f7'];
 
 // --- DAMAGE MECHANICS HELPERS ---
 const calculateDamage = (baseDamage: number, type: string, targetType: 'hull' | 'shield', shieldColor?: string) => {
@@ -32,7 +34,7 @@ const calculateDamage = (baseDamage: number, type: string, targetType: 'hull' | 
         // PROJECTILE WEAPONS: High Power (Hull), Low Disruption (Shield)
         powerMult = 1.2;
         disruptionMult = 0.4;
-    } else if (type.includes('missile') || type.includes('mine') || type === 'rocket' || type === 'firework_shell') {
+    } else if (type.includes('missile') || type.includes('mine') || type === 'rocket' || type === 'firework_shell' || type === 'octo_shell') {
         // EXPLOSIVES: Balanced, slightly higher raw output usually defined in constants
         powerMult = 1.0;
         disruptionMult = 1.0;
@@ -93,9 +95,11 @@ interface Projectile {
   accel?: number; z?: number; vz?: number; // Added vz for 3D steering
   angleOffset?: number; growthRate?: number; originalSize?: number;
   isEmp?: boolean;
-  detonationY?: number; // For fireworks
+  detonationY?: number; // For fireworks/octo-burst
   initialWidth?: number; // For limiting growth
   initialHeight?: number; // For limiting growth
+  opacity?: number; // For transparency effects
+  isMulticolor?: boolean; // For fireworks
 }
 
 interface Particle {
@@ -339,12 +343,7 @@ class Enemy {
       if (type === 'bolt') {
           this.stunnedUntil = 60; 
           this.shieldDisabledUntil = 60; 
-          // Do not vibrate ship hull
       }
-
-      // Identify Weapon Category for Hull Sounds
-      const isEnergyWeapon = type === 'laser' || type === 'bolt' || type === 'gun_bolt' || type.includes('exotic');
-      const weaponCat = isEnergyWeapon ? 'energy' : 'projectile';
 
       // Check Shield Presence
       if (this.shieldLayers.length > 0 && this.shieldDisabledUntil <= 0) {
@@ -367,11 +366,8 @@ class Enemy {
           // Trigger visual wobble on shield hit instead of sound
           layer.wobble = 1.0; 
           
-          // Keep the standard 'shield hit' sound as a subtle feedback layer, 
-          // or rely on visual wobble. The user said "only the shield may wobble", implying heavy visual focus.
-          // We'll keep the standard hit sound for basic feedback but prioritize wobble visually.
-          audioService.playShieldHit(); 
-
+          // Audio handled in bullet loop for cleaner logic or here?
+          // Bullet loop handles it now to use specific types
           if (layer.current <= 0) { 
               this.shieldLayers.shift(); 
           }
@@ -396,11 +392,8 @@ class Enemy {
           this.hp -= finalHullDmg;
           appliedHullDmg = finalHullDmg;
           
-          // DO NOT VIBRATE SHIP HULL
-          // this.vibration = 40; 
-          
-          // Play specific Hull Hit Sound
-          audioService.playHullHit(weaponCat);
+          // Play specific Hull Hit Sound happens in bullet loop usually
+          // But if damage source is environmental (collision), we play it here
       }
       
       return { dmg: Math.floor(appliedHullDmg), isShield: hitShield };
@@ -598,6 +591,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       return def?.isAmmoBased;
   });
 
+  const maxAmmoInMags = activeShip.fitting.weapons.reduce((acc, w) => {
+      if (!w) return acc;
+      const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === w.id);
+      return acc + (def?.isAmmoBased ? 200 : 0);
+  }, 0);
+
   const hasGuns = activeShip?.fitting.weapons.some(w => !!w);
 
   const hudLabel = fontSize === 'small' ? 'text-[8px]' : (fontSize === 'large' ? 'text-[12px]' : 'text-[10px]');
@@ -677,8 +676,28 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     capacitorLocked: false,
     depletionTime: 0,
     // Cooldown Logic
-    weaponCoolDownTimer: 0
+    weaponCoolDownTimer: 0,
+    // Burst Logic
+    missileBurstCount: 0,
+    mineBurstCount: 0
   });
+
+  // Centralized Pause Logic
+  const togglePause = (forceVal?: boolean) => {
+      const s = state.current;
+      const next = forceVal !== undefined ? forceVal : !s.paused;
+      
+      if (s.paused === next) return; // No change
+      
+      s.paused = next;
+      setHud(h => ({...h, isPaused: next}));
+      
+      if (next) {
+          audioService.pauseMusic();
+      } else {
+          audioService.resumeMusic();
+      }
+  };
 
   useEffect(() => {
       const s = state.current;
@@ -722,7 +741,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       initStars();
       [0, 1, 2].forEach(i => s.weaponHeat[i] = 0);
 
-      const handleResize = () => { initStars(); s.paused = true; setHud(h => ({...h, isPaused: true})); };
+      const handleResize = () => { 
+          initStars(); 
+          if (!s.paused) togglePause(true); 
+      };
       const handleOrientation = (e: DeviceOrientationEvent) => {
           if (e.beta !== null) { hasTiltRef.current = true; tiltRef.current.beta = e.beta || 0; tiltRef.current.gamma = e.gamma || 0; }
       };
@@ -738,6 +760,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const handlePointerDown = (e: React.PointerEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest('button') || target.tagName === 'BUTTON') return;
+      
+      // If paused, ignore movement logic
+      if (state.current.paused) return;
+
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
       targetRef.current = { x: e.clientX, y: e.clientY };
@@ -745,11 +771,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
   const handleTabReload = () => {};
 
-  const fireMissile = () => { const s = state.current; if (s.missiles > 0) { const isEmp = s.missiles % 2 !== 0; s.missiles--; s.lastMissileFire = Date.now(); s.bullets.push({ x: s.px, y: s.py, vx: 0, vy: -3, vz: 0, damage: 0, color: isEmp ? '#22d3ee' : '#ef4444', type: isEmp ? 'missile_emp' : 'missile', life: 600, isEnemy: false, width: 12, height: 28, homingState: 'launching', launchTime: s.frame, headColor: isEmp ? '#22d3ee' : '#ef4444', finsColor: isEmp ? '#0ea5e9' : '#ef4444', turnRate: 0.05, maxSpeed: 14, z: 0 }); audioService.playWeaponFire(isEmp ? 'emp' : 'missile'); } };
-  const fireMine = () => { const s = state.current; if (s.mines > 0) { const isEmp = s.mines % 2 !== 0; s.mines--; s.lastMineFire = Date.now(); s.mineSide = !s.mineSide; const speed = 5; const vx = s.mineSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 20, vx: vx, vy: 0, vz: 0, damage: 0, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: s.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); audioService.playWeaponFire('mine'); } };
-  const fireRedMine = () => { const s = state.current; if (s.redMines > 0) { s.redMines--; s.lastRedMineFire = Date.now(); s.omegaSide = !s.omegaSide; const speed = 4; const vx = s.omegaSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 30, vx: vx, vy: 0, vz: 0, damage: 0, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'launching', launchTime: s.frame, turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); audioService.playWeaponFire('mine'); setHud(h => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); } };
+  const fireMissile = () => { const s = state.current; if (s.missiles > 0) { const isEmp = s.missiles % 2 !== 0; s.missiles--; s.lastMissileFire = Date.now(); s.bullets.push({ x: s.px, y: s.py, vx: 0, vy: -3, vz: 0, damage: 200, color: isEmp ? '#22d3ee' : '#ef4444', type: isEmp ? 'missile_emp' : 'missile', life: 600, isEnemy: false, width: 12, height: 28, homingState: 'launching', launchTime: s.frame, headColor: isEmp ? '#22d3ee' : '#ef4444', finsColor: isEmp ? '#0ea5e9' : '#ef4444', turnRate: 0.05, maxSpeed: 14, z: 0 }); audioService.playWeaponFire(isEmp ? 'emp' : 'missile'); } };
+  const fireMine = () => { const s = state.current; if (s.mines > 0) { const isEmp = s.mines % 2 !== 0; s.mines--; s.lastMineFire = Date.now(); s.mineSide = !s.mineSide; const speed = 5; const vx = s.mineSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 20, vx: vx, vy: 0, vz: 0, damage: 250, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: s.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); audioService.playWeaponFire('mine'); } };
+  const fireRedMine = () => { const s = state.current; if (s.redMines > 0) { s.redMines--; s.lastRedMineFire = Date.now(); s.omegaSide = !s.omegaSide; const speed = 4; const vx = s.omegaSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 30, vx: vx, vy: 0, vz: 0, damage: 600, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'launching', launchTime: s.frame, turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); audioService.playWeaponFire('mine'); setHud(h => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); } };
   const spawnLoot = (x: number, y: number, z: number, type: string, id?: string, name?: string, quantity: number = 1) => { state.current.loot.push({ x, y, z, type, id, name, quantity, isPulled: false, vx: (Math.random()-0.5), vy: (Math.random()-0.5) }); };
-  const createExplosion = (x: number, y: number, color: string, count: number, type: 'standard' | 'boss' | 'asteroid' | 'mine' = 'standard') => { const s = state.current; s.particles.push({ x, y, vx: 0, vy: 0, life: 0.5, color: '#ffffff', size: type === 'boss' ? 50 : 25 }); for(let i=0; i<count; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * (type === 'boss' ? 12 : 8) + 2; s.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.0 + Math.random() * 0.5, color: Math.random() > 0.5 ? color : '#ffffff', size: Math.random()*3+2 }); } };
+  const createExplosion = (x: number, y: number, color: string, count: number, type: 'standard' | 'boss' | 'asteroid' | 'mine' | 'fireworks' = 'standard') => { const s = state.current; s.particles.push({ x, y, vx: 0, vy: 0, life: 0.5, color: '#ffffff', size: type === 'boss' ? 50 : 25 }); for(let i=0; i<count; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * (type === 'boss' ? 12 : 8) + 2; 
+    let pColor = color;
+    if (type === 'fireworks') {
+        if (Math.random() > 0.5) pColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
+    }
+    s.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.0 + Math.random() * 0.5, color: Math.random() > 0.5 ? pColor : '#ffffff', size: Math.random()*3+2 }); } };
   const createAreaDamage = (x: number, y: number, radius: number, damage: number, sourceId?: string) => { const s = state.current; s.enemies.forEach(e => { if (e.hp > 0) { const dist = Math.hypot(e.x - x, e.y - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor; if (dmg > 5) { e.takeDamage(dmg, 'explosion', false); createExplosion(e.x, e.y, '#f97316', 2); } } } }); if (!s.rescueMode) { const dist = Math.hypot(s.px - x, s.py - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor * 0.5; if (dmg > 5) { takeDamage(dmg, 'explosion'); } } } };
   
   const getCapacitorBeamState = (chargeLevel: number) => {
@@ -779,11 +810,18 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       
       let powerCost = 10;
       if (mainDef?.id === 'exotic_star_shatter') powerCost = 100/12; 
+      // Phaser Sweep Power shot consumes less per shot but rapid fire
+      if (mainDef?.id === 'exotic_phaser_sweep') powerCost = 25; // 4 shots = 100 charge.
 
       // New Logic: Power Shots use Capacitor ONLY. Do not touch Reactor Energy.
       // Locked logic: Cannot fire if locked.
       if (s.capacitorLocked) return;
       if (s.capacitor < powerCost) return;
+
+      // EXPONENTIAL GROWTH FACTOR Calculation:
+      // Target: 12x increase over ~40 frames
+      // 1.06 ^ 40 ~= 10.28
+      const EXP_GROWTH_RATE = 1.06;
 
       if (mainDef?.id.includes('exotic')) {
           const isStar = mainDef.id === 'exotic_star_shatter';
@@ -796,68 +834,64 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           const isOcto = mainDef.id === 'exotic_octo_burst';
           const isPhaser = mainDef.id === 'exotic_phaser_sweep';
 
-          // All exotic power shots start small and grow
-          // Focused straight line shots
-          let w = 10;
-          let h = 10;
-          let grow = 0;
-          let speed = 25; 
+          // Initialize with SMALL sizes like normal shots, then grow exponentially
+          // Prompt requirement: "start smaller... grow exponential"
+          let w = 6;
+          let h = 16;
+          let grow = EXP_GROWTH_RATE; 
+          let speed = 20; 
           const life = 60;
           let color = mainDef.beamColor || '#fff';
           let type = 'projectile';
           let detY = undefined;
+          let isMulti = false;
 
           // Specific "Seeds" & Behaviors
-          if (isOrb) { w = 16; h = 16; grow = 4.0; speed = 20; }
-          else if (isWave) { w = 20; h = 10; grow = 5.0; speed = 20; }
-          else if (isGravity) { w = 20; h = 10; grow = 4.5; speed = 20; }
-          else if (isStar) { w = 12; h = 12; grow = 3.5; speed = 22; }
-          else if (isRainbow) { w = 30; h = 10; speed = 18; } // growth calculated below
+          // Reduce speeds by ~20%
+          if (isOrb) { 
+              w = 8; h = 8; speed = 16; 
+              grow = 1.05; // Slightly faster growth for round 8x target
+          }
+          else if (isWave) { 
+              w = 10; h = 6; speed = 16; 
+              grow = 1.05; // Round 8x target
+          }
+          else if (isGravity) { 
+              w = 10; h = 6; speed = 16; 
+              grow = 1.06; // Faster growth for ark 14x target
+          }
+          else if (isStar) { w = 12; h = 12; speed = 18; grow = 1.045; } // Larger start, 12x exponential growth over life
+          else if (isRainbow) { w = 10; h = 4; speed = 14; }
           else if (isFlamer) { 
-              w = 10; h = 30; grow = 3.0; speed = 25; 
-              color = FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)];
+              w = 30; h = 30; speed = 20; // Bigger start
+              grow = 1.03; // Growth
+              color = '#3b82f6'; // Start Blue (Hot)
           }
           else if (isElectric) { 
-              // Beam logic for Electric
-              const beamState = getCapacitorBeamState(s.capacitor);
-              w = 8; 
-              h = 60 * beamState.lengthMult; 
-              grow = 2.0; speed = 35; 
-              color = beamState.color; 
+              type = 'laser';
+              w = 4; h = 20; speed = 28;
           }
           else if (isOcto) { 
-              // Fireworks logic
-              type = 'firework_shell';
-              w = 8; h = 8; grow = 0; speed = 15; 
-              // Detonate at random height
+              // Fireworks logic (Big Comet Bolt)
+              type = 'octo_shell';
+              w = 12; h = 12; grow = 0; speed = 12; 
+              color = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
+              // Octo Power Shot: Explode randomly starting at 2/3 of screen height up to top
               const hCanvas = canvasRef.current?.height || window.innerHeight;
-              const rangeMin = hCanvas * 0.125;
-              const rangeMax = hCanvas * 0.25;
-              detY = rangeMin + Math.random() * (rangeMax - rangeMin);
+              const maxDet = hCanvas * 0.66;
+              const minDet = 50; 
+              detY = minDet + Math.random() * (maxDet - minDet);
+              isMulti = Math.random() > 0.7; // Some shots are multicolor
           }
           else if (isPhaser) { 
-              // Beam logic for Phaser
-              const beamState = getCapacitorBeamState(s.capacitor);
               type = 'laser';
-              w = 10; 
-              h = 100 * beamState.lengthMult; 
-              grow = 1.5; speed = 40; 
-              color = beamState.color;
-          }
-
-          // Dynamic Growth Rate: Grow 4x initial width (total 5x) by the time it exits screen
-          // Target Y is roughly -100
-          const distToTop = s.py + 100;
-          const framesToTop = distToTop / Math.max(1, speed);
-          const calculatedGrowthRate = (w * 4.0) / Math.max(1, framesToTop);
-
-          if (isRainbow || isStar || isOrb || isWave || isGravity || isFlamer) {
-              grow = calculatedGrowthRate;
+              w = 5; h = 240; speed = 32; // 3x length of normal (80*3), 1.4x width (3.5*1.4)
+              color = '#d946ef'; // Pink Power Shot
           }
 
           s.bullets.push({
               x: s.px, y: s.py - 30,
-              vx: 0, vy: -speed, // Straight focused shot
+              vx: 0, vy: -speed, 
               damage: dmg,
               color: color,
               type: type,
@@ -868,23 +902,30 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               weaponId: mainDef.id,
               isOvercharge: true,
               isMain: true,
-              growthRate: grow,
+              growthRate: grow, // Exponential multiplier
+              initialWidth: w, // Store initial sizes for limits
+              initialHeight: h,
               glow: true,
-              glowIntensity: 20,
-              detonationY: detY
+              glowIntensity: 30, // STRONG GLOW FOR ALL POWER SHOTS
+              detonationY: detY,
+              isMulticolor: isMulti
           });
-          audioService.playWeaponFire('exotic_power', 0);
+          
+          if (isPhaser) audioService.playWeaponFire('exotic_power', 0); // Reuse power shot sound as it fits beam energy
+          else audioService.playWeaponFire('exotic_power', 0);
       } else { 
-          // Standard Mega Shot (Beam Logic)
+          // Standard Mega Shot (Beam Logic) - Also applies growth
           const beamState = getCapacitorBeamState(s.capacitor);
           const baseW = 4; 
           const baseH = 25 * beamState.lengthMult; 
-          const width = baseW * 1.1; 
-          const height = baseH * 1.2; 
+          // New Power Beam Logic: 1.4x Width, 3x Length compared to normal
+          const width = baseW * 1.4; 
+          const height = baseH * 3; 
           const color = beamState.color;
 
           s.bullets.push({ 
-              x: s.px, y: s.py - 24, vx: 0, vy: -35, damage: dmg, color: color, type: 'laser', life: 50, isEnemy: false, width: width, height: height, glow: true, glowIntensity: 20, isMain: true, weaponId: mainWeapon?.id || 'gun_pulse', isOvercharge: true 
+              x: s.px, y: s.py - 24, vx: 0, vy: -35, damage: dmg, color: color, type: 'laser', life: 50, isEnemy: false, width: width, height: height, glow: true, glowIntensity: 20, isMain: true, weaponId: mainWeapon?.id || 'gun_pulse', isOvercharge: true,
+              growthRate: EXP_GROWTH_RATE, initialWidth: width, initialHeight: height
           }); 
           audioService.playWeaponFire('mega', 0, activeShip.config.id);
       } 
@@ -953,10 +994,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               // IMPRECISE SPRAY FOR ALL EXOTIC NORMAL SHOTS
               const sprayAngleDeg = (Math.random() * 30) - 15; // -15 to +15 degree deviation
               const sprayRad = sprayAngleDeg * (Math.PI / 180);
-              const speed = 25;
+              const speed = 20;
               
               if (mainDef.id === 'exotic_flamer') {
-                  crystalColor = FIRE_COLORS[Math.floor(Math.random() * FIRE_COLORS.length)];
+                  // Use flame sound and random colors
+                  crystalColor = '#3b82f6'; // Start Blue (Hot)
+              } else if (mainDef.id === 'exotic_octo_burst') {
+                  crystalColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
+              } else if (mainDef.id !== 'exotic_phaser_sweep') {
+                  // Default sound for other exotics EXCEPT phaser
+                  audioService.playWeaponFire('exotic_single', 0);
               }
 
               // Default dimensions for most exotic normals
@@ -968,25 +1015,86 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   w = 16; // Radius 8 -> Diameter 16
                   h = 4;  // Thickness of ring
               }
+              
+              // --- DRAGON BREATH OVERRIDE ---
+              if (mainDef.id === 'exotic_flamer') {
+                  w = 12; h = 12; // Round blob
+              }
+              
+              // --- PHASER OVERRIDE ---
+              if (mainDef.id === 'exotic_phaser_sweep') {
+                  h = 80; // "Double longer" (was 45 -> 80ish)
+                  w = 3.5;
+              }
 
-              s.bullets.push({ 
-                  x: s.px, y: s.py - 24, 
-                  vx: Math.sin(sprayRad) * speed, 
-                  vy: -Math.cos(sprayRad) * speed, 
-                  damage, 
-                  color: crystalColor, 
-                  type: 'projectile', 
-                  life: 50, 
-                  isEnemy: false, 
-                  width: w, 
-                  height: h, 
-                  glow: true, 
-                  glowIntensity: 5, 
-                  isMain: true, 
-                  weaponId,
-                  growthRate: 0 // Normal shots do not grow
-              });
-              audioService.playWeaponFire('exotic_single', 0);
+              if (mainDef.id === 'exotic_octo_burst') {
+                  // Normal Fire Octo: Bright fireworks comet, no detonation
+                  s.bullets.push({
+                      x: s.px, y: s.py - 30, // Start slightly above ship
+                      vx: Math.sin(sprayRad) * 12, // Slower for flak look
+                      vy: -12, 
+                      damage: damage,
+                      color: crystalColor,
+                      type: 'octo_shell',
+                      life: 80,
+                      isEnemy: false,
+                      width: 8, height: 8,
+                      glow: true,
+                      glowIntensity: 20,
+                      isMain: true,
+                      weaponId,
+                      growthRate: 0,
+                      detonationY: undefined // Normal shots do NOT explode
+                  });
+                  audioService.playWeaponFire('missile', 0);
+              } else if (mainDef.id === 'exotic_phaser_sweep') {
+                  // PHASER SWEEP SPECIFIC LOGIC
+                   s.bullets.push({ 
+                      x: s.px, y: s.py - 24, 
+                      vx: Math.sin(sprayRad) * speed, 
+                      vy: -Math.cos(sprayRad) * speed, 
+                      damage, 
+                      color: crystalColor, // Red from config
+                      type: 'laser', 
+                      life: 50, 
+                      isEnemy: false, 
+                      width: w, 
+                      height: h, 
+                      glow: true, 
+                      glowIntensity: 5, 
+                      isMain: true, 
+                      weaponId,
+                      growthRate: 0 
+                  });
+                  audioService.playWeaponFire('phaser', 0);
+              } else {
+                  const growth = (mainDef.id === 'exotic_flamer') ? 1.025 : 0; 
+                  
+                  // STAR SHATTER Normal Shot Override: Increase diameter by 40% (4 -> 6)
+                  if (mainDef.id === 'exotic_star_shatter') { w = 6; h = 6; }
+
+                  s.bullets.push({ 
+                      x: s.px, y: s.py - 24, 
+                      vx: Math.sin(sprayRad) * speed, 
+                      vy: -Math.cos(sprayRad) * speed, 
+                      damage, 
+                      color: crystalColor, 
+                      type: 'projectile', 
+                      life: 50, 
+                      isEnemy: false, 
+                      width: w, 
+                      height: h, 
+                      glow: true, 
+                      glowIntensity: 5, 
+                      isMain: true, 
+                      weaponId,
+                      growthRate: growth // Enable growth for Flamer
+                  });
+                  
+                  if (mainDef.id === 'exotic_flamer') {
+                      audioService.playWeaponFire('flame', 0);
+                  }
+              }
           } else { 
               // Standard Weapon Straight Shot
               s.bullets.push({ x: s.px, y: s.py - 24, vx: 0, vy: -30, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, glow: true, glowIntensity: 5, isMain: true, weaponId }); 
@@ -998,7 +1106,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           s.lastRapidFire = Date.now(); 
       } 
   };
-  const fireAlienWeapons = () => { const s = state.current; const mounts = getWingMounts(activeShip.config); const slots = [0, 1, 2]; const scale = 0.6; let fired = false; slots.forEach(slotIdx => { const w = activeShip.fitting.weapons[slotIdx]; if (w && w.id) { const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); if (wDef) { const lastFire = s.weaponFireTimes[slotIdx] || 0; const delay = 1000 / wDef.fireRate; if (Date.now() - lastFire < delay) return; if (s.energy < wDef.energyCost) return; let startX = s.px; let startY = s.py; if (slotIdx === 0) { startY = s.py - 30; } else { const mountIdx = slotIdx - 1; const m = mounts[mountIdx]; startX = s.px + (m.x - 50) * scale; startY = s.py + (m.y - 50) * scale; } const damage = wDef.damage; const color = wDef.beamColor || '#fff'; const bulletSpeed = w.id.includes('exotic') ? 12 : 18; if (wDef.id === 'exotic_gravity_wave') { const angles = [-15, 0, 15]; angles.forEach(deg => { const rad = deg * (Math.PI / 180); s.bullets.push({ x: startX, y: startY, vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, damage, color: '#60a5fa', type: 'projectile', life: 80, isEnemy: false, width: 20, height: 20, weaponId: w.id, growthRate: 0.5 }); }); } else if (wDef.type === WeaponType.LASER) { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -30, damage, color, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, weaponId: w.id }); } else { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -bulletSpeed, damage, color, type: 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); } s.weaponFireTimes[slotIdx] = Date.now(); s.energy -= wDef.energyCost; fired = true; } } }); if (fired) { if (activeShip.fitting.weapons.some(w => w?.id === 'exotic_flamer')) { audioService.playWeaponFire('flame', 0, activeShip.config.id); } else { audioService.playWeaponFire('cannon', 0, activeShip.config.id); } } };
+  const fireAlienWeapons = () => { const s = state.current; const mounts = getWingMounts(activeShip.config); const slots = [0, 1, 2]; const scale = 0.6; let fired = false; slots.forEach(slotIdx => { const w = activeShip.fitting.weapons[slotIdx]; if (w && w.id) { const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); if (wDef) { const lastFire = s.weaponFireTimes[slotIdx] || 0; const delay = 1000 / wDef.fireRate; if (Date.now() - lastFire < delay) return; if (s.energy < wDef.energyCost) return; let startX = s.px; let startY = s.py; if (slotIdx === 0) { startY = s.py - 30; } else { const mountIdx = slotIdx - 1; const m = mounts[mountIdx]; startX = s.px + (m.x - 50) * scale; startY = s.py + (m.y - 50) * scale; } const damage = wDef.damage; const color = wDef.beamColor || '#fff'; const bulletSpeed = w.id.includes('exotic') ? 10 : 18; if (wDef.id === 'exotic_gravity_wave') { const angles = [-15, 0, 15]; angles.forEach(deg => { const rad = deg * (Math.PI / 180); s.bullets.push({ x: startX, y: startY, vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, damage, color: '#60a5fa', type: 'projectile', life: 80, isEnemy: false, width: 20, height: 20, weaponId: w.id, growthRate: 0.5 }); }); } else if (wDef.type === WeaponType.LASER) { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -30, damage, color, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, weaponId: w.id }); } else { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -bulletSpeed, damage, color, type: 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); } s.weaponFireTimes[slotIdx] = Date.now(); s.energy -= wDef.energyCost; fired = true; } } }); if (fired) { if (activeShip.fitting.weapons.some(w => w?.id === 'exotic_flamer')) { audioService.playWeaponFire('flame', 0, activeShip.config.id); } else { audioService.playWeaponFire('cannon', 0, activeShip.config.id); } } };
   const fireWingWeapons = () => { const s = state.current; const mounts = getWingMounts(activeShip.config); const wings = [activeShip.fitting.weapons[1], activeShip.fitting.weapons[2]]; let fired = false; wings.forEach((w, i) => { const slotIdx = i + 1; if (w && w.id) { const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); if (wDef) { const interval = Math.max(1, Math.floor(60 / wDef.fireRate)); if (s.frame % interval === 0) { if (wDef.isAmmoBased) { const gun = s.gunStates[slotIdx]; if (!gun || gun.mag <= 0) return; gun.mag--; } else if (s.energy < wDef.energyCost) return; s.weaponFireTimes[slotIdx] = Date.now(); const scale = 0.6; const mx = mounts[i].x; const my = mounts[i].y; const startX = s.px + (mx - 50) * scale; const startY = s.py + (my - 50) * scale; const damage = wDef.damage; const color = wDef.beamColor || '#fff'; if (wDef.id === 'exotic_gravity_wave') { const angles = [-15, 0, 15]; angles.forEach(deg => { const rad = deg * (Math.PI / 180); s.bullets.push({ x: startX, y: startY, vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, damage, color: '#60a5fa', type: 'projectile', life: 80, isEnemy: false, width: 20, height: 20, weaponId: w.id, growthRate: 0.5 }); }); } else { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -20, damage, color, type: wDef.type === WeaponType.LASER ? 'laser' : 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); } fired = true; if (!wDef.isAmmoBased) s.energy -= wDef.energyCost; } } } }); if (fired) audioService.playWeaponFire('cannon', 0, activeShip.config.id); };
 
   useEffect(() => {
@@ -1006,9 +1114,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     const kd = (e: KeyboardEvent) => { 
         if(e.repeat) return;
         if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.code === 'NumpadAdd' || e.code === 'NumpadSubtract')) { e.preventDefault(); }
-        if (e.code === 'Tab' || e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Backspace') e.preventDefault();
+        if (e.code === 'Tab') { e.preventDefault(); } // Prevent navigation
+        
         k.add(e.code); 
-        if(e.code === 'KeyP') { state.current.paused = !state.current.paused; setHud(h => ({...h, isPaused: state.current.paused})); }
+        
+        if(e.code === 'KeyP') { togglePause(); }
         if(e.code === 'Escape') {
             const s = state.current;
             let finalHp = s.hp; let finalFuel = s.fuel;
@@ -1016,10 +1126,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             onGameOver(false, s.score, true, { health: finalHp, fuel: finalFuel, water: s.water, rockets: s.missiles, mines: s.mines, redMineCount: s.redMines, cargo: s.cargo, ammo: s.ammo, magazineCurrent: s.magazineCurrent, reloadTimer: s.reloadTimer });
         }
         if(!state.current.paused && state.current.active && !state.current.rescueMode) {
-            if(e.code === 'KeyM' || e.code === 'NumpadAdd' || e.code === 'Backspace') fireMissile();
-            if(e.code === 'KeyN' || e.code === 'NumpadEnter' || e.code === 'Enter') fireMine();
+            // Keep Manual Red Mine
             if(e.code === 'KeyB') fireRedMine(); 
-            if (e.code === 'Tab') handleTabReload();
+            // Manual Mine Drop (Single)
+            if(e.code === 'KeyN' || e.code === 'NumpadEnter' || e.code === 'Enter') fireMine();
+            
             if (e.code === 'Space') inputRef.current.main = true;
             if (e.code === 'ControlLeft' || e.code === 'ControlRight') inputRef.current.secondary = true;
         }
@@ -1028,6 +1139,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         k.delete(e.code);
         if (e.code === 'Space') inputRef.current.main = false;
         if (e.code === 'ControlLeft' || e.code === 'ControlRight') inputRef.current.secondary = false;
+        
+        // Reset burst counters on keyup for hold logic
+        if (e.code === 'Tab') { state.current.missileBurstCount = 0; }
+        if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { state.current.mineBurstCount = 0; }
     };
     window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
     return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); };
@@ -1043,7 +1158,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     const loop = () => {
         // ... (Update logic same as previous) ...
         if (!s.active) return;
-        if (s.paused) { setHud(h => ({...h, isPaused: true})); raf = requestAnimationFrame(loop); return; }
+        
+        // --- PAUSE HANDLING ---
+        if (s.paused) { 
+            // Loop keeps running to maintain animation frame, but logic is skipped
+            // We do NOT update the HUD here to avoid render loops/corruption
+            raf = requestAnimationFrame(loop); 
+            return; 
+        }
 
         const width = cvs.width = window.innerWidth;
         const height = cvs.height = window.innerHeight;
@@ -1054,207 +1176,123 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         const speed = 9;
         
-        const fuelLimit = maxFuel * 0.1;
+        // ... (Auto Refuel Logic Remains Same) ...
+        // ... (Input/Movement Logic Remains Same) ...
+        // Keeping only relevant collision updates to save tokens, assuming other logic is identical to provided input
         
-        // --- AUTO REFUEL LOGIC ---
+        const fuelLimit = maxFuel * 0.1;
+        // ... Auto Refuel logic ...
         if (s.isRefueling) {
             s.refuelTimer++;
-            const DURATION = 600; // 10 seconds @ 60fps
+            const DURATION = 600; 
             const progress = s.refuelTimer / DURATION;
-            
-            // Visual Updates (Fake Growth)
             if (s.refuelType === 'fuel') {
-                const target = Math.min(maxFuel, s.fuel + 1.0); // +1 Unit visual target
-                // Interpolate from startVal to target
+                const target = Math.min(maxFuel, s.fuel + 1.0); 
                 s.fuel = s.refuelStartVal + (progress * (target - s.refuelStartVal));
             } else {
-                const target = Math.min(maxWater, s.water + 20); // +20 Units
+                const target = Math.min(maxWater, s.water + 20); 
                 s.water = s.refuelStartVal + (progress * (target - s.refuelStartVal));
             }
-
             if (s.refuelTimer >= DURATION) {
-                // Complete Refuel
-                s.isRefueling = false;
-                s.refuelTimer = 0;
-                
-                // Consume Cargo
+                s.isRefueling = false; s.refuelTimer = 0;
                 const cargoIdx = s.cargo.findIndex(c => c.type === s.refuelType);
                 if (cargoIdx >= 0) {
                     s.cargo[cargoIdx].quantity--;
                     if (s.cargo[cargoIdx].quantity <= 0) s.cargo.splice(cargoIdx, 1);
-                    
                     setHud(h => ({...h, alert: s.refuelType === 'fuel' ? "REFUELING COMPLETE" : "REHYDRATION COMPLETE", alertType: 'success'}));
                     audioService.playSfx('buy');
-                } else {
-                    setHud(h => ({...h, alert: "ERROR: SUPPLY MISSING", alertType: 'error'}));
-                }
+                } else { setHud(h => ({...h, alert: "ERROR: SUPPLY MISSING", alertType: 'error'})); }
             } else if (s.refuelTimer % 60 === 0) {
-                // Pulse message
                 setHud(h => ({...h, alert: s.refuelType === 'fuel' ? `REFUELING... ${Math.floor(progress*100)}%` : `REHYDRATING... ${Math.floor(progress*100)}%`, alertType: 'warning'}));
             }
         } else {
-            // Check triggers
             const criticalFuel = s.fuel < maxFuel * 0.1;
             const criticalWater = s.water < maxWater * 0.1;
-            
             if (criticalFuel || criticalWater) {
-                // Prioritize Water if both low, arbitrary choice
                 if (criticalWater) {
                     const hasWater = s.cargo.some(c => c.type === 'water');
                     if (hasWater) {
-                        s.isRefueling = true;
-                        s.refuelType = 'water';
-                        s.refuelStartVal = s.water;
-                        setHud(h => ({...h, alert: "INITIATING AUTO-REHYDRATION", alertType: 'warning'}));
-                        audioService.playSfx('buy'); // Start sound
-                    } else if (s.frame % 180 === 0) {
-                        setHud(h => ({...h, alert: "CRITICAL WATER - OUT OF SUPPLY", alertType: 'error'}));
-                    }
+                        s.isRefueling = true; s.refuelType = 'water'; s.refuelStartVal = s.water;
+                        setHud(h => ({...h, alert: "INITIATING AUTO-REHYDRATION", alertType: 'warning'})); audioService.playSfx('buy'); 
+                    } else if (s.frame % 180 === 0) { setHud(h => ({...h, alert: "CRITICAL WATER - OUT OF SUPPLY", alertType: 'error'})); }
                 } else if (criticalFuel) {
                     const hasFuel = s.cargo.some(c => c.type === 'fuel');
                     if (hasFuel) {
-                        s.isRefueling = true;
-                        s.refuelType = 'fuel';
-                        s.refuelStartVal = s.fuel;
-                        setHud(h => ({...h, alert: "INITIATING AUTO-REFUEL", alertType: 'warning'}));
-                        audioService.playSfx('buy');
+                        s.isRefueling = true; s.refuelType = 'fuel'; s.refuelStartVal = s.fuel;
+                        setHud(h => ({...h, alert: "INITIATING AUTO-REFUEL", alertType: 'warning'})); audioService.playSfx('buy');
                     } else if (s.frame % 180 === 0) {
-                        setHud(h => ({...h, alert: "CRITICAL FUEL - ABORT IMMEDIATELY", alertType: 'error'}));
-                        audioService.playAlertSiren();
+                        setHud(h => ({...h, alert: "CRITICAL FUEL - ABORT IMMEDIATELY", alertType: 'error'})); audioService.playAlertSiren();
                     }
                 }
             }
         }
 
         const isDistress = !s.rescueMode && s.fuel <= fuelLimit && s.water <= 0 && !s.isRefueling;
+        if (isDistress && s.frame % 180 === 0) { setHud(h => ({...h, alert: "CRITICAL FUEL - ABORT IMMEDIATELY", alertType: 'alert'})); audioService.playAlertSiren(); }
 
-        if (isDistress && s.frame % 180 === 0) {
-            setHud(h => ({...h, alert: "CRITICAL FUEL - ABORT IMMEDIATELY", alertType: 'alert'}));
-            audioService.playAlertSiren();
-        }
-
-        let targetThrottle = 0;
-        let left = false;
-        let right = false;
-
-        // ... input logic ...
+        // --- MOVEMENT LOGIC ---
+        let targetThrottle = 0; let left = false; let right = false;
         if (!isDistress && !s.isRefueling) {
             left = s.keys.has('ArrowLeft') || s.keys.has('KeyA') || s.keys.has('Numpad4');
             right = s.keys.has('ArrowRight') || s.keys.has('KeyD') || s.keys.has('Numpad6');
+            const up = s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8');
+            const down = s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2');
+
+            // --- MOVEMENT OVERRIDE FIX ---
+            // If any movement keys are pressed, cancel mouse target
+            if (left || right || up || down) {
+                targetRef.current = null;
+            }
 
             if (hasTiltRef.current) {
                 const isLandscape = window.innerWidth > window.innerHeight;
-                let tiltVal = 0;
-                if (isLandscape) {
-                    tiltVal = tiltRef.current.beta;
-                } else {
-                    tiltVal = tiltRef.current.gamma;
-                }
-
-                if (tiltVal < -5) {
-                    left = true;
-                    s.px -= Math.abs(tiltVal) * 0.2; 
-                } else if (tiltVal > 5) {
-                    right = true;
-                    s.px += Math.abs(tiltVal) * 0.2;
-                }
-                
-                if (Math.abs(tiltVal) > 5) {
-                    targetRef.current = null;
-                }
+                let tiltVal = isLandscape ? tiltRef.current.beta : tiltRef.current.gamma;
+                if (tiltVal < -5) { left = true; s.px -= Math.abs(tiltVal) * 0.2; } else if (tiltVal > 5) { right = true; s.px += Math.abs(tiltVal) * 0.2; }
+                if (Math.abs(tiltVal) > 5) { targetRef.current = null; }
             }
-
-            if (s.keys.has('ArrowUp') || s.keys.has('KeyW') || s.keys.has('Numpad8')) targetThrottle = 1;
-            else if (s.keys.has('ArrowDown') || s.keys.has('KeyS') || s.keys.has('Numpad2')) targetThrottle = -1;
-
+            if (up) targetThrottle = 1;
+            else if (down) targetThrottle = -1;
+            
             if (targetRef.current) {
-                const dx = targetRef.current.x - s.px;
-                const dy = targetRef.current.y - s.py;
-                const dist = Math.hypot(dx, dy);
-                
-                if (dist < 10) {
-                    targetRef.current = null;
-                    targetThrottle = 0;
-                } else {
-                    const angle = Math.atan2(dy, dx);
-                    s.px += Math.cos(angle) * 12;
-                    s.py += Math.sin(angle) * 12;
-                    const xComp = Math.cos(angle);
-                    const yComp = Math.sin(angle);
-                    if (xComp < -0.5) left = true;
-                    if (xComp > 0.5) right = true;
-                    if (yComp < -0.5) targetThrottle = 1; 
-                    if (yComp > 0.5) targetThrottle = -1; 
+                const dx = targetRef.current.x - s.px; const dy = targetRef.current.y - s.py; const dist = Math.hypot(dx, dy);
+                if (dist < 10) { targetRef.current = null; targetThrottle = 0; } else {
+                    const angle = Math.atan2(dy, dx); s.px += Math.cos(angle) * 12; s.py += Math.sin(angle) * 12;
+                    const xComp = Math.cos(angle); const yComp = Math.sin(angle);
+                    if (xComp < -0.5) left = true; if (xComp > 0.5) right = true;
+                    if (yComp < -0.5) targetThrottle = 1; if (yComp > 0.5) targetThrottle = -1; 
                 }
             }
         }
-
         s.currentThrottle = s.currentThrottle * 0.9 + targetThrottle * 0.1;
         if (Math.abs(s.currentThrottle) < 0.01) s.currentThrottle = 0;
-
         const verticalSpeed = -s.currentThrottle * 8; 
-        
-        if (!targetRef.current) {
-            s.py += verticalSpeed;
-        }
-        
+        if (!targetRef.current) s.py += verticalSpeed;
         s.py = Math.max(50, Math.min(height - 150, s.py));
-
         if (!isDistress && !s.isRefueling) {
-            if (s.keys.has('ArrowLeft') || s.keys.has('KeyA')) s.px -= speed;
-            if (s.keys.has('ArrowRight') || s.keys.has('KeyD')) s.px += speed;
+            // Note: Manual keys move physics here if not using mouse target
+            if (left && !targetRef.current) s.px -= speed;
+            if (right && !targetRef.current) s.px += speed;
         }
-        
         s.px = Math.max(30, Math.min(width-30, s.px));
-
-        s.movement = { 
-            up: s.currentThrottle > 0.2, 
-            down: s.currentThrottle < -0.2, 
-            left, 
-            right 
-        };
-        
-        let isMoving = s.currentThrottle !== 0 || left || right;
-        s.usingWater = false; 
-
+        s.movement = { up: s.currentThrottle > 0.2, down: s.currentThrottle < -0.2, left, right };
+        let isMoving = s.currentThrottle !== 0 || left || right; s.usingWater = false; 
         let worldSpeedFactor = 1.0;
         if (s.currentThrottle > 0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); 
         if (s.currentThrottle < -0.1) worldSpeedFactor = 1.0 + (s.currentThrottle * 0.5); 
 
         if (s.rescueMode) {
             const driftSpeed = 3;
-            // Drifting in rescue mode
-            if (s.currentThrottle > 0) s.py -= driftSpeed;
-            if (s.currentThrottle < 0) s.py += driftSpeed;
+            if (s.currentThrottle > 0) s.py -= driftSpeed; if (s.currentThrottle < 0) s.py += driftSpeed;
             s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
-            
             if (s.frame % 8 === 0) { 
-                 s.particles.push({ 
-                     x: s.px, 
-                     y: s.py + 60, 
-                     vx: (Math.random()-0.5)*1, 
-                     vy: 2 + Math.random(), 
-                     life: 1.2, 
-                     color: '#9ca3af', 
-                     size: 5 + Math.random()*5 
-                 });
+                 s.particles.push({ x: s.px, y: s.py + 60, vx: (Math.random()-0.5)*1, vy: 2 + Math.random(), life: 1.2, color: '#9ca3af', size: 5 + Math.random()*5 });
             }
         } else {
             if (isMoving && !s.isRefueling) {
-                let effort = 0.005; 
-                if (Math.abs(s.currentThrottle) > 0.1) effort += 0.002 * Math.abs(s.currentThrottle);
-                
-                // Priority: Water -> Fuel (until 10%)
-                if (s.water > 0) {
-                    s.usingWater = true;
-                    // Water is consumed ~10x rate of fuel for movement balance
-                    s.water = Math.max(0, s.water - (effort * 10.0)); 
-                } else if (s.fuel > fuelLimit) {
-                    s.usingWater = false;
-                    s.fuel = Math.max(fuelLimit, s.fuel - effort);
-                } else {
-                    isMoving = false;
-                }
+                let effort = 0.005; if (Math.abs(s.currentThrottle) > 0.1) effort += 0.002 * Math.abs(s.currentThrottle);
+                if (s.water > 0) { s.usingWater = true; s.water = Math.max(0, s.water - (effort * 10.0)); } 
+                else if (s.fuel > fuelLimit) { s.usingWater = false; s.fuel = Math.max(fuelLimit, s.fuel - effort); } 
+                else { isMoving = false; }
             }
             if (s.hp < 30) {
                 if (s.frame % 5 === 0) s.particles.push({ x: s.px + (Math.random()-0.5)*20, y: s.py + 10, vx: (Math.random()-0.5)*1, vy: 2, life: 0.8, color: '#777', size: 3 + Math.random()*3 });
@@ -1262,155 +1300,99 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             }
         }
         
+        // --- BURST FIRE LOGIC ---
+        const now = Date.now();
+        // Missile (Tab) - Hold for burst (max 3, 1 per sec)
+        if (s.keys.has('Tab') && !s.isRefueling && !s.rescueMode) {
+            if (s.missileBurstCount < 3) {
+                // Allows first shot immediately if last fire was old
+                if (now - s.lastMissileFire > 1000) {
+                    fireMissile();
+                    s.missileBurstCount++;
+                    // Note: fireMissile updates s.lastMissileFire internally
+                }
+            }
+        } else {
+            // Reset burst count when key released
+            s.missileBurstCount = 0;
+        }
+
+        // Mine (Shift) - Hold for burst (max 3, 1 per sec)
+        if ((s.keys.has('ShiftLeft') || s.keys.has('ShiftRight')) && !s.isRefueling && !s.rescueMode) {
+            if (s.mineBurstCount < 3) {
+                if (now - s.lastMineFire > 1000) {
+                    fireMine();
+                    s.mineBurstCount++;
+                    // Note: fireMine updates s.lastMineFire internally
+                }
+            }
+        } else {
+            s.mineBurstCount = 0;
+        }
+
         const isFiring = (s.keys.has('Space') || inputRef.current.main) && !s.isRefueling;
+        // ... (Firing logic, ammo, capacitor code remains identical - omitted for brevity unless collision logic follows) ...
         
-        // ... firing logic ...
         if (!s.rescueMode) {
-            // ... (Logic for gun reloading, capacitor, etc. remains same) ...
+            // ... Gun/Capacitor logic ...
+            // Simplified insertion:
             Object.keys(s.gunStates).forEach(keyStr => {
-                const key = parseInt(keyStr);
-                const gun = s.gunStates[key];
+                const key = parseInt(keyStr); const gun = s.gunStates[key];
                 const wId = activeShip.fitting.weapons[key]?.id;
                 const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === wId);
-                
                 if (!wDef || !wDef.isAmmoBased) return;
-
                 if (gun.mag <= 0 && gun.reloadTimer === 0) {
                     const defType = wDef.defaultAmmo || 'iron';
                     let hasAmmo = (s.ammo[defType] || 0) > 0;
-                    if (!hasAmmo) {
-                        const anyAmmo = Object.keys(s.ammo).some(k => (s.ammo[k as AmmoType] || 0) > 0);
-                        if (anyAmmo) hasAmmo = true;
-                    }
-
-                    if (hasAmmo) {
-                         gun.reloadTimer = Date.now() + 10000; 
-                         setHud(h => ({...h, alert: "RELOADING WEAPON SYSTEMS...", alertType: 'warning'}));
-                    } else {
-                        if (s.frame % 300 === 0) {
-                             setHud(h => ({...h, alert: "AMMUNITION DEPLETED", alertType: 'error'}));
-                        }
-                    }
+                    if (!hasAmmo) { const anyAmmo = Object.keys(s.ammo).some(k => (s.ammo[k as AmmoType] || 0) > 0); if (anyAmmo) hasAmmo = true; }
+                    if (hasAmmo) { gun.reloadTimer = Date.now() + 10000; setHud(h => ({...h, alert: "RELOADING WEAPON SYSTEMS...", alertType: 'warning'})); } 
+                    else { if (s.frame % 300 === 0) { setHud(h => ({...h, alert: "AMMUNITION DEPLETED", alertType: 'error'})); } }
                 }
-                
                 if (gun.reloadTimer > 0 && Date.now() > gun.reloadTimer) {
                     const defType = wDef.defaultAmmo || 'iron';
                     let typeToUse = (s.ammo[defType] || 0) > 0 ? defType : null;
-                    if (!typeToUse) {
-                        typeToUse = Object.keys(s.ammo).find(k => (s.ammo[k as AmmoType] || 0) > 0) as AmmoType || null;
-                    }
-
-                    if (typeToUse) {
-                        const amount = Math.min(gun.maxMag, s.ammo[typeToUse]);
-                        s.ammo[typeToUse] -= amount;
-                        gun.mag += amount;
-                        gun.reloadTimer = 0;
-                        audioService.playSfx('buy');
-                        setHud(h => ({...h, alert: "WEAPONS RELOADED", alertType: 'success'}));
-                    } else {
-                        gun.reloadTimer = 0; 
-                    }
+                    if (!typeToUse) { typeToUse = Object.keys(s.ammo).find(k => (s.ammo[k as AmmoType] || 0) > 0) as AmmoType || null; }
+                    if (typeToUse) { const amount = Math.min(gun.maxMag, s.ammo[typeToUse]); s.ammo[typeToUse] -= amount; gun.mag += amount; gun.reloadTimer = 0; audioService.playSfx('buy'); setHud(h => ({...h, alert: "WEAPONS RELOADED", alertType: 'success'})); } else { gun.reloadTimer = 0; }
                 }
             });
-
-            // --- CAPACITOR CHARGE LOGIC (Fixed) ---
-            const mainWeapon = activeShip.fitting.weapons[0];
-            
-            // Calculate base charge rate (0.5 per frame = ~30% per sec)
-            const baseCharge = 0.5; 
-            
-            // Calculate energy drain required for full speed charge
-            // Must be higher than regenRate (which varies by ship 2.0-17.0) to visually "consume" power
-            const chargeCostMultiplier = 2.5; 
-            const requiredDrain = regenRate * chargeCostMultiplier;
-
-            // Only charge if capacitor < 100 and NOT FIRING MAIN GUN (Spacebar)
-            // Secondary weapons (ammo based) do not block main capacitor recharge
-            const canCharge = s.capacitor < 100 && !isFiring; 
+            // Capacitor logic
+            const regenRate = 2.0 + (activeShip.config.price / 100000); // Recalculated locally for ref
+            const canCharge = s.capacitor < 100 && !isFiring && !s.rescueMode; 
             let isCharging = false;
-
             if (canCharge) {
-                // Determine how much energy we can actually pull
-                // We attempt to pull 'requiredDrain' to charge at 'baseCharge' speed.
-                
-                let actualDrain = requiredDrain;
-                let actualCharge = baseCharge;
-
-                if (s.energy < requiredDrain) {
-                    // Generator struggling / Energy depleted
-                    // We take whatever is left in the reactor
-                    // The capacitor charges at a reduced rate proportional to the power shortage
-                    const ratio = Math.max(0, s.energy / requiredDrain);
-                    actualDrain = s.energy;
-                    actualCharge = baseCharge * ratio;
-                }
-
-                if (actualDrain > 0) {
-                    s.energy = Math.max(0, s.energy - actualDrain);
-                    s.capacitor = Math.min(100, s.capacitor + actualCharge);
-                    isCharging = true;
-                }
+                const requiredDrain = regenRate * 2.5; let actualDrain = requiredDrain; let actualCharge = 0.5;
+                if (s.energy < requiredDrain) { const ratio = Math.max(0, s.energy / requiredDrain); actualDrain = s.energy; actualCharge = 0.5 * ratio; }
+                if (actualDrain > 0) { s.energy = Math.max(0, s.energy - actualDrain); s.capacitor = Math.min(100, s.capacitor + actualCharge); isCharging = true; }
             }
-
-            // Lockout Release
-            if (s.capacitorLocked && s.capacitor > 30) {
-                s.capacitorLocked = false;
-                setHud(h => ({...h, alert: "CAPACITOR ONLINE", alertType: 'success'}));
-            }
-
-            // Trigger reactor hum sound
+            if (s.capacitorLocked && s.capacitor > 30) { s.capacitorLocked = false; setHud(h => ({...h, alert: "CAPACITOR ONLINE", alertType: 'success'})); }
             audioService.updateReactorHum(isCharging, s.capacitor);
-
             if (s.energy < maxEnergy * 0.1) {
                 const energyIdx = s.cargo.findIndex(c => c.type === 'energy');
-                if (energyIdx >= 0) {
-                    const item = s.cargo[energyIdx];
-                    item.quantity--;
-                    if (item.quantity <= 0) s.cargo.splice(energyIdx, 1);
-                    s.energy = Math.min(maxEnergy, s.energy + 500);
-                    setHud(h => ({...h, alert: "RESERVE POWER INJECTED", alertType: 'warning'}));
-                    audioService.playSfx('buy');
-                }
+                if (energyIdx >= 0) { const item = s.cargo[energyIdx]; item.quantity--; if (item.quantity <= 0) s.cargo.splice(energyIdx, 1); s.energy = Math.min(maxEnergy, s.energy + 500); setHud(h => ({...h, alert: "RESERVE POWER INJECTED", alertType: 'warning'})); audioService.playSfx('buy'); }
             }
-
-            if (activeShip.config.isAlien) { 
-                if (isFiring) fireAlienWeapons();
-            } else {
+            
+            if (activeShip.config.isAlien) { if (isFiring) fireAlienWeapons(); } 
+            else {
                 if (isFiring) {
                     const wId = activeShip.fitting.weapons[0]?.id;
-                    const mainDef = wId ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === wId) : null;
-                    
-                    let powerCost = 10;
-                    if (wId === 'exotic_star_shatter') powerCost = 100/12; 
-
+                    let powerCost = 10; if (wId === 'exotic_star_shatter') powerCost = 100/12; 
                     const isPowerReady = !s.capacitorLocked && s.capacitor >= powerCost;
-
                     if (isPowerReady) {
-                        // Power Shot Logic
                         let salvoRate = 15;
-                        if (wId === 'exotic_phaser_sweep') salvoRate = 10;
+                        if (wId === 'exotic_phaser_sweep') salvoRate = 15; // 4 shots/sec
                         if (wId === 'exotic_flamer') salvoRate = 8; 
-                        if (wId === 'exotic_star_shatter') salvoRate = 20; 
-                        
-                        if (s.frame - s.lastSalvoFire > salvoRate) {
-                            fireSalvoShot(); // Will handle cap consumption
-                            s.lastSalvoFire = s.frame;
-                        }
-                    } else {
-                        // Normal Shot Logic (Fallback)
-                        // If Locked, fallback immediately (assuming 1s cooldown check done internally or negligible)
-                        fireRapidShot();
-                    }
+                        // STAR SHATTER POWER SHOT: 6 shots/sec (10 frames)
+                        if (wId === 'exotic_star_shatter') salvoRate = 10; 
+                        if (s.frame - s.lastSalvoFire > salvoRate) { fireSalvoShot(); s.lastSalvoFire = s.frame; }
+                    } else { fireRapidShot(); }
                 }
             }
             const firingSecondary = s.keys.has('ControlLeft') || s.keys.has('ControlRight') || inputRef.current.secondary;
             if (firingSecondary && !activeShip.config.isAlien && !s.isRefueling) { fireWingWeapons(); }
         }
 
-        if (s.shakeX > 0) s.shakeX *= s.shakeDecay;
-        if (s.shakeY > 0) s.shakeY *= s.shakeDecay;
-        if (s.shakeX < 0.5) s.shakeX = 0;
-        if (s.shakeY < 0.5) s.shakeY = 0;
+        if (s.shakeX > 0) s.shakeX *= s.shakeDecay; if (s.shakeY > 0) s.shakeY *= s.shakeDecay;
+        if (s.shakeX < 0.5) s.shakeX = 0; if (s.shakeY < 0.5) s.shakeY = 0;
 
         if (s.phase === 'boss') {
             const boss = s.enemies.find(e => e.type === 'boss');
@@ -1424,8 +1406,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         if (s.phase === 'travel') { 
             if (s.enemies.length < 3 + difficulty/2 && Date.now() - s.lastSpawn > 1500 && !s.rescueMode) { 
-                let spawnPool = SHIPS.filter(s => !s.isAlien); 
-                if (difficulty >= 2) spawnPool = [...spawnPool, ...SHIPS.filter(s => s.isAlien)];
+                let spawnPool = SHIPS.filter(s => !s.isAlien); if (difficulty >= 2) spawnPool = [...spawnPool, ...SHIPS.filter(s => s.isAlien)];
                 const selectedShip = spawnPool[Math.floor(Math.random() * spawnPool.length)] || SHIPS[0]; 
                 s.enemies.push(new Enemy(Math.random()*width, -50, 'fighter', selectedShip, difficulty, quadrant)); 
                 s.lastSpawn = Date.now(); 
@@ -1440,8 +1421,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (Math.abs(a.z) < 50 && Math.hypot(a.x-s.px, a.y-s.py) < a.size + 30 && !s.rescueMode) {
                 takeDamage(20, 'collision');
                 a.hp = 0;
-                // Specific Asteroid Crack Sound
-                audioService.playExplosion(0, 0.5, 'asteroid');
+                // Specific Asteroid Crack Sound (Impact)
+                audioService.playHullHit('asteroid');
                 createExplosion(a.x, a.y, '#aaa', 10, 'asteroid');
             }
         }); 
@@ -1451,40 +1432,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (s.rescueMode) { e.y += 3; if (e.type === 'boss') e.y += 2; } 
             else {
                 e.update(s.px, s.py, width, height, s.bullets, worldSpeedFactor); 
-                
-                // Damage Effects
+                // ... Damage visual logic ...
                 if (e.hp < e.maxHp && e.hp > 0) {
-                    if (e.hp < e.maxHp * 0.9 && Math.random() < 0.2) {
-                        s.particles.push({ 
-                            x: e.x + (Math.random()-0.5)*30, 
-                            y: e.y + (Math.random()-0.5)*30, 
-                            vx: (Math.random()-0.5)*2, 
-                            vy: (Math.random()-0.5)*2, 
-                            life: 0.5 + Math.random()*0.5, 
-                            size: 3 + Math.random()*4, 
-                            color: '#52525b', 
-                            type: 'smoke' 
-                        });
-                    }
-                    if (e.hp < e.maxHp * 0.5 && Math.random() < 0.3) {
-                        s.particles.push({ 
-                            x: e.x + (Math.random()-0.5)*20, 
-                            y: e.y + (Math.random()-0.5)*20, 
-                            vx: (Math.random()-0.5), 
-                            vy: (Math.random()-0.5), 
-                            life: 0.4 + Math.random()*0.3, 
-                            size: 2 + Math.random()*3, 
-                            color: '#ef4444', 
-                            type: 'fire' 
-                        });
-                    }
+                    if (e.hp < e.maxHp * 0.9 && Math.random() < 0.2) s.particles.push({ x: e.x + (Math.random()-0.5)*30, y: e.y + (Math.random()-0.5)*30, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, life: 0.5 + Math.random()*0.5, size: 3 + Math.random()*4, color: '#52525b', type: 'smoke' });
+                    if (e.hp < e.maxHp * 0.5 && Math.random() < 0.3) s.particles.push({ x: e.x + (Math.random()-0.5)*20, y: e.y + (Math.random()-0.5)*20, vx: (Math.random()-0.5), vy: (Math.random()-0.5), life: 0.4 + Math.random()*0.3, size: 2 + Math.random()*3, color: '#ef4444', type: 'fire' });
                 }
-
                 if (difficulty >= 2 && e.type !== 'boss') {
                     const fireInterval = e.config.isAlien ? 120 : 180;
                     if (s.frame % fireInterval === 0 && Math.abs(e.x - s.px) < 300) {
-                        const w = e.equippedWeapons[0];
-                        if (w) { s.bullets.push({ x: e.x, y: e.y + 20, vx: 0, vy: 5, damage: 10, color: '#ef4444', type: 'projectile', life: 100, isEnemy: true, width: 6, height: 12 }); }
+                        const w = e.equippedWeapons[0]; if (w) { s.bullets.push({ x: e.x, y: e.y + 20, vx: 0, vy: 5, damage: 10, color: '#ef4444', type: 'projectile', life: 100, isEnemy: true, width: 6, height: 12 }); }
                     }
                 }
                 if (e.type === 'boss') {
@@ -1497,7 +1453,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < 60) {
                     takeDamage(30, 'collision');
                     if(e.type !== 'boss') e.hp = 0;
-                    audioService.playExplosion(0, 1.0, 'normal'); // Standard hit explosion
+                    audioService.playHullHit('metal'); // Metal clank
                     createExplosion(e.x, e.y, '#f00', 10);
                 }
             }
@@ -1507,41 +1463,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             const e = s.enemies[i];
             if (e.hp <= 0 || e.y > height + 200) {
                 if (e.hp <= 0 && !s.rescueMode) {
-                    // Explosion hurts nearby ships
                     createAreaDamage(e.x, e.y, 150, 50);
-
                     if (e.type === 'boss') {
-                        s.bossDead = true;
-                        s.score += 10000 * difficulty;
-                        // Epic Boss Explosion
+                        s.bossDead = true; s.score += 10000 * difficulty;
                         audioService.playExplosion(e.x, 3.0, 'boss');
                         createExplosion(e.x, e.y, '#a855f7', 30, 'boss');
                         setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
-                        
-                        const rand = Math.random();
-                        let lootType = '';
-                        let lootId = '';
-                        let quantity = 1;
-                        let name = '';
-
-                        if (rand < 0.2) {
-                            const w = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
-                            lootType = 'weapon'; lootId = w.id; name = w.name;
-                        } else if (rand < 0.4) {
-                            const sh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)];
-                            lootType = 'shield'; lootId = sh.id; name = sh.name;
-                        } else if (rand < 0.6) {
-                            lootType = 'missile'; quantity = 100; name = 'Missile Pack';
-                        } else if (rand < 0.8) {
-                            lootType = 'mine'; quantity = 100; name = 'Mine Pack';
-                        } else {
-                            const ammos = ['iridium', 'tungsten', 'explosive'];
-                            const selected = ammos[Math.floor(Math.random() * ammos.length)];
-                            lootType = 'ammo'; lootId = selected; quantity = 5000; name = 'Heavy Ammo Crate';
-                        }
+                        // ... Loot spawn logic ...
+                        const rand = Math.random(); let lootType = ''; let lootId = ''; let quantity = 1; let name = '';
+                        if (rand < 0.2) { const w = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)]; lootType = 'weapon'; lootId = w.id; name = w.name; } 
+                        else if (rand < 0.4) { const sh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)]; lootType = 'shield'; lootId = sh.id; name = sh.name; } 
+                        else if (rand < 0.6) { lootType = 'missile'; quantity = 100; name = 'Missile Pack'; } 
+                        else if (rand < 0.8) { lootType = 'mine'; quantity = 100; name = 'Mine Pack'; } 
+                        else { const ammos = ['iridium', 'tungsten', 'explosive']; const selected = ammos[Math.floor(Math.random() * ammos.length)]; lootType = 'ammo'; lootId = selected; quantity = 5000; name = 'Heavy Ammo Crate'; }
                         spawnLoot(e.x, e.y, 0, lootType, lootId, name, quantity);
                     } else {
-                        // Standard Enemy Death
                         audioService.playExplosion(e.x, 1.0, 'normal');
                         s.score += 100 * difficulty;
                     }
@@ -1551,136 +1487,148 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
 
         s.bullets.forEach(b => { 
+            // ... Bullet update logic ...
             b.x += b.vx; b.y += b.vy; b.life--; 
+            if (b.vz !== undefined) b.z = (b.z || 0) + b.vz;
             
-            // Integrate Z velocity
-            if (b.vz !== undefined) {
-                b.z = (b.z || 0) + b.vz;
-            }
+            // --- EXOTIC GROWTH & EFFECTS ---
+            if (b.weaponId?.includes('exotic')) {
+                // Growth logic
+                if (b.growthRate && b.isOvercharge) {
+                    let multiplier = 12.0; 
+                    if (b.weaponId === 'exotic_gravity_wave') multiplier = 14.0;
+                    else if (b.weaponId === 'exotic_plasma_orb' || b.weaponId === 'exotic_wave') multiplier = 8.0;
 
-            // --- EXOTIC GROWTH LOGIC (POWER SHOT) ---
-            if (b.growthRate && b.weaponId?.includes('exotic') && b.isOvercharge) {
-                // Round projectiles grow uniformly
-                if (b.type === 'projectile') {
-                    // For arcs like Wave/Gravity, height might grow slower
-                    if (b.weaponId === 'exotic_wave' || b.weaponId === 'exotic_gravity_wave' || b.weaponId === 'exotic_rainbow_spread') {
-                        b.width += b.growthRate;
-                        b.height += b.growthRate * 0.2; 
-                    } else {
-                        // Orbs, Stars, etc grow fully
-                        b.width += b.growthRate;
-                        b.height += b.growthRate;
+                    const limitW = (b.initialWidth || 6) * multiplier;
+                    
+                    if (b.type === 'projectile' || b.type === 'laser' || b.type === 'octo_shell') {
+                        if (b.width < limitW) {
+                            const oldH = b.height;
+                            b.width *= b.growthRate;
+                            b.height *= b.growthRate;
+                            const dh = b.height - oldH;
+                            b.y -= dh / 2;
+                        }
                     }
-                } else if (b.type === 'laser') {
-                    // Beams usually don't grow in width significantly unless specified
-                    // We handle length via initial settings, maybe slight width pulse
-                    if (b.growthRate > 0) b.width = Math.min(30, b.width + 0.1);
+                }
+
+                // FLAMER EFFECTS (Dragon Breath)
+                if (b.weaponId === 'exotic_flamer') {
+                    // Growth for Flamer (Both Normal and Power)
+                    const maxW = b.isOvercharge ? 250 : 100;
+                    if (b.width < maxW && b.growthRate) {
+                        b.width *= b.growthRate;
+                        b.height *= b.growthRate;
+                    }
+
+                    // Color & Transparency Gradient based on Distance from Ship
+                    const dist = Math.max(0, s.py - b.y);
+                    const p = Math.min(1, dist / 800);
+
+                    // Heat Gradient: Blue -> White -> Yellow -> Orange -> Red
+                    if (p < 0.15) b.color = '#3b82f6';      // Blue
+                    else if (p < 0.25) b.color = '#ffffff'; // White
+                    else if (p < 0.45) b.color = '#facc15'; // Yellow
+                    else if (p < 0.70) b.color = '#f97316'; // Orange
+                    else b.color = '#ef4444';               // Red
+                    
+                    // Transparency at 3/4 of screen (p > 0.75)
+                    if (p > 0.75) {
+                        b.opacity = Math.max(0, 1 - ((p - 0.75) * 4));
+                    } else {
+                        b.opacity = 1;
+                    }
+                }
+
+                // OCTO BURST EFFECTS (Comet Trail)
+                if (b.weaponId === 'exotic_octo_burst') {
+                    if (s.frame % 2 === 0) { // Optimize frequency
+                        s.particles.push({
+                            x: b.x + (Math.random()-0.5)*b.width,
+                            y: b.y + (Math.random()-0.5)*b.height,
+                            vx: (Math.random()-0.5)*1,
+                            vy: (Math.random()-0.5)*1, // Smoke drifts
+                            life: 0.6,
+                            color: b.isMulticolor && Math.random() > 0.5 ? OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)] : b.color,
+                            size: Math.random() * 3 + 1,
+                            type: 'sparkle' 
+                        });
+                    }
                 }
             }
 
-            // --- FIREWORKS LOGIC (Octo Burst) ---
             if (b.type === 'firework_shell' && b.detonationY !== undefined) {
-                // Trail
-                if (Math.random() > 0.5) {
-                    s.particles.push({ 
-                        x: b.x, y: b.y, vx: 0, vy: 0, life: 0.5, size: 2, color: '#fbbf24' 
+                if (Math.random() > 0.5) s.particles.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.5, size: 2, color: '#fbbf24' });
+                if (b.y <= b.detonationY) { b.life = 0; createExplosion(b.x, b.y, b.color, 25, 'fireworks'); createAreaDamage(b.x, b.y, 120, b.damage); audioService.playExplosion(0, 0.8, 'mine'); }
+            }
+            
+            // OCTO SHELL LOGIC (Random Detonation for Power Only)
+            if (b.type === 'octo_shell') {
+                // If it reaches detonation altitude (Power shot only)
+                if (b.isOvercharge && b.detonationY !== undefined && b.y <= b.detonationY) {
+                    b.life = 0;
+                    // FIREWORKS EXPLOSION
+                    // Pass specific colors for fireworks if multicolor
+                    if (b.isMulticolor) {
+                        for(let i=0; i<3; i++) {
+                             createExplosion(b.x + (Math.random()-0.5)*20, b.y + (Math.random()-0.5)*20, OCTO_COLORS[Math.floor(Math.random()*OCTO_COLORS.length)], 15, 'fireworks');
+                        }
+                    } else {
+                        createExplosion(b.x, b.y, b.color, 30, 'fireworks'); 
+                    }
+                    
+                    audioService.playExplosion(0, 1.2, 'mine'); 
+                    
+                    // AOE Damage & Shield Disable
+                    s.enemies.forEach(e => {
+                        if (e.hp <= 0) return;
+                        const dist = Math.hypot(e.x - b.x, e.y - b.y);
+                        if (dist < 200) {
+                            const dmg = calculateDamage(b.damage, 'explosion', 'hull');
+                            e.takeDamage(dmg, 'explosion', true, true, false);
+                            
+                            // 50% Chance to disable shields
+                            if (e.shieldLayers.length > 0 && Math.random() > 0.5) {
+                                e.shieldDisabledUntil = 300; // 5 seconds
+                                createExplosion(e.x, e.y, '#3b82f6', 10, 'standard'); // Blue sparks for shield break
+                            }
+                        }
                     });
-                }
-                
-                // Detonation Check (Moving Up, Y decreases)
-                if (b.y <= b.detonationY) {
-                    b.life = 0; // Kill shell
-                    createExplosion(b.x, b.y, b.color, 15);
-                    createAreaDamage(b.x, b.y, 120, b.damage);
-                    audioService.playExplosion(0, 0.8, 'mine'); // Boom sound
                 }
             }
 
             if (['missile', 'missile_emp', 'mine', 'mine_emp', 'mine_red'].includes(b.type)) {
-                // ... homing logic ...
+                // ... Homing logic (omitted for brevity, identical) ...
                 const isMissile = b.type.includes('missile');
                 const age = s.frame - (b.launchTime || 0);
-                
-                if (age < 20) {
-                    if (isMissile) { b.vy -= 0.6; b.vx *= 0.95; } else { b.vx *= 0.99; }
-                } else {
+                if (age < 20) { if (isMissile) { b.vy -= 0.6; b.vx *= 0.95; } else { b.vx *= 0.99; } } 
+                else {
                     if (!b.target || b.target.hp <= 0 || b.target.y > height + 200 || b.target.y < -200) {
-                        b.target = null;
-                        let best = null;
-                        let bestScore = -Infinity;
-                        let searchDir = -Math.PI / 2;
-                        if (isMissile) {
-                            const speed = Math.hypot(b.vx, b.vy);
-                            if (speed > 1) searchDir = Math.atan2(b.vy, b.vx);
-                        } else {
-                            searchDir = b.vx > 0 ? 0 : Math.PI;
-                        }
+                        b.target = null; let best = null; let bestScore = -Infinity; let searchDir = isMissile ? (Math.hypot(b.vx, b.vy) > 1 ? Math.atan2(b.vy, b.vx) : -Math.PI/2) : (b.vx > 0 ? 0 : Math.PI);
                         const cone = isMissile ? (Math.PI / 2.5) : (Math.PI / 1.5); 
-                        
                         s.enemies.forEach(e => {
                             if (e.hp <= 0) return;
-                            const dx = e.x - b.x;
-                            const dy = e.y - b.y;
-                            const dz = e.z - (b.z || 0);
-                            const dist3d = Math.hypot(dx, dy, dz);
+                            const dx = e.x - b.x; const dy = e.y - b.y; const dz = e.z - (b.z || 0); const dist3d = Math.hypot(dx, dy, dz);
                             if (dist3d > 900) return;
-                            const angleToEnemy = Math.atan2(dy, dx);
-                            let diff = angleToEnemy - searchDir;
-                            while (diff <= -Math.PI) diff += 2*Math.PI;
-                            while (diff > Math.PI) diff -= 2*Math.PI;
-                            if (Math.abs(diff) < cone) {
-                                const score = (5000 / (dist3d + 1)) + (20 / (Math.abs(diff) + 0.1));
-                                if (score > bestScore) { bestScore = score; best = e; }
-                            }
+                            const angleToEnemy = Math.atan2(dy, dx); let diff = angleToEnemy - searchDir;
+                            while (diff <= -Math.PI) diff += 2*Math.PI; while (diff > Math.PI) diff -= 2*Math.PI;
+                            if (Math.abs(diff) < cone) { const score = (5000 / (dist3d + 1)) + (20 / (Math.abs(diff) + 0.1)); if (score > bestScore) { bestScore = score; best = e; } }
                         });
                         if (best) b.target = best;
                     }
                     if (b.target) {
-                        const dx = b.target.x - b.x;
-                        const dy = b.target.y - b.y;
-                        const dz = b.target.z - (b.z || 0);
-                        const dist = Math.hypot(dx, dy, dz);
-                        const turnRate = isMissile ? 0.18 : 0.08; 
-                        const desiredSpeed = isMissile ? 15 : 8;
-                        const tx = (dx / dist) * desiredSpeed;
-                        const ty = (dy / dist) * desiredSpeed;
-                        const tz = (dz / dist) * desiredSpeed;
-                        b.vx += (tx - b.vx) * turnRate;
-                        b.vy += (ty - b.vy) * turnRate;
-                        b.vz = (b.vz || 0) + (tz - (b.vz || 0)) * turnRate;
+                        const dx = b.target.x - b.x; const dy = b.target.y - b.y; const dz = b.target.z - (b.z || 0); const dist = Math.hypot(dx, dy, dz);
+                        const turnRate = isMissile ? 0.18 : 0.08; const desiredSpeed = isMissile ? 15 : 8;
+                        const tx = (dx / dist) * desiredSpeed; const ty = (dy / dist) * desiredSpeed; const tz = (dz / dist) * desiredSpeed;
+                        b.vx += (tx - b.vx) * turnRate; b.vy += (ty - b.vy) * turnRate; b.vz = (b.vz || 0) + (tz - (b.vz || 0)) * turnRate;
                     }
-                    s.asteroids.forEach(a => {
-                        if (a.hp > 0) {
-                            const dx = b.x - a.x;
-                            const dy = b.y - a.y;
-                            const dist = Math.hypot(dx, dy);
-                            const avoidRad = a.size + 80;
-                            if (dist < avoidRad) {
-                                const force = (avoidRad - dist) / avoidRad;
-                                const repulsion = isMissile ? 2.5 : 1.5;
-                                b.vx += (dx / dist) * force * repulsion;
-                                b.vy += (dy / dist) * force * repulsion;
-                            }
-                        }
-                    });
-                    if (isMissile) {
-                         const speed = Math.hypot(b.vx, b.vy);
-                         if (speed < (b.maxSpeed || 16)) { b.vx *= 1.05; b.vy *= 1.05; }
-                    }
+                    s.asteroids.forEach(a => { if (a.hp > 0) { const dx = b.x - a.x; const dy = b.y - a.y; const dist = Math.hypot(dx, dy); const avoidRad = a.size + 80; if (dist < avoidRad) { const force = (avoidRad - dist) / avoidRad; const repulsion = isMissile ? 2.5 : 1.5; b.vx += (dx / dist) * force * repulsion; b.vy += (dy / dist) * force * repulsion; } } });
+                    if (isMissile) { const speed = Math.hypot(b.vx, b.vy); if (speed < (b.maxSpeed || 16)) { b.vx *= 1.05; b.vy *= 1.05; } }
                 }
             }
-
+            // ... Gravity wave collision ...
             if (b.weaponId === 'exotic_gravity_wave' && b.growthRate) {
-                s.bullets.forEach(other => {
-                    if (other.isEnemy && Math.abs(other.x - b.x) < b.width && Math.abs(other.y - b.y) < b.height) {
-                        other.isEnemy = false;
-                        other.vx = (Math.random()-0.5) * 5; 
-                        other.vy = -Math.abs(other.vy) - 5; 
-                        other.color = b.color; 
-                        other.damage *= 2; 
-                        createExplosion(other.x, other.y, b.color, 1);
-                    }
-                });
+                s.bullets.forEach(other => { if (other.isEnemy && Math.abs(other.x - b.x) < b.width && Math.abs(other.y - b.y) < b.height) { other.isEnemy = false; other.vx = (Math.random()-0.5) * 5; other.vy = -Math.abs(other.vy) - 5; other.color = b.color; other.damage *= 2; createExplosion(other.x, other.y, b.color, 1); } });
             }
 
             if (b.isEnemy && !s.rescueMode) { 
@@ -1690,664 +1638,370 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 s.enemies.forEach(e => { 
                     const isOrdnance = b.type.includes('missile') || b.type.includes('mine');
                     const hitDist = isOrdnance ? (e.type === 'boss' ? 100 : 60) : (e.type === 'boss' ? 80 : 40); 
-                    const hitThreshold = (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter') ? Math.max(hitDist, b.width/2) : hitDist;
-                    
-                    const dist2d = Math.hypot(b.x-e.x, b.y-e.y);
-                    const zDist = Math.abs((b.z || 0) - e.z);
+                    // OCTO SHELL (POWER) has larger hit box
+                    let hitThreshold = (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter' || b.type === 'octo_shell') ? Math.max(hitDist, b.width/2) : hitDist;
+                    const dist2d = Math.hypot(b.x-e.x, b.y-e.y); const zDist = Math.abs((b.z || 0) - e.z);
 
                     if (dist2d < hitThreshold && (!isOrdnance || zDist < 80)) { 
                         let effectiveDamage = b.damage;
                         if (b.weaponId === 'exotic_star_shatter') {
-                            if (b.isOvercharge) {
-                                const ratio = Math.min(1, Math.max(0, (b.width - 6) / 30));
-                                const multiplier = 4 + (ratio * 16); 
-                                effectiveDamage = b.damage * multiplier;
-                            } else {
-                                const ratio = Math.min(1, b.width / 12);
-                                effectiveDamage = b.damage * ratio;
-                            }
+                            if (b.isOvercharge) { const ratio = Math.min(1, Math.max(0, (b.width - 6) / 30)); const multiplier = 4 + (ratio * 16); effectiveDamage = b.damage * multiplier; } 
+                            else { const ratio = Math.min(1, b.width / 12); effectiveDamage = b.damage * ratio; }
+                        }
+                        
+                        // FLAMER DAMAGE FALLOFF
+                        if (b.weaponId === 'exotic_flamer' && !b.isOvercharge) {
+                            effectiveDamage *= (b.life / 50); 
                         }
 
-                        e.takeDamage(effectiveDamage, b.type as any, !!b.isMain, !!b.isOvercharge, !!b.isEmp); 
-                        hit = true; createExplosion(b.x, b.y, b.color, 2); 
-                        
-                        // NEW AUDIO LOGIC FOR IMPACTS
-                        if (b.isEmp || b.type.includes('emp') || b.type.includes('red')) {
-                            audioService.playExplosion(0, 1.2, 'emp'); // Frying sound
-                        } else if (b.type.includes('missile')) {
-                            audioService.playExplosion(0, 0.8, 'normal'); // Sharp Bang
-                        } else if (b.type.includes('mine')) {
-                            audioService.playExplosion(0, 1.2, 'mine'); // Deep Boom
-                            createAreaDamage(b.x, b.y, 150, 80); // Enhanced Area Damage
+                        // OCTO BURST IMPACT (Normal or Power before Detonation)
+                        if (b.type === 'octo_shell') {
+                            hit = true;
+                            if (b.isOvercharge) {
+                                // Power shot hit something directly before detonating
+                                createExplosion(b.x, b.y, b.color, 40, 'fireworks'); 
+                                audioService.playExplosion(0, 1.5, 'emp'); 
+                                createAreaDamage(b.x, b.y, 200, b.damage);
+                            } else {
+                                // Normal Shot Direct Hit
+                                e.takeDamage(effectiveDamage, 'projectile', true, false, false);
+                                createExplosion(b.x, b.y, b.color, 5, 'fireworks');
+                            }
+                        } else {
+                            e.takeDamage(effectiveDamage, b.type as any, !!b.isMain, !!b.isOvercharge, !!b.isEmp); 
+                            hit = true; 
+                            createExplosion(b.x, b.y, b.color, 2);
+                            
+                            // NEW AUDIO LOGIC FOR IMPACTS & AOE for Ordnance
+                            if (b.isEmp || b.type.includes('emp') || b.type.includes('red')) { 
+                                audioService.playExplosion(0, 1.2, 'emp'); 
+                                // Red mines AOE handled on death
+                            } 
+                            else if (b.type.includes('missile')) { 
+                                audioService.playExplosion(0, 0.8, 'normal'); 
+                                // ADDED: Missile AOE on impact
+                                createAreaDamage(b.x, b.y, 100, b.damage / 2);
+                            } 
+                            else if (b.type.includes('mine')) { 
+                                audioService.playExplosion(0, 1.2, 'mine'); 
+                                // Mine AOE on impact
+                                createAreaDamage(b.x, b.y, 150, b.damage); 
+                            }
                         }
                     } 
                 });
+                
+                // Asteroid Collision
                 s.asteroids.forEach(a => {
-                    const hitThreshold = (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter') ? Math.max(a.size + 10, b.width/2) : a.size + 10;
+                    const hitThreshold = (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter' || b.type === 'octo_shell') ? Math.max(a.size + 10, b.width/2) : a.size + 10;
                     if (Math.hypot(b.x-a.x, b.y-a.y) < hitThreshold) {
-                        // NEW ASTEROID DAMAGE LOGIC: Only takes POWER damage (Hull dmg component)
-                        // Projectiles = 1.2x Power. Lasers = 0.4x Power.
-                        let dmg = calculateDamage(b.damage, b.type, 'hull');
-                        if (b.isOvercharge) dmg *= 5.0; 
+                        let dmg = calculateDamage(b.damage, b.type, 'hull'); if (b.isOvercharge) dmg *= 5.0; 
                         
-                        a.hp -= dmg;
-                        if (a.hp <= 0 && a.loot) spawnLoot(a.x, a.y, a.z, a.loot.type, a.loot.id, a.loot.name, a.loot.quantity || 1);
-                        hit = true; 
+                        // FLAMER DAMAGE FALLOFF
+                        if (b.weaponId === 'exotic_flamer' && !b.isOvercharge) {
+                            dmg *= (b.life / 50);
+                        }
+
+                        // OCTO BURST POWER SHOT ON ASTEROID
+                        if (b.type === 'octo_shell') {
+                             if (b.isOvercharge) {
+                                dmg *= 2.0;
+                                hit = true;
+                                createExplosion(b.x, b.y, b.color, 40, 'fireworks'); 
+                                audioService.playExplosion(0, 1.5, 'emp'); 
+                                createAreaDamage(b.x, b.y, 200, b.damage);
+                             } else {
+                                hit = true;
+                                createExplosion(b.x, b.y, b.color, 5, 'fireworks');
+                             }
+                        }
+
+                        a.hp -= dmg; if (a.hp <= 0 && a.loot) spawnLoot(a.x, a.y, a.z, a.loot.type, a.loot.id, a.loot.name, a.loot.quantity || 1);
+                        if (!hit) hit = true; 
                         
-                        // Only play full crack sound if significant damage done
-                        if (dmg > 5) {
+                        if (dmg > 5 && b.type !== 'octo_shell') { // Octo handled above
                             createExplosion(b.x, b.y, '#aaa', 5, 'asteroid');
-                            
-                            // Audio differentiation for Asteroid Hits
-                            // Mechanical (Bullets/Missiles) -> Zdump
-                            // Energy (Lasers) -> Frrr
                             const isEnergy = b.type === 'laser' || b.type === 'bolt' || b.weaponId?.includes('exotic');
-                            
-                            if (b.type.includes('missile')) {
-                                audioService.playExplosion(0, 0.8, 'normal');
-                            } else if (b.type.includes('mine')) {
-                                audioService.playExplosion(0, 1.2, 'mine');
-                                createAreaDamage(b.x, b.y, 150, 80);
-                            } else if (isEnergy) {
-                                audioService.playExplosion(0, 0.4, 'asteroid_energy');
-                            } else {
-                                audioService.playExplosion(0, 0.4, 'asteroid_mech');
+                            if (b.type.includes('missile')) { 
+                                audioService.playExplosion(0, 0.8, 'normal'); 
+                                createAreaDamage(b.x, b.y, 100, b.damage / 2);
+                            } 
+                            else if (b.type.includes('mine')) { 
+                                audioService.playExplosion(0, 1.2, 'mine'); 
+                                createAreaDamage(b.x, b.y, 150, b.damage); 
+                            } 
+                            else {
+                                // Asteroid Hit Sound
+                                audioService.playHullHit('asteroid');
                             }
                         }
                     }
                 });
                 
-                if (hit && b.weaponId !== 'exotic_rainbow_spread' && b.type !== 'firework_shell') b.life = 0;
+                if (hit && b.weaponId !== 'exotic_rainbow_spread' && b.type !== 'firework_shell' && (b.type !== 'octo_shell' || b.isOvercharge)) b.life = 0;
             }
         }); 
         s.bullets = s.bullets.filter(b => {
             if (b.life <= 0) {
                 if (b.type.includes('mine')) {
-                    createAreaDamage(b.x, b.y, 150, 80); // Enhanced
+                    // Use bullet damage for mine AOE on timeout/death
+                    createAreaDamage(b.x, b.y, 150, b.damage); 
                     createExplosion(b.x, b.y, b.color, 5);
-                    // EMP mines trigger EMP sound on expiry too
-                    if (b.type.includes('emp') || b.type.includes('red')) {
-                        audioService.playExplosion(0, 1.2, 'emp');
-                    } else {
-                        audioService.playExplosion(0, 1.2, 'mine'); // Ensure boom on expiry
-                    }
+                    if (b.type.includes('emp') || b.type.includes('red')) { audioService.playExplosion(0, 1.2, 'emp'); } 
+                    else { audioService.playExplosion(0, 1.2, 'mine'); }
                 }
                 return false;
             }
             return b.y > -200 && b.y < height + 200;
         });
         
-        // ... loot and particle updates ...
+        // ... Loot and Particles update logic (identical) ...
         s.loot.forEach(l => {
-            const dx = s.px - l.x;
-            const dy = s.py - l.y;
-            const dist = Math.hypot(dx, dy);
-            
-            if (dist < 175) {
-                l.isBeingPulled = true;
-                l.x += dx * 0.08;
-                l.y += dy * 0.08;
-            } else {
-                l.isBeingPulled = false;
-                l.y += 2 * worldSpeedFactor; 
-                l.x += l.vx; 
-                l.y += l.vy;
-            }
-            
+            const dx = s.px - l.x; const dy = s.py - l.y; const dist = Math.hypot(dx, dy);
+            if (dist < 175) { l.isBeingPulled = true; l.x += dx * 0.08; l.y += dy * 0.08; } 
+            else { l.isBeingPulled = false; l.y += 2 * worldSpeedFactor; l.x += l.vx; l.y += l.vy; }
             if (dist < 30) {
-                l.isPulled = true; 
-                audioService.playSfx('buy');
-                
+                l.isPulled = true; audioService.playSfx('buy');
                 if (l.type === 'fuel') { s.fuel = Math.min(maxFuel, s.fuel + 1.0); setHud(h => ({...h, alert: "+FUEL", alertType: 'success'})); }
                 else if (l.type === 'water') { s.water = Math.min(maxWater, s.water + 20); setHud(h => ({...h, alert: "+WATER", alertType: 'success'})); }
                 else if (l.type === 'energy') { s.energy = Math.min(maxEnergy, s.energy + 200); setHud(h => ({...h, alert: "+ENERGY", alertType: 'success'})); }
                 else if (l.type === 'repair' || l.type === 'nanite') { s.hp = Math.min(100, s.hp + 10); setHud(h => ({...h, alert: "+HULL REPAIR", alertType: 'success'})); }
                 else if (l.type === 'missile') { s.missiles = Math.min(10, s.missiles + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} MISSILES`, alertType: 'success'})); }
                 else if (l.type === 'mine') { s.mines = Math.min(10, s.mines + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} MINES`, alertType: 'success'})); }
-                else if (l.type === 'ammo') { 
-                    const ammoId = l.id as any; 
-                    if (ammoId) {
-                        s.ammo[ammoId] = (s.ammo[ammoId] || 0) + ((l.quantity || 1) * 1000); 
-                        setHud(h => ({...h, alert: `+${l.quantity || 1} AMMO UNITS`, alertType: 'success'})); 
-                    }
-                }
-                else if (l.type === 'weapon' || l.type === 'shield') { 
-                    const newItem: CargoItem = {
-                        instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                        type: l.type as any,
-                        id: l.id,
-                        name: l.name || 'Unknown',
-                        quantity: l.quantity || 1,
-                        weight: 1
-                    };
-                    s.cargo.push(newItem); 
-                    setHud(h => ({...h, alert: `LOOT ACQUIRED: ${l.name}`, alertType: 'success'})); 
-                }
-                else if (['gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium', 'tungsten', 'goods', 'robot', 'drug', 'medicine', 'food', 'equipment', 'part', 'luxury'].includes(l.type)) {
-                    const itemId = l.id || l.type;
-                    const qty = l.quantity || 1;
-                    const existingItem = s.cargo.find(c => c.id === itemId);
-                    
-                    if (existingItem) {
-                        existingItem.quantity += qty;
-                    } else {
-                        s.cargo.push({
-                            instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                            type: l.type as any,
-                            id: itemId,
-                            name: l.name || itemId.toUpperCase(),
-                            quantity: qty,
-                            weight: 1
-                        });
-                    }
-                    setHud(h => ({...h, alert: `+${qty} ${l.name || l.type.toUpperCase()}`, alertType: 'success'}));
-                }
-                else {
-                    s.score += 500;
-                }
+                else if (l.type === 'ammo') { const ammoId = l.id as any; if (ammoId) { s.ammo[ammoId] = (s.ammo[ammoId] || 0) + ((l.quantity || 1) * 1000); setHud(h => ({...h, alert: `+${l.quantity || 1} AMMO UNITS`, alertType: 'success'})); } }
+                else if (l.type === 'weapon' || l.type === 'shield') { const newItem: CargoItem = { instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, type: l.type as any, id: l.id, name: l.name || 'Unknown', quantity: l.quantity || 1, weight: 1 }; s.cargo.push(newItem); setHud(h => ({...h, alert: `LOOT ACQUIRED: ${l.name}`, alertType: 'success'})); }
+                else if (['gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium', 'tungsten', 'goods', 'robot', 'drug', 'medicine', 'food', 'equipment', 'part', 'luxury'].includes(l.type)) { const itemId = l.id || l.type; const qty = l.quantity || 1; const existingItem = s.cargo.find(c => c.id === itemId); if (existingItem) { existingItem.quantity += qty; } else { s.cargo.push({ instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, type: l.type as any, id: itemId, name: l.name || itemId.toUpperCase(), quantity: qty, weight: 1 }); } setHud(h => ({...h, alert: `+${qty} ${l.name || l.type.toUpperCase()}`, alertType: 'success'})); }
+                else { s.score += 500; }
             }
         });
         s.loot = s.loot.filter(l => !l.isPulled && (l.y < height + 100 || l.isBeingPulled));
+        s.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; }); s.particles = s.particles.filter(p => p.life > 0);
 
-        s.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; });
-        s.particles = s.particles.filter(p => p.life > 0);
-
-        // ... drawing logic ...
-        const shakeX = (Math.random() - 0.5) * s.shakeX;
-        const shakeY = (Math.random() - 0.5) * s.shakeY;
-        ctx.save();
-        ctx.translate(shakeX, shakeY);
-
+        // ... Draw Loop (identical) ...
+        const shakeX = (Math.random() - 0.5) * s.shakeX; const shakeY = (Math.random() - 0.5) * s.shakeY;
+        ctx.save(); ctx.translate(shakeX, shakeY);
         ctx.fillStyle = '#000'; ctx.fillRect(-shakeX, -shakeY, width, height); 
         ctx.fillStyle = '#fff'; s.stars.forEach(st => { st.y += st.s * 0.5 * worldSpeedFactor; if(st.y > height) st.y = 0; ctx.globalAlpha = Math.random() * 0.5 + 0.3; ctx.beginPath(); ctx.arc(st.x, st.y, st.s, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1;
-
         const entities = [...s.asteroids.map(a => ({type: 'ast', z: a.z, obj: a})), ...s.enemies.map(e => ({type: 'enemy', z: e.z, obj: e})), ...s.loot.map(l => ({type: 'loot', z: l.z, obj: l})), {type: 'player', z: 0, obj: null}].sort((a,b) => a.z - b.z);
         const lightVec = { x: 0.8, y: -0.8, z: 0.8 }; const len = Math.hypot(lightVec.x, lightVec.y, lightVec.z); lightVec.x /= len; lightVec.y /= len; lightVec.z /= len;
-
+        
+        // ... (Render Entities logic - same as before) ...
         entities.forEach(item => {
             const scale = 1 + (item.z / 1000);
             if (item.type === 'ast') {
                 const a = item.obj as Asteroid;
-                ctx.save();
-                ctx.translate(a.x, a.y); ctx.scale(scale, scale); 
-                const cosX = Math.cos(a.ax), sinX = Math.sin(a.ax);
-                const cosY = Math.cos(a.ay), sinY = Math.sin(a.ay);
-                ctx.rotate(a.az); 
-                a.faces.forEach(f => { 
-                    let nx = f.normal.x; let ny = f.normal.y; let nz = f.normal.z; 
-                    let ty = ny*cosX - nz*sinX; let tz = ny*sinX + nz*cosX; ny = ty; nz = tz; 
-                    let tx = nx*cosY + nz*sinY; tz = -nx*sinY + nz*cosY; nx = tx; nz = tz; 
-                    const cosZ = Math.cos(a.az), sinZ = Math.sin(a.az); 
-                    tx = nx*cosZ - ny*sinZ; ty = nx*sinZ + ny*cosZ; nx = tx; ny = ty; 
-                    if (nz <= 0) return; 
-                    const dot = Math.max(0, nx*lightVec.x + ny*lightVec.y + nz*lightVec.z); 
-                    const lightIntensity = 0.2 + (0.8 * dot); 
-                    ctx.fillStyle = mixColor('#000000', a.color, lightIntensity); 
-                    ctx.strokeStyle = mixColor('#000000', a.color, lightIntensity * 1.2); 
-                    ctx.lineWidth = 1; 
-                    ctx.beginPath(); 
-                    f.indices.forEach((idx, i) => { const v = a.vertices[idx]; let vx = v.x; let vy = v.y; let vz = v.z; let rvy = vy*cosX - vz*sinX; let rvz = vy*sinX + vz*cosX; vy = rvy; vz = rvz; let rvx = vx*cosY + vz*sinY; rvz = -vx*sinY + vz*cosY; vx = rvx; vz = rvz; if (i===0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy); }); 
-                    ctx.closePath(); ctx.fill(); ctx.stroke(); 
-                });
-                ctx.restore();
+                ctx.save(); ctx.translate(a.x, a.y); ctx.scale(scale, scale); 
+                const cosX = Math.cos(a.ax), sinX = Math.sin(a.ax); const cosY = Math.cos(a.ay), sinY = Math.sin(a.ay); ctx.rotate(a.az); 
+                a.faces.forEach(f => { let nx = f.normal.x; let ny = f.normal.y; let nz = f.normal.z; let ty = ny*cosX - nz*sinX; let tz = ny*sinX + nz*cosX; ny = ty; nz = tz; let tx = nx*cosY + nz*sinY; tz = -nx*sinY + nz*cosY; nx = tx; nz = tz; const cosZ = Math.cos(a.az), sinZ = Math.sin(a.az); tx = nx*cosZ - ny*sinZ; ty = nx*sinZ + ny*cosZ; nx = tx; ny = ty; if (nz <= 0) return; const dot = Math.max(0, nx*lightVec.x + ny*lightVec.y + nz*lightVec.z); const lightIntensity = 0.2 + (0.8 * dot); ctx.fillStyle = mixColor('#000000', a.color, lightIntensity); ctx.strokeStyle = mixColor('#000000', a.color, lightIntensity * 1.2); ctx.lineWidth = 1; ctx.beginPath(); f.indices.forEach((idx, i) => { const v = a.vertices[idx]; let vx = v.x; let vy = v.y; let vz = v.z; let rvy = vy*cosX - vz*sinX; let rvz = vy*sinX + vz*cosX; vy = rvy; vz = rvz; let rvx = vx*cosY + vz*sinY; rvz = -vx*sinY + vz*cosY; vx = rvx; vz = rvz; if (i===0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy); }); ctx.closePath(); ctx.fill(); ctx.stroke(); }); ctx.restore();
             } else if (item.type === 'player') {
-                ctx.translate(s.px, s.py);
-                drawShip(ctx, { config: activeShip.config, fitting: activeShip.fitting, color: activeShip.color, wingColor: activeShip.wingColor, cockpitColor: activeShip.cockpitColor, gunColor: activeShip.gunColor, secondaryGunColor: activeShip.secondaryGunColor, gunBodyColor: activeShip.gunBodyColor, engineColor: activeShip.engineColor, nozzleColor: activeShip.nozzleColor, equippedWeapons: activeShip.fitting.weapons }, true, s.movement, s.usingWater, s.rescueMode);
-                if ((s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) {
-                    if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
-                    if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }
-                }
+                ctx.translate(s.px, s.py); drawShip(ctx, { config: activeShip.config, fitting: activeShip.fitting, color: activeShip.color, wingColor: activeShip.wingColor, cockpitColor: activeShip.cockpitColor, gunColor: activeShip.gunColor, secondaryGunColor: activeShip.secondaryGunColor, gunBodyColor: activeShip.gunBodyColor, engineColor: activeShip.engineColor, nozzleColor: activeShip.nozzleColor, equippedWeapons: activeShip.fitting.weapons }, true, s.movement, s.usingWater, s.rescueMode);
+                if ((s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) { if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } }
             } else if (item.type === 'enemy') {
-                const e = item.obj as Enemy;
-                // Vibration Logic REMOVED for Hull - Only Shield Wobbles
-                ctx.translate(e.x, e.y); ctx.scale(scale, scale); ctx.rotate(Math.PI);
-                const alienCols = getAlienColors(quadrant);
-                drawShip(ctx, { config: e.config, fitting: null, color: e.type==='boss'?'#a855f7':alienCols.hull, wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, gunColor: '#ef4444', equippedWeapons: e.equippedWeapons }, false);
-                
-                // --- RENDER ENEMY SHIELDS WITH WOBBLE ---
-                if (e.shieldLayers.length > 0) { 
-                    e.shieldLayers.forEach((layer, idx) => { 
-                        if (layer.current <= 0) return; 
-                        const radius = 48 + (idx * 8); 
-                        const opacity = Math.min(1, layer.current / layer.max); 
-                        ctx.strokeStyle = layer.color; 
-                        ctx.lineWidth = 3; 
-                        ctx.shadowColor = layer.color; 
-                        ctx.shadowBlur = 10; 
-                        ctx.globalAlpha = opacity; 
-                        
-                        if (layer.wobble > 0.01) {
-                            // Wobble Effect: Draw distorted circle
-                            ctx.beginPath();
-                            const steps = 40;
-                            const wobbleFreq = 8; // Ripples around circle
-                            const wobbleAmp = 5 * layer.wobble;
-                            const timeOffset = s.frame * 0.5;
-                            
-                            for(let i=0; i<=steps; i++) {
-                                const angle = (i / steps) * Math.PI * 2;
-                                // Distort radius
-                                const rOff = Math.sin(angle * wobbleFreq + timeOffset) * wobbleAmp;
-                                const r = radius + rOff;
-                                const x = Math.cos(angle) * r;
-                                const y = Math.sin(angle) * r;
-                                if (i === 0) ctx.moveTo(x, y);
-                                else ctx.lineTo(x, y);
-                            }
-                            ctx.closePath();
-                            ctx.stroke();
-                        } else {
-                            // Standard Shield
-                            ctx.beginPath(); 
-                            ctx.arc(0, 0, radius, 0, Math.PI * 2); 
-                            ctx.stroke(); 
-                        }
-                        
-                        ctx.shadowBlur = 0; 
-                        ctx.globalAlpha = 1; 
-                    }); 
-                }
+                const e = item.obj as Enemy; ctx.translate(e.x, e.y); ctx.scale(scale, scale); ctx.rotate(Math.PI); const alienCols = getAlienColors(quadrant); drawShip(ctx, { config: e.config, fitting: null, color: e.type==='boss'?'#a855f7':alienCols.hull, wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, gunColor: '#ef4444', equippedWeapons: e.equippedWeapons }, false);
+                if (e.shieldLayers.length > 0) { e.shieldLayers.forEach((layer, idx) => { if (layer.current <= 0) return; const radius = 48 + (idx * 8); const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; if (layer.wobble > 0.01) { ctx.beginPath(); const steps = 40; const wobbleFreq = 8; const wobbleAmp = 5 * layer.wobble; const timeOffset = s.frame * 0.5; for(let i=0; i<=steps; i++) { const angle = (i / steps) * Math.PI * 2; const rOff = Math.sin(angle * wobbleFreq + timeOffset) * wobbleAmp; const r = radius + rOff; const x = Math.cos(angle) * r; const y = Math.sin(angle) * r; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke(); } ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); }
             } else if (item.type === 'loot') {
-                const l = item.obj as Loot;
-                ctx.translate(l.x, l.y); ctx.scale(scale, scale);
-
-                if (l.isBeingPulled) {
-                    ctx.strokeStyle = 'rgba(192, 210, 255, 0.8)';
-                    ctx.lineWidth = 2;
-                    ctx.shadowColor = '#fff';
-                    ctx.shadowBlur = 5;
-                    ctx.beginPath();
-                    ctx.arc(0, 0, 22, 0, Math.PI * 2);
-                    ctx.stroke();
-                    ctx.shadowBlur = 0;
-
-                    ctx.save();
-                    const dx = s.px - l.x;
-                    const dy = s.py - l.y;
-                    const dist = Math.hypot(dx, dy);
-                    const angle = Math.atan2(dy, dx);
-                    
-                    ctx.rotate(angle); 
-                    
-                    const spacing = 15;
-                    const count = Math.ceil(dist / spacing);
-                    const speed = 4;
-                    const offset = (s.frame * speed) % spacing;
-
-                    ctx.lineWidth = 2;
-                    
-                    for (let i = 0; i <= count; i++) {
-                        const d = i * spacing + offset;
-                        if (d > 0 && d < dist) {
-                            const alpha = Math.min(1, Math.sin((d/dist)*Math.PI)) * 0.6;
-                            ctx.strokeStyle = `rgba(135, 206, 250, ${alpha})`;
-                            ctx.beginPath();
-                            ctx.moveTo(d, -7);
-                            ctx.quadraticCurveTo(d - 5, 0, d, 7);
-                            ctx.stroke();
-                        }
-                    }
-                    ctx.restore();
-                }
-
-                ctx.fillStyle = '#fbbf24'; ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10;
-                ctx.beginPath(); ctx.rect(-8, -8, 16, 16); ctx.fill(); ctx.shadowBlur = 0;
-                
-                if (l.type === 'water') { 
-                    ctx.fillStyle = '#3b82f6'; ctx.fillRect(-8,-8,16,16); 
-                } else if (l.type === 'energy') { 
-                    ctx.fillStyle = '#22d3ee'; ctx.fillRect(-8,-8,16,16); 
-                }
-
-                ctx.font = "900 10px monospace";
-                ctx.textAlign = "center";
-                ctx.textBaseline = "middle";
-                ctx.fillStyle = (l.type === 'water' || l.type === 'energy') ? '#000' : '#000';
-                if (l.type === 'water') ctx.fillStyle = '#fff';
-
-                let letter = "?";
-                if (l.type === 'fuel') letter = "F";
-                else if (l.type === 'water') letter = "W";
-                else if (l.type === 'energy') letter = "E";
-                else if (l.type === 'repair' || l.type === 'nanite') letter = "+";
-                else if (l.type === 'missile') letter = "M";
-                else if (l.type === 'mine') letter = "X";
-                else if (l.type === 'ammo') letter = "A";
-                else if (l.type === 'weapon') letter = "G";
-                else if (l.type === 'shield') letter = "S";
-                
-                ctx.fillText(letter, 0, 1);
+                // ... Loot render (omitted) ...
+                const l = item.obj as Loot; ctx.translate(l.x, l.y); ctx.scale(scale, scale); if (l.isBeingPulled) { ctx.strokeStyle = 'rgba(192, 210, 255, 0.8)'; ctx.lineWidth = 2; ctx.shadowColor = '#fff'; ctx.shadowBlur = 5; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0; ctx.save(); const dx = s.px - l.x; const dy = s.py - l.y; const dist = Math.hypot(dx, dy); const angle = Math.atan2(dy, dx); ctx.rotate(angle); const spacing = 15; const count = Math.ceil(dist / spacing); const speed = 4; const offset = (s.frame * speed) % spacing; ctx.lineWidth = 2; for (let i = 0; i <= count; i++) { const d = i * spacing + offset; if (d > 0 && d < dist) { const alpha = Math.min(1, Math.sin((d/dist)*Math.PI)) * 0.6; ctx.strokeStyle = `rgba(135, 206, 250, ${alpha})`; ctx.beginPath(); ctx.moveTo(d, -7); ctx.quadraticCurveTo(d - 5, 0, d, 7); ctx.stroke(); } } ctx.restore(); } ctx.fillStyle = '#fbbf24'; ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.rect(-8, -8, 16, 16); ctx.fill(); ctx.shadowBlur = 0; if (l.type === 'water') { ctx.fillStyle = '#3b82f6'; ctx.fillRect(-8,-8,16,16); } else if (l.type === 'energy') { ctx.fillStyle = '#22d3ee'; ctx.fillRect(-8,-8,16,16); } ctx.font = "900 10px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = (l.type === 'water' || l.type === 'energy') ? '#000' : '#000'; if (l.type === 'water') ctx.fillStyle = '#fff'; let letter = "?"; if (l.type === 'fuel') letter = "F"; else if (l.type === 'water') letter = "W"; else if (l.type === 'energy') letter = "E"; else if (l.type === 'repair' || l.type === 'nanite') letter = "+"; else if (l.type === 'missile') letter = "M"; else if (l.type === 'mine') letter = "X"; else if (l.type === 'ammo') letter = "A"; else if (l.type === 'weapon') letter = "G"; else if (l.type === 'shield') letter = "S"; ctx.fillText(letter, 0, 1);
             }
             ctx.setTransform(1, 0, 0, 1, shakeX, shakeY); 
         });
 
-        // ... [Remaining render logic unchanged] ...
+        // ... Bullets and Particles Render ...
         s.bullets.forEach(b => { 
-            const scale = 1 + (b.z || 0) / 1000;
-            ctx.save(); ctx.translate(b.x, b.y); ctx.scale(scale, scale);
-            
-            if (b.type === 'missile' || b.type === 'missile_emp') {
-                ctx.scale(1.2, 1.2);
-                const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;
-                ctx.rotate(angle); 
-                
-                ctx.fillStyle = b.finsColor || '#ef4444';
-                ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill();
-                ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill();
-                
-                ctx.fillStyle = '#94a3b8';
-                ctx.fillRect(-3, -6, 6, 14);
-                
-                ctx.fillStyle = b.headColor || '#ef4444';
-                ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill();
-                
-                ctx.fillStyle = '#facc15';
-                ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill();
-
-            } else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red') {
-                const radius = b.width / 2;
+            const scale = 1 + (b.z || 0) / 1000; ctx.save(); ctx.translate(b.x, b.y); ctx.scale(scale, scale);
+            if (b.type === 'missile' || b.type === 'missile_emp') { ctx.scale(1.2, 1.2); const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); ctx.fillStyle = b.finsColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill(); ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.fillRect(-3, -6, 6, 14); ctx.fillStyle = b.headColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill(); } 
+            else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red') { const radius = b.width / 2; ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5; ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = b.color; ctx.lineWidth = 2; const spikeCount = 8; const spikeLen = radius + 4; for (let i = 0; i < spikeCount; i++) { const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius; const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); } }
+            else if (b.type === 'octo_shell') { 
+                ctx.save(); 
                 ctx.fillStyle = b.color;
-                ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5;
-                ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill();
-                ctx.globalAlpha = 1;
-                ctx.strokeStyle = b.color; ctx.lineWidth = 2;
-                const spikeCount = 8;
-                const spikeLen = radius + 4;
-                for (let i = 0; i < spikeCount; i++) {
-                    const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); 
-                    const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius;
-                    const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen;
-                    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+                ctx.shadowColor = b.color;
+                ctx.shadowBlur = b.glowIntensity || 20; // High glow
+                ctx.beginPath();
+                ctx.arc(0, 0, b.width/2, 0, Math.PI*2);
+                ctx.fill();
+                // Inner white core
+                ctx.fillStyle = '#fff';
+                ctx.shadowBlur = 0;
+                ctx.beginPath();
+                ctx.arc(0, 0, b.width/4, 0, Math.PI*2);
+                ctx.fill();
+                
+                // Hot comet glow
+                if (!b.isOvercharge) {
+                   ctx.fillStyle = 'rgba(255,255,255,0.4)';
+                   ctx.beginPath();
+                   ctx.arc(0, 0, b.width*0.8, 0, Math.PI*2);
+                   ctx.fill();
                 }
 
-            } else if (b.weaponId === 'exotic_octo_burst') {
-                ctx.save();
-                const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;
-                ctx.rotate(angle);
+                ctx.restore();
+            } 
+            else if (b.weaponId === 'exotic_octo_burst') { 
+                // Legacy check fallback if weaponId present but type is standard projectile
+                ctx.save(); 
+                ctx.translate(b.x, b.y);
                 ctx.fillStyle = b.color;
-                ctx.shadowColor = b.color; 
-                ctx.shadowBlur = b.glowIntensity || 10;
+                ctx.shadowColor = b.color;
+                ctx.shadowBlur = b.glowIntensity || 20; // High glow
                 ctx.beginPath();
-                ctx.moveTo(0, -b.height/2); 
-                ctx.quadraticCurveTo(b.width/2, 0, 0, b.height/2); 
-                ctx.quadraticCurveTo(-b.width/2, 0, 0, -b.height/2); 
+                ctx.arc(0, 0, b.width/2, 0, Math.PI*2);
                 ctx.fill();
-                ctx.fillStyle = '#ffffff';
-                ctx.globalAlpha = 0.8;
+                ctx.fillStyle = '#fff';
+                ctx.shadowBlur = 0;
                 ctx.beginPath();
-                ctx.moveTo(0, -b.height/3);
-                ctx.quadraticCurveTo(b.width/4, 0, 0, b.height/3);
-                ctx.quadraticCurveTo(-b.width/4, 0, 0, -b.height/3);
+                ctx.arc(0, 0, b.width/4, 0, Math.PI*2);
                 ctx.fill();
                 ctx.restore();
-
-            } else if (b.weaponId === 'exotic_gravity_wave') {
-                ctx.strokeStyle = b.color;
-                ctx.shadowColor = b.color; ctx.shadowBlur = 15;
-                ctx.lineCap = 'round';
-                const count = 5; const spacing = 6; 
-                for(let i=0; i<count; i++) {
-                    const arcW = b.width * (1 - i * 0.15); 
-                    const yOff = i * spacing;
-                    ctx.globalAlpha = Math.max(0, 0.8 - (i * 0.15));
-                    ctx.lineWidth = 3;
-                    ctx.beginPath(); ctx.arc(0, yOff, arcW/2, Math.PI * 1.2, Math.PI * 1.8); ctx.stroke();
-                }
-                ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-
-            } else if (b.weaponId === 'exotic_star_shatter') {
+            } 
+            else if (b.weaponId === 'exotic_gravity_wave') { ctx.strokeStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = 15; ctx.lineCap = 'round'; const count = 5; const spacing = 6; for(let i=0; i<count; i++) { const arcW = b.width * (1 - i * 0.15); const yOff = i * spacing; ctx.globalAlpha = Math.max(0, 0.8 - (i * 0.15)); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, yOff, arcW/2, Math.PI * (7/6), Math.PI * (11/6)); ctx.stroke(); } ctx.globalAlpha = 1; ctx.shadowBlur = 0; } 
+            else if (b.weaponId === 'exotic_star_shatter') { 
                 ctx.fillStyle = b.isOvercharge ? '#ffffff' : '#fbbf24'; 
-                ctx.shadowColor = b.isOvercharge ? '#facc15' : '#f97316';
-                ctx.shadowBlur = b.isOvercharge ? 20 : 10;
-                const rot = s.frame * 0.15 + (b.x * 0.01);
-                ctx.rotate(rot);
-                ctx.beginPath();
-                const spikes = 5; 
+                ctx.shadowColor = b.isOvercharge ? '#facc15' : '#f97316'; 
+                
+                // DYNAMIC SHADOW BLUR SCALING WITH SIZE
+                // Original was 30. Now max width is ~144. Scale blur relative to width.
+                const blurScale = b.width / 4; 
+                ctx.shadowBlur = b.isOvercharge ? Math.min(100, 20 + blurScale) : 10; 
+                
+                const rot = s.frame * 0.15 + (b.x * 0.01); 
+                ctx.rotate(rot); 
+                ctx.beginPath(); 
+                
+                // Dynamic Rays: 6 to 64
+                const baseSpikes = 6;
+                const maxSpikes = 64;
+                const ratio = (b.width - (b.initialWidth || 4)) / ((b.initialWidth || 4) * 2); // approx 0 to 1
+                const spikes = Math.floor(Math.min(maxSpikes, Math.max(baseSpikes, baseSpikes + (ratio * (maxSpikes - baseSpikes)))));
+                
                 const outer = b.width; 
-                const inner = b.width * 0.4;
-                for(let i=0; i<spikes; i++) {
-                    let x = Math.cos((18+i*72)/180*Math.PI) * outer;
-                    let y = -Math.sin((18+i*72)/180*Math.PI) * outer;
-                    ctx.lineTo(x, y);
-                    x = Math.cos((54+i*72)/180*Math.PI) * inner;
-                    y = -Math.sin((54+i*72)/180*Math.PI) * inner;
-                    ctx.lineTo(x, y);
-                }
+                const inner = b.width * 0.4; 
+                
+                for(let i=0; i<spikes; i++) { 
+                    const angleStep = Math.PI / spikes;
+                    const angle = i * 2 * Math.PI / spikes;
+                    
+                    let x = Math.cos(angle) * outer; 
+                    let y = -Math.sin(angle) * outer; 
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); 
+                    
+                    x = Math.cos(angle + angleStep) * inner; 
+                    y = -Math.sin(angle + angleStep) * inner; 
+                    ctx.lineTo(x, y); 
+                } 
                 ctx.closePath(); 
                 ctx.fill(); 
+                ctx.shadowBlur = 0; 
+            } 
+            else if (b.weaponId === 'exotic_flamer') {
+                ctx.globalAlpha = b.opacity !== undefined ? b.opacity : 1.0;
+                
+                // Draw Multicolor Blob
+                ctx.fillStyle = b.color;
+                ctx.shadowColor = b.color;
+                ctx.shadowBlur = b.isOvercharge ? 30 : b.width; 
+                
+                ctx.beginPath();
+                ctx.arc(0, 0, b.width/2, 0, Math.PI*2);
+                ctx.fill();
+                
+                // Inner White Core (Simulate intense heat)
+                ctx.fillStyle = '#ffffff';
+                ctx.globalAlpha = (b.opacity !== undefined ? b.opacity : 1.0) * 0.6;
+                ctx.beginPath();
+                ctx.arc(0, 0, b.width/4, 0, Math.PI*2);
+                ctx.fill();
+                
+                ctx.globalAlpha = 1.0;
                 ctx.shadowBlur = 0;
-
-            } else if (b.weaponId === 'exotic_flamer') {
+            }
+            else if (b.weaponId === 'exotic_rainbow_spread') { 
+                const radius = b.width / 2; 
+                const thickness = b.height; 
+                const maxRad = b.isOvercharge ? 300 : 100; // Increased scale for power
+                const opacity = Math.max(0.1, 1.0 - (radius / maxRad)); 
+                ctx.globalAlpha = opacity; 
+                
                 if (b.isOvercharge) {
-                    const opacity = Math.max(0.1, 1 - (b.width / 80));
-                    ctx.globalAlpha = opacity;
-                    const grad = ctx.createRadialGradient(0, 0, b.width * 0.2, 0, 0, b.width/2);
-                    grad.addColorStop(0, '#fff');
-                    grad.addColorStop(0.4, b.color); // Dynamic color
-                    grad.addColorStop(1, 'rgba(249, 115, 22, 0)');
-                    ctx.fillStyle = grad;
-                    ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill();
-                    ctx.strokeStyle = '#ef4444';
+                    ctx.shadowColor = '#ffffff';
+                    ctx.shadowBlur = 30; // Glow for power shot
+                    // POWER: Rainbow Circles (Concentric)
+                    const colors = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7'];
+                    colors.forEach((c, i) => {
+                        const r = radius - (i * 3); 
+                        if (r > 0) {
+                            ctx.beginPath();
+                            ctx.arc(0, 0, r, 0, Math.PI * 2);
+                            ctx.strokeStyle = c;
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                        }
+                    });
+                    ctx.shadowBlur = 0;
+                } else {
+                    // NORMAL: Soot Arcs (Dark Grey)
+                    const rot = Math.atan2(b.vy, b.vx);
+                    ctx.rotate(rot);
+                    ctx.strokeStyle = '#52525b'; 
                     ctx.lineWidth = 2;
                     ctx.beginPath();
-                    const spikes = 12;
-                    for(let i=0; i<=spikes; i++) {
-                        const angle = (i / spikes) * Math.PI * 2 + (s.frame * 0.2);
-                        const r = (b.width/2) + Math.sin(s.frame * 0.8 + i*13) * 6;
-                        const fx = Math.cos(angle) * r;
-                        const fy = Math.sin(angle) * r;
-                        if (i===0) ctx.moveTo(fx, fy); else ctx.lineTo(fx, fy);
-                    }
-                    ctx.closePath();
+                    ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2);
                     ctx.stroke();
-                    ctx.globalAlpha = 1;
-                } else {
-                    ctx.fillStyle = b.color;
-                    ctx.shadowColor = b.color;
-                    ctx.shadowBlur = 8;
-                    ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill();
-                    ctx.fillStyle = '#fff';
-                    ctx.globalAlpha = 0.6;
-                    ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill();
-                    ctx.globalAlpha = 1;
-                    ctx.shadowBlur = 0;
-                }
-
-            } else if (b.weaponId === 'exotic_rainbow_spread') {
-                const radius = b.width / 2;
-                const thickness = b.height;
-                // Power = Semicircle Arc (180deg). Normal = Full Circle (360deg).
-                const arcAngle = b.isOvercharge ? Math.PI : (Math.PI * 2);
-                const maxRad = b.isOvercharge ? 200 : 100;
-                const opacity = Math.max(0.1, 1.0 - (radius / maxRad));
-                ctx.globalAlpha = opacity;
-                ctx.save();
-                const rot = Math.atan2(b.vy, b.vx); 
-                ctx.rotate(rot); 
-                const colors = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7'];
-                const segThickness = thickness / colors.length;
-                colors.forEach((c, i) => {
+                    ctx.strokeStyle = '#27272a';
                     ctx.beginPath();
-                    const r = radius - (i * segThickness);
-                    if (r > 0) {
-                        ctx.arc(0, 0, r, -arcAngle/2, arcAngle/2);
-                        ctx.strokeStyle = c;
-                        ctx.lineWidth = segThickness + 0.5; 
-                        ctx.stroke();
-                    }
-                });
-                ctx.restore();
-                ctx.globalAlpha = 1;
-
-            } else if (b.weaponId === 'exotic_electric') {
-                ctx.strokeStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = 10; ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.moveTo(0, -b.height/2);
-                let ly = -b.height/2; while(ly < b.height/2) { ly += 5; ctx.lineTo((Math.random()-0.5)*b.width, ly); } // Width drives bolt jitter
-                ctx.stroke(); ctx.shadowBlur = 0;
-
-            } else if (b.weaponId === 'exotic_wave') {
-                ctx.strokeStyle = b.color; ctx.lineWidth = 3; ctx.shadowColor = b.color; ctx.shadowBlur = 5;
-                ctx.beginPath(); ctx.arc(0, 0, b.width, 0, Math.PI*2); ctx.stroke();
-                ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(0, 0, b.width * 0.6, 0, Math.PI*2); ctx.stroke();
-                ctx.globalAlpha = 1; ctx.shadowBlur = 0;
-
-            } else if (b.weaponId === 'exotic_plasma_orb') {
-                const grad = ctx.createRadialGradient(0,0, b.width*0.2, 0,0, b.width);
-                grad.addColorStop(0, '#fff'); grad.addColorStop(0.5, b.color); grad.addColorStop(1, 'transparent');
-                ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(0,0, b.width, 0, Math.PI*2); ctx.fill();
-                
-            } else if (b.type === 'laser') { 
-                if (Math.abs(b.vx) > 0.1) {
-                    const angle = Math.atan2(b.vy, b.vx) + Math.PI/2;
-                    ctx.rotate(angle);
+                    ctx.arc(0, 0, radius * 0.7, -Math.PI/2, Math.PI/2);
+                    ctx.stroke();
                 }
-                ctx.fillStyle = b.color;
-                if (b.isOvercharge) {
-                    ctx.lineCap = 'round'; ctx.lineWidth = b.width; ctx.strokeStyle = b.color;
-                    ctx.shadowBlur = b.glowIntensity || 10; ctx.shadowColor = b.color;
-                    ctx.beginPath(); ctx.moveTo(0, -b.height/2); ctx.lineTo(0, b.height/2); ctx.stroke();
-                    ctx.lineWidth = b.width/2; ctx.strokeStyle = '#fff'; ctx.shadowBlur = 0; ctx.stroke();
-                } else {
-                    ctx.fillRect(-b.width/2, -b.height/2, b.width, b.height); 
-                }
-            } else if (b.type === 'firework_shell') {
-                // Sparkler Trail
-                const trailLen = 20;
-                const trailGrad = ctx.createLinearGradient(0,0,0, trailLen);
-                trailGrad.addColorStop(0, '#ffffff'); trailGrad.addColorStop(1, 'rgba(255,255,255,0)');
-                ctx.fillStyle = trailGrad;
-                ctx.fillRect(-1, 0, 2, trailLen);
-                ctx.fillStyle = '#fff';
-                ctx.beginPath(); ctx.arc(0,0, 2, 0, Math.PI*2); ctx.fill();
-            } else { 
-                const angle = Math.atan2(b.vy, b.vx) - Math.PI/2;
-                ctx.rotate(angle);
-                const trailLen = 30 + Math.random() * 10;
-                const trailWidth = b.width; 
-                const trailGrad = ctx.createLinearGradient(0, 0, 0, -trailLen);
-                trailGrad.addColorStop(0, 'rgba(200, 200, 200, 0.8)');
-                trailGrad.addColorStop(0.5, 'rgba(150, 150, 150, 0.4)');
-                trailGrad.addColorStop(1, 'rgba(100, 100, 100, 0)');
-                ctx.fillStyle = trailGrad;
-                ctx.beginPath();
-                ctx.moveTo(-trailWidth/2, 0);
-                ctx.lineTo(trailWidth/2, 0);
-                ctx.lineTo(0, -trailLen); 
-                ctx.fill();
-                const headGrad = ctx.createRadialGradient(0, 0, 1, 0, 0, b.width/2);
-                headGrad.addColorStop(0, '#e2e8f0');
-                headGrad.addColorStop(1, '#78350f'); 
-                ctx.fillStyle = headGrad;
-                ctx.beginPath(); 
-                ctx.arc(0, 0, b.width/2, 0, Math.PI*2); 
-                ctx.fill();
-                ctx.fillStyle = '#ffffff';
-                ctx.beginPath();
-                ctx.arc(-b.width/4, -b.width/4, b.width/6, 0, Math.PI*2);
-                ctx.fill();
-            }
-            ctx.restore();
+                ctx.globalAlpha = 1; 
+            } 
+            else if (b.weaponId === 'exotic_electric') { ctx.strokeStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = b.isOvercharge ? 30 : 10; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -b.height/2); let ly = -b.height/2; while(ly < b.height/2) { ly += 5; ctx.lineTo((Math.random()-0.5)*b.width, ly); } ctx.stroke(); ctx.shadowBlur = 0; } 
+            else if (b.weaponId === 'exotic_wave') { ctx.strokeStyle = b.color; ctx.lineWidth = 3; ctx.shadowColor = b.color; ctx.shadowBlur = b.isOvercharge ? 30 : 5; ctx.beginPath(); ctx.arc(0, 0, b.width, 0, Math.PI*2); ctx.stroke(); ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(0, 0, b.width * 0.6, 0, Math.PI*2); ctx.stroke(); ctx.globalAlpha = 1; ctx.shadowBlur = 0; } 
+            else if (b.weaponId === 'exotic_plasma_orb') { const grad = ctx.createRadialGradient(0,0, b.width*0.2, 0,0, b.width); grad.addColorStop(0, '#fff'); grad.addColorStop(0.5, b.color); grad.addColorStop(1, 'transparent'); ctx.fillStyle = grad; ctx.shadowColor = b.color; ctx.shadowBlur = b.isOvercharge ? 30 : 0; ctx.beginPath(); ctx.arc(0,0, b.width, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; } 
+            else if (b.type === 'laser') { if (Math.abs(b.vx) > 0.1) { const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); } ctx.fillStyle = b.color; if (b.isOvercharge) { ctx.lineCap = 'round'; ctx.lineWidth = b.width; ctx.strokeStyle = b.color; ctx.shadowBlur = b.glowIntensity || 10; ctx.shadowColor = b.color; ctx.beginPath(); ctx.moveTo(0, -b.height/2); ctx.lineTo(0, b.height/2); ctx.stroke(); ctx.lineWidth = b.width/2; ctx.strokeStyle = '#fff'; ctx.shadowBlur = 0; ctx.stroke(); } else { ctx.fillRect(-b.width/2, -b.height/2, b.width, b.height); } } 
+            else if (b.type === 'firework_shell') { const trailLen = 20; const trailGrad = ctx.createLinearGradient(0,0,0, trailLen); trailGrad.addColorStop(0, '#ffffff'); trailGrad.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = trailGrad; ctx.fillRect(-1, 0, 2, trailLen); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0, 2, 0, Math.PI*2); ctx.fill(); } 
+            else { const angle = Math.atan2(b.vy, b.vx) - Math.PI/2; ctx.rotate(angle); const trailLen = 30 + Math.random() * 10; const trailWidth = b.width; const trailGrad = ctx.createLinearGradient(0, 0, 0, -trailLen); trailGrad.addColorStop(0, 'rgba(200, 200, 200, 0.8)'); trailGrad.addColorStop(0.5, 'rgba(150, 150, 150, 0.4)'); trailGrad.addColorStop(1, 'rgba(100, 100, 100, 0)'); ctx.fillStyle = trailGrad; ctx.beginPath(); ctx.moveTo(-trailWidth/2, 0); ctx.lineTo(trailWidth/2, 0); ctx.lineTo(0, -trailLen); ctx.fill(); const headGrad = ctx.createRadialGradient(0, 0, 1, 0, 0, b.width/2); headGrad.addColorStop(0, '#e2e8f0'); headGrad.addColorStop(1, '#78350f'); ctx.fillStyle = headGrad; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-b.width/4, -b.width/4, b.width/6, 0, Math.PI*2); ctx.fill(); } ctx.restore(); 
         });
         
-        s.particles.forEach(p => {
-            ctx.save();
-            ctx.globalAlpha = p.life;
-            ctx.fillStyle = p.color;
-            ctx.translate(p.x, p.y);
-            ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill();
-            ctx.restore();
-        });
-
-        if (targetRef.current) {
-            ctx.save();
-            ctx.strokeStyle = '#10b981';
-            ctx.lineWidth = 2;
-            const tSize = 15;
-            const tx = targetRef.current.x;
-            const ty = targetRef.current.y;
-            const rot = s.frame * 0.1;
-            ctx.translate(tx, ty);
-            ctx.rotate(rot);
-            ctx.beginPath();
-            ctx.moveTo(-tSize, -tSize/2); ctx.lineTo(-tSize, -tSize); ctx.lineTo(-tSize/2, -tSize);
-            ctx.moveTo(tSize, -tSize/2); ctx.lineTo(tSize, -tSize); ctx.lineTo(tSize/2, -tSize);
-            ctx.moveTo(-tSize, tSize/2); ctx.lineTo(-tSize, tSize); ctx.lineTo(-tSize/2, tSize);
-            ctx.moveTo(tSize, tSize/2); ctx.lineTo(tSize, tSize); ctx.lineTo(tSize/2, tSize);
-            ctx.stroke();
-            ctx.fillStyle = `rgba(16, 185, 129, ${0.5 + Math.sin(s.frame * 0.2) * 0.3})`;
-            ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill();
-            ctx.restore();
-        }
-
-        ctx.restore(); // Restore from shake translation
+        s.particles.forEach(p => { ctx.save(); ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.translate(p.x, p.y); ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill(); ctx.restore(); });
+        if (targetRef.current) { ctx.save(); ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2; const tSize = 15; const tx = targetRef.current.x; const ty = targetRef.current.y; const rot = s.frame * 0.1; ctx.translate(tx, ty); ctx.rotate(rot); ctx.beginPath(); ctx.moveTo(-tSize, -tSize/2); ctx.lineTo(-tSize, -tSize); ctx.lineTo(-tSize/2, -tSize); ctx.moveTo(tSize, -tSize/2); ctx.lineTo(tSize, -tSize); ctx.lineTo(tSize/2, -tSize); ctx.moveTo(-tSize, tSize/2); ctx.lineTo(-tSize, tSize); ctx.lineTo(-tSize/2, tSize); ctx.moveTo(tSize, tSize/2); ctx.lineTo(tSize, tSize); ctx.lineTo(tSize/2, tSize); ctx.stroke(); ctx.fillStyle = `rgba(16, 185, 129, ${0.5 + Math.sin(s.frame * 0.2) * 0.3})`; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
+        ctx.restore();
 
         if (s.frame % 10 === 0) { 
-            let totalMagAmmo = 0;
-            let reloading = false;
-            Object.values(s.gunStates).forEach((g: any) => {
-                totalMagAmmo += g.mag;
-                if (g.reloadTimer > 0) reloading = true;
-            });
-
-            setHud(prev => ({ 
-                ...prev, 
-                hp: s.hp, sh1: s.sh1, fuel: s.fuel, water: s.water, energy: s.energy, 
-                score: s.score, missiles: s.missiles, mines: s.mines, redMines: s.redMines, 
-                timer: s.time, boss: s.enemies.find(e => e.type === 'boss'), 
-                ammoCount: totalMagAmmo, 
-                isReloading: reloading,
-                overload: s.capacitor, overdrive: s.overdrive, rescueMode: s.rescueMode,
-                capacitorLocked: s.capacitorLocked
-            })); 
+            let totalMagAmmo = 0; let reloading = false; Object.values(s.gunStates).forEach((g: any) => { totalMagAmmo += g.mag; if (g.reloadTimer > 0) reloading = true; });
+            setHud(prev => ({ ...prev, hp: s.hp, sh1: s.sh1, fuel: s.fuel, water: s.water, energy: s.energy, score: s.score, missiles: s.missiles, mines: s.mines, redMines: s.redMines, timer: s.time, boss: s.enemies.find(e => e.type === 'boss'), ammoCount: totalMagAmmo, isReloading: reloading, overload: s.capacitor, overdrive: s.overdrive, rescueMode: s.rescueMode, capacitorLocked: s.capacitorLocked })); 
         }
         raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+        cancelAnimationFrame(raf);
+        // FORCE STOP BATTLE SOUNDS ON UNMOUNT (ABORT/LEAVE)
+        audioService.stopBattleSounds();
+    };
   }, []);
 
   const takeDamage = (amt: number, type: string = 'generic') => {
       const s = state.current;
       if (s.rescueMode) return;
-      
-      s.shakeX = 15;
-      s.shakeY = 15;
-
-      let activeShieldColor = '';
-      if (s.sh1 > 0 && shield) activeShieldColor = shield.color;
-      else if (s.sh2 > 0 && secondShield) activeShieldColor = secondShield.color;
-
+      s.shakeX = 15; s.shakeY = 15;
+      let activeShieldColor = ''; if (s.sh1 > 0 && shield) activeShieldColor = shield.color; else if (s.sh2 > 0 && secondShield) activeShieldColor = secondShield.color;
       let finalDmg = 0;
-      
       if (s.sh1 > 0 || s.sh2 > 0) {
           finalDmg = calculateDamage(amt, type, 'shield', activeShieldColor);
-          if (s.sh1 > 0) {
-              s.sh1 = Math.max(0, s.sh1 - finalDmg);
-          } else {
-              s.sh2 = Math.max(0, s.sh2 - finalDmg);
-          }
+          if (s.sh1 > 0) { s.sh1 = Math.max(0, s.sh1 - finalDmg); } else { s.sh2 = Math.max(0, s.sh2 - finalDmg); }
       } else {
-          finalDmg = calculateDamage(amt, type, 'hull');
-          s.hp = Math.max(0, s.hp - finalDmg);
-          
+          finalDmg = calculateDamage(amt, type, 'hull'); s.hp = Math.max(0, s.hp - finalDmg);
           if (s.hp <= 0) {
-              const s = state.current;
-              s.hp = 0; s.rescueMode = true; 
-              s.asteroids = []; s.bullets = [];
-              
+              const s = state.current; s.hp = 0; s.rescueMode = true; s.asteroids = []; s.bullets = [];
+              audioService.updateReactorHum(false, 0); // Stop reactor
               createExplosion(s.px, s.py, '#ef4444', 50, 'boss'); 
-              audioService.playExplosion(0, 2.0, 'player');
+              audioService.playExplosion(0, 2.0, 'player'); // Specific Player Death Sound
               setHud(h => ({...h, alert: "CRITICAL FAILURE - CAPSULE EJECTED", alertType: 'alert'}));
           }
       }
   };
   
-  // ... (drawShip, drawRetro, render etc. remain unchanged)
+  // ... (drawShip and render logic identical to previous, keeping component intact) ...
   const drawShip = (ctx: CanvasRenderingContext2D, shipData: any, isPlayer = false, movement?: { up: boolean, down: boolean, left: boolean, right: boolean }, usingWater = false, isRescue = false) => { 
-    // ... (All drawShip logic unchanged, keeping for completeness but trimmed for brevity)
-    // --- REST OF FILE IS IDENTICAL TO PREVIOUS VERSION ---
-    // Copying the full drawShip function to ensure the file is complete.
     const { config, color, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, fitting, equippedWeapons } = shipData; 
     const scale = isPlayer ? 0.6 : 0.5; 
     ctx.save(); 
@@ -2583,13 +2237,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     <div 
         className="relative w-full h-full bg-black overflow-hidden cursor-crosshair touch-none select-none"
         onPointerDown={handlePointerDown}
+        onClick={() => { if (state.current.paused) togglePause(false); }}
     >
         <canvas ref={canvasRef} className="block w-full h-full" />
         
         {/* HUD LAYOUT */}
         <div className="absolute inset-0 pointer-events-none p-2 sm:p-4 flex flex-col justify-between z-10">
+            {/* PAUSE OVERLAY */}
+            {hud.isPaused && (
+                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-none">
+                    <h2 className="text-4xl md:text-6xl font-black text-white uppercase tracking-widest drop-shadow-lg mb-4 animate-pulse">GAME PAUSED</h2>
+                    <p className="text-sm md:text-xl text-emerald-400 font-mono uppercase tracking-[0.2em] bg-black/80 px-4 py-2 rounded border border-emerald-500/50">Press P to Resume</p>
+                </div>
+            )}
+
             {/* TOP BAR */}
-            <div className="flex justify-between items-start pointer-events-auto relative">
+            <div className="flex justify-between items-start pointer-events-auto relative z-[60]">
                 <div className="flex flex-col gap-1 w-32 sm:w-48">
                     <div className="flex flex-col gap-1">
                         {/* HP BAR (HORIZONTAL) */}
@@ -2614,13 +2277,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-700 p-2 rounded-lg flex flex-col items-end gap-2 shadow-lg min-w-[100px]">
                     <div className="flex flex-col sm:flex-row gap-2 w-full">
                         <button onClick={(e) => {
+                            e.stopPropagation();
                             e.currentTarget.blur();
-                            state.current.paused = !state.current.paused;
-                            setHud(h => ({...h, isPaused: state.current.paused}));
+                            togglePause();
                         }} className="flex-1 py-2 sm:px-4 bg-zinc-800 border border-zinc-600 text-white text-[10px] font-bold hover:bg-zinc-700 hover:border-white transition-colors uppercase">
                             {hud.isPaused ? "RESUME" : "PAUSE"}
                         </button>
                         <button onClick={(e) => {
+                            e.stopPropagation();
                             e.currentTarget.blur();
                             const s = state.current;
                             onGameOver(false, hud.score, true, { health: s.hp, fuel: s.fuel, water: s.water });
@@ -2666,7 +2330,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             <div className="absolute bottom-2 sm:bottom-4 left-0 right-0 flex justify-center items-end pointer-events-auto">
                 <div className="flex justify-between items-end w-full px-2 sm:px-4 gap-2">
                     
-                    {/* LEFT CORNER: MAIN GUN */}
+                    {/* LEFT CORNER: MAIN GUN & AMMO */}
                     <div className="flex items-end gap-2 shrink-0">
                         {hasGuns && !hud.rescueMode && (
                             <HudButton 
@@ -2677,6 +2341,20 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                 colorClass={hud.capacitorLocked ? 'text-zinc-500' : (hud.overdrive ? 'text-red-500 animate-pulse' : 'text-emerald-400')}
                                 borderClass={hud.capacitorLocked ? 'border-zinc-700 bg-zinc-950' : (hud.overdrive ? 'border-red-500' : 'border-emerald-600')}
                                 active={inputRef.current.main}
+                            />
+                        )}
+                        
+                        {hasAmmoWeapons && !hud.rescueMode && (
+                             <HudButton 
+                                label="AMMO" 
+                                subLabel={hud.isReloading ? "RELOAD" : "AUTO"}
+                                onDown={() => { inputRef.current.secondary = true; }}
+                                onUp={() => { inputRef.current.secondary = false; }}
+                                colorClass={hud.isReloading ? 'text-amber-500 animate-pulse' : 'text-blue-400'}
+                                borderClass={hud.isReloading ? 'border-amber-600' : 'border-blue-600'}
+                                active={inputRef.current.secondary}
+                                count={hud.ammoCount}
+                                maxCount={maxAmmoInMags > 0 ? maxAmmoInMags : 1}
                             />
                         )}
                     </div>
@@ -2719,49 +2397,22 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                 />
                             )}
 
-                            {hasAmmoWeapons && (
-                                <HudButton 
-                                    label="AMMO" 
-                                    subLabel={`${hud.ammoCount}`}
-                                    onDown={() => { inputRef.current.secondary = true; }}
-                                    onUp={() => { inputRef.current.secondary = false; }}
-                                    colorClass={hud.isReloading ? 'text-amber-500 animate-pulse' : (hud.ammoCount < 50 ? 'text-red-500 animate-pulse' : 'text-white')}
-                                    borderClass={hud.isReloading ? 'border-amber-500' : (hud.ammoCount < 50 ? 'border-red-600' : 'border-zinc-700 hover:border-zinc-500')}
-                                    active={inputRef.current.secondary}
-                                    count={hud.ammoCount}
-                                    maxCount={1000} 
-                                />
-                            )}
-
                             {hud.redMines > 0 && (
                                 <HudButton 
                                     label="OMEGA" 
                                     subLabel={`x${hud.redMines}`}
                                     onClick={fireRedMine}
-                                    colorClass="text-red-300"
-                                    borderClass="border-red-500/50 hover:border-red-500"
+                                    colorClass="text-red-500 animate-pulse"
+                                    borderClass="border-red-900 hover:border-red-500"
                                     count={hud.redMines}
                                     maxCount={5}
                                 />
                             )}
                         </div>
                     )}
-
                 </div>
             </div>
         </div>
-
-        {hud.isPaused && (
-            <div 
-                onClick={() => { state.current.paused = false; setHud(h => ({...h, isPaused: false})); }}
-                className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-40 cursor-pointer"
-            >
-                <div className="text-center">
-                    <div className="text-4xl font-black text-white tracking-[0.5em] border-y-4 border-white py-4 px-12 animate-pulse">PAUSED</div>
-                    <div className="text-sm text-zinc-400 mt-4 uppercase tracking-widest">Tap to Resume</div>
-                </div>
-            </div>
-        )}
     </div>
   );
 };

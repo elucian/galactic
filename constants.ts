@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 28
-// VERSION: Beta 28 - Restored Baseline
+// CHECKPOINT: Beta 31
+// VERSION: Beta 31 - Restored Baseline
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -49,7 +49,7 @@ export interface ExtendedShipConfig extends ShipConfig {
   shape: 'arrow' | 'block' | 'wing' | 'stealth' | 'mine-layer' | 'saucer' | 'frigate' | 'star-t' | 'dragonfly';
   canLayMines: boolean;
   defaultColor?: string;
-  engines: number;
+  engines: number; 
   defaultGuns: number;
   noseType: 'rounded' | 'flat';
   wingConfig: 'front-heavy' | 'rear-heavy' | 'balanced';
@@ -263,33 +263,34 @@ export const WEAPONS: Weapon[] = [
 ];
 
 // 9 DISTINCT EXOTIC WEAPONS
+// UPDATED: Damages increased to compensate for slower speed (approx 25-30% boost)
 export const EXOTIC_WEAPONS: Weapon[] = [
-  // 1. Star Shatter: 12 stars, 90 deg arc, 4 shots/sec, +20% dmg/star
-  { id: 'exotic_star_shatter', name: 'Star Shatter', type: WeaponType.PROJECTILE, price: 450000, damage: 144, fireRate: 4, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 1 },
+  // 1. Star Shatter: 12 stars/sec normal, 6 shots/sec power
+  { id: 'exotic_star_shatter', name: 'Star Shatter', type: WeaponType.PROJECTILE, price: 450000, damage: 70, fireRate: 12, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 1 },
   
   // 2. Dragon Breath: Spreading fire flames on a 30 deg angle range half of screen
-  { id: 'exotic_flamer', name: 'Dragon Breath', type: WeaponType.PROJECTILE, price: 120000, damage: 35, fireRate: 15, energyCost: 2, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 3 },
+  { id: 'exotic_flamer', name: 'Dragon Breath', type: WeaponType.PROJECTILE, price: 120000, damage: 45, fireRate: 15, energyCost: 2, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 3 },
   
-  // 3. Rainbow Nova: 6 color balls of plasma, 100 deg angle, 3/2 screen height
-  { id: 'exotic_rainbow_spread', name: 'Rainbow Nova', type: WeaponType.PROJECTILE, price: 550000, damage: 200, fireRate: 5, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff', barrelCount: 6 },
+  // 3. Rainbow Nova: 8 shots/sec normal, 4 shots/sec power
+  { id: 'exotic_rainbow_spread', name: 'Rainbow Nova', type: WeaponType.PROJECTILE, price: 550000, damage: 60, fireRate: 8, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff', barrelCount: 6 },
   
   // 4. Zeus Thunderbolt: Electricity bolts (Renamed)
-  { id: 'exotic_electric', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 600000, damage: 600, fireRate: 4, energyCost: 6, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff', barrelCount: 3 },
+  { id: 'exotic_electric', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 600000, damage: 750, fireRate: 4, energyCost: 6, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff', barrelCount: 3 },
   
   // 5. Octo Burst: Plasma Jet Stream, random spread 12 deg, 8 shots/sec
-  { id: 'exotic_octo_burst', name: 'Octo Burst', type: WeaponType.PROJECTILE, price: 380000, damage: 180, fireRate: 8, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7', barrelCount: 1 },
+  { id: 'exotic_octo_burst', name: 'Octo Burst', type: WeaponType.PROJECTILE, price: 380000, damage: 220, fireRate: 8, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7', barrelCount: 1 },
   
   // 6. Sonic Ring: Shooting rings of plasma that grow
-  { id: 'exotic_wave', name: 'Sonic Ring', type: WeaponType.PROJECTILE, price: 320000, damage: 280, fireRate: 5, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#8b5cf6', barrelCount: 1 },
+  { id: 'exotic_wave', name: 'Sonic Ring', type: WeaponType.PROJECTILE, price: 320000, damage: 350, fireRate: 5, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#8b5cf6', barrelCount: 1 },
   
   // 7. Gravity Wave: Shooting arcs of circle similar to tractor beam
-  { id: 'exotic_gravity_wave', name: 'Gravity Wave', type: WeaponType.PROJECTILE, price: 400000, damage: 350, fireRate: 3, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#10b981', barrelCount: 1 },
+  { id: 'exotic_gravity_wave', name: 'Gravity Wave', type: WeaponType.PROJECTILE, price: 400000, damage: 450, fireRate: 3, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#10b981', barrelCount: 1 },
   
   // 8. Plasma Orb: Just shooting orbs of plasma
-  { id: 'exotic_plasma_orb', name: 'Plasma Orb', type: WeaponType.PROJECTILE, price: 275000, damage: 450, fireRate: 4, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#f472b6', barrelCount: 1 },
+  { id: 'exotic_plasma_orb', name: 'Plasma Orb', type: WeaponType.PROJECTILE, price: 275000, damage: 600, fireRate: 4, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#f472b6', barrelCount: 1 },
   
-  // 9. Phaser Sweep: Continuous beam, 2 sweeps/sec (rate 60, damage/E reduced per tick)
-  { id: 'exotic_phaser_sweep', name: 'Phaser Sweep', type: WeaponType.LASER, price: 500000, damage: 20, fireRate: 60, energyCost: 0.5, cargoWeight: 0, isAmmoBased: false, beamColor: '#facc15', barrelCount: 1 }
+  // 9. Phaser Sweep: Continuous beam, 8 shots/sec (was 60), high damage per shot
+  { id: 'exotic_phaser_sweep', name: 'Phaser Sweep', type: WeaponType.LASER, price: 500000, damage: 180, fireRate: 8, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 1 }
 ];
 
 export const SHIELDS: Shield[] = [
@@ -355,30 +356,164 @@ export const COMMODITIES: any[] = [
     { id: 'com_meds', name: 'Medkit', price: 500, type: 'medicine' },
     { id: 'com_air', name: 'O2 Scrubber', price: 800, type: 'equipment' },
     { id: 'com_suit', name: 'EVA Suit', price: 1200, type: 'equipment' },
-    { id: 'com_pistol', name: 'Blaster Pistol', price: 600, type: 'gun' },
-    { id: 'com_rifle', name: 'Pulse Rifle', price: 1500, type: 'gun' },
-    { id: 'com_chip', name: 'Circuit Boards', price: 400, type: 'part' },
-    { id: 'com_valve', name: 'Thruster Valve', price: 700, type: 'part' },
-    { id: 'com_core', name: 'Core Rod', price: 2500, type: 'luxury' },
-];
-
-export const ENGINES = [
-  { id: 'standard', name: 'Solid State', price: 0, boost: 1.0 },
-  { id: 'fusion', name: 'Fusion Core', price: 15000, boost: 1.4 },
-  { id: 'afterburner', name: 'Nitro Burner', price: 30000, boost: 1.8 }
+    { id: 'com_pistol', name: 'Blaster Pistol', price: 1500, type: 'gun' }, 
 ];
 
 export const PLANETS: Planet[] = [
-  { id: 'p1', name: 'New Horizon', description: 'Central hub of the Terran Alliance.', difficulty: 1, status: 'friendly', orbitRadius: 42, orbitSpeed: 0.005, orbitDirection: 1, size: 1.2, color: '#064e3b', quadrant: QuadrantType.ALFA, moons: [] },
-  { id: 'p2', name: 'Aegis IV', description: 'Shield production world under threat.', difficulty: 2, status: 'siege', orbitRadius: 80, orbitSpeed: 0.003, size: 2.0, color: '#ef4444', quadrant: QuadrantType.ALFA, moons: [{id: 'm2_1', name: 'Aegis Moon', difficulty: 1, angle: 0, distance: 20}] },
-  { id: 'p3', name: 'Vulcan Forge', description: 'Weapon testing site.', difficulty: 3, status: 'occupied', orbitRadius: 88, orbitSpeed: 0.004, size: 3.2, color: '#1e3a8a', quadrant: QuadrantType.ALFA, moons: [] },
-  { id: 'p4', name: 'Tundra Prime', description: 'Frozen wasteland.', difficulty: 4, status: 'siege', orbitRadius: 140, orbitSpeed: 0.002, size: 1.4, color: '#60a5fa', quadrant: QuadrantType.BETA, moons: [{id: 'm4_1', name: 'Tundra Moon', difficulty: 1, angle: 0, distance: 18}] },
-  { id: 'p5', name: 'Crystalline Void', description: 'Anomalous sector.', difficulty: 5, status: 'occupied', orbitRadius: 90, orbitSpeed: 0.006, size: 2.1, color: '#a855f7', quadrant: QuadrantType.BETA, moons: [{id: 'm5_1', name: 'Void Moon', difficulty: 1, angle: 1, distance: 22}] },
-  { id: 'p6', name: 'Bio-Sphere X', description: 'Reclaimed by alien fauna.', difficulty: 6, status: 'siege', orbitRadius: 145, orbitSpeed: 0.002, size: 3.5, color: '#10b981', quadrant: QuadrantType.BETA, moons: [{id: 'm6_1', name: 'M1', difficulty: 1, angle: 0, distance: 20}, {id: 'm6_2', name: 'M2', difficulty: 1, angle: 2, distance: 30}] },
-  { id: 'p9', name: 'Neon Outpost', description: 'Hyper-visual frontier station.', difficulty: 7, status: 'occupied', orbitRadius: 55, orbitSpeed: 0.003, size: 1.2, color: '#e11d48', quadrant: QuadrantType.GAMA, moons: [] },
-  { id: 'p7', name: 'Dread Shore', description: 'Dark matter refinery.', difficulty: 8, status: 'occupied', orbitRadius: 60, orbitSpeed: 0.008, size: 4.0, color: '#1e40af', quadrant: QuadrantType.GAMA, moons: [] },
-  { id: 'p10', name: 'Prism Core', description: 'Crystallized tectonic world.', difficulty: 9, status: 'siege', orbitRadius: 97, orbitSpeed: 0.005, size: 2.8, color: '#166534', quadrant: QuadrantType.GAMA, moons: [{id: 'm10_1', name: 'Prism Moon', difficulty: 1, angle: 0, distance: 20}] },
-  { id: 'p8', name: 'Final Frontier', description: 'Absolute edge of colonized space.', difficulty: 10, status: 'siege', orbitRadius: 135, orbitSpeed: 0.001, size: 1.2, color: '#ffffff', quadrant: QuadrantType.DELTA, moons: [] },
-  { id: 'p11', name: 'Singularity Rift', description: 'Gravitational anomaly nexus.', difficulty: 11, status: 'occupied', orbitRadius: 99, orbitSpeed: 0.002, size: 3.2, color: '#4c1d95', quadrant: QuadrantType.DELTA, moons: [{id: 'm11_1', name: 'Void Walker', difficulty: 1, angle: 0, distance: 25}] },
-  { id: 'p12', name: 'Omega Terminus', description: 'The absolute edge of existence.', difficulty: 12, status: 'siege', orbitRadius: 154, orbitSpeed: 0.001, size: 4.0, color: '#15803d', quadrant: QuadrantType.DELTA, moons: [{id: 'm12_1', name: 'Alpha Omega', difficulty: 1, angle: 0, distance: 28}, {id: 'm12_2', name: 'Beta Omega', difficulty: 1, angle: 3, distance: 42}] }
+  { 
+    id: 'p1', 
+    name: 'Terra Nova', 
+    description: 'A lush, earth-like world serving as the last bastion of humanity.', 
+    difficulty: 1, 
+    status: 'friendly', 
+    orbitRadius: 150, 
+    orbitSpeed: 0.5, 
+    size: 40, 
+    color: '#10b981', 
+    quadrant: QuadrantType.ALFA, 
+    moons: [{ id: 'm1', name: 'Luna', difficulty: 1, angle: 0, distance: 30 }] 
+  },
+  { 
+    id: 'p2', 
+    name: 'Aeria', 
+    description: 'A gas giant with floating mining colonies.', 
+    difficulty: 2, 
+    status: 'occupied', 
+    orbitRadius: 280, 
+    orbitSpeed: 0.3, 
+    size: 55, 
+    color: '#3b82f6', 
+    quadrant: QuadrantType.ALFA, 
+    moons: [] 
+  },
+  { 
+    id: 'p3', 
+    name: 'Magma Prime', 
+    description: 'Volcanic world rich in minerals but deadly hot.', 
+    difficulty: 3, 
+    status: 'occupied', 
+    orbitRadius: 400, 
+    orbitSpeed: 0.2, 
+    size: 35, 
+    color: '#ef4444', 
+    quadrant: QuadrantType.ALFA, 
+    moons: [] 
+  },
+  { 
+    id: 'p4', 
+    name: 'Crimson Reach', 
+    description: 'Red giant radiation zone.', 
+    difficulty: 4, 
+    status: 'occupied', 
+    orbitRadius: 180, 
+    orbitSpeed: 0.4, 
+    size: 45, 
+    color: '#f97316', 
+    quadrant: QuadrantType.BETA, 
+    moons: [] 
+  },
+  { 
+    id: 'p5', 
+    name: 'Rust Belt', 
+    description: 'Graveyard of ancient fleets.', 
+    difficulty: 5, 
+    status: 'occupied', 
+    orbitRadius: 300, 
+    orbitSpeed: 0.25, 
+    size: 30, 
+    color: '#78350f', 
+    quadrant: QuadrantType.BETA, 
+    moons: [] 
+  },
+  { 
+    id: 'p6', 
+    name: 'Toxicus', 
+    description: 'Poisonous atmosphere.', 
+    difficulty: 6, 
+    status: 'occupied', 
+    orbitRadius: 420, 
+    orbitSpeed: 0.15, 
+    size: 38, 
+    color: '#a3e635', 
+    quadrant: QuadrantType.BETA, 
+    moons: [] 
+  },
+  { 
+    id: 'p7', 
+    name: 'Azure Deep', 
+    description: 'Ocean world with massive krakens.', 
+    difficulty: 7, 
+    status: 'occupied', 
+    orbitRadius: 200, 
+    orbitSpeed: 0.35, 
+    size: 42, 
+    color: '#06b6d4', 
+    quadrant: QuadrantType.GAMA, 
+    moons: [] 
+  },
+  { 
+    id: 'p8', 
+    name: 'Crystal Spire', 
+    description: 'Crystalline structures reflecting pulsar light.', 
+    difficulty: 8, 
+    status: 'occupied', 
+    orbitRadius: 320, 
+    orbitSpeed: 0.22, 
+    size: 32, 
+    color: '#d8b4fe', 
+    quadrant: QuadrantType.GAMA, 
+    moons: [] 
+  },
+  { 
+    id: 'p9', 
+    name: 'Neon Outpost', 
+    description: 'Cyberpunk ruins on a dark moon.', 
+    difficulty: 9, 
+    status: 'occupied', 
+    orbitRadius: 440, 
+    orbitSpeed: 0.12, 
+    size: 28, 
+    color: '#22d3ee', 
+    quadrant: QuadrantType.GAMA, 
+    moons: [] 
+  },
+  { 
+    id: 'p10', 
+    name: 'Void Edge', 
+    description: 'On the brink of the black hole.', 
+    difficulty: 10, 
+    status: 'occupied', 
+    orbitRadius: 220, 
+    orbitSpeed: 0.3, 
+    size: 35, 
+    color: '#6b21a8', 
+    quadrant: QuadrantType.DELTA, 
+    moons: [] 
+  },
+  { 
+    id: 'p11', 
+    name: 'Obsidian', 
+    description: 'Pitch black stealth planet.', 
+    difficulty: 11, 
+    status: 'occupied', 
+    orbitRadius: 340, 
+    orbitSpeed: 0.18, 
+    size: 40, 
+    color: '#18181b', 
+    quadrant: QuadrantType.DELTA, 
+    moons: [] 
+  },
+  { 
+    id: 'p12', 
+    name: 'Omega Prime', 
+    description: 'Xenos Hive World.', 
+    difficulty: 12, 
+    status: 'occupied', 
+    orbitRadius: 460, 
+    orbitSpeed: 0.1, 
+    size: 50, 
+    color: '#991b1b', 
+    quadrant: QuadrantType.DELTA, 
+    moons: [] 
+  }
 ];

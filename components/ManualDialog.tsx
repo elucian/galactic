@@ -61,7 +61,7 @@ export const ManualDialog: React.FC<ManualDialogProps> = ({ isOpen, onClose, man
                   <div className="flex flex-col items-center justify-center h-full text-center space-y-8">
                       <div>
                           <h3 className="text-emerald-500 font-black text-xl mb-2">GALACTIC DEFENDER</h3>
-                          <p className="text-zinc-500 text-[10px]">VERSION BETA 25</p>
+                          <p className="text-zinc-500 text-[10px]">VERSION BETA 31</p>
                       </div>
                       
                       <div className="space-y-2">

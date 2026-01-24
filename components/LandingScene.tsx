@@ -120,6 +120,7 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
         cars: [] as any[],
         skyObjects: [] as any[],
     },
+    birds: [] as any[],
     particles: [] as {x: number, y: number, vx: number, vy: number, size: number, life: number, maxLife: number, type: string}[],
     shipY: -150,
     shipVy: 0,
@@ -239,8 +240,26 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
               if (Math.random() > 0.4) {
                   features.push({ x: xPos, type: 'tree', w: 20 + Math.random()*20, h: 40 + Math.random()*60, color: Math.random()>0.5 ? '#065f46' : '#166534' });
               } else {
-                  // City Buildings
-                  features.push({ x: xPos, type: 'building', w: 40 + Math.random()*40, h: 60 + Math.random()*120, color: '#1e293b', windows: true });
+                  // City Buildings with Pre-calculated Windows to prevent flickering
+                  const w = 40 + Math.random()*40;
+                  const h = 60 + Math.random()*120;
+                  const windowData = [];
+                  
+                  // Pre-generate window positions
+                  for(let wy = 5; wy < h; wy += 10) {
+                      for(let wx = 5; wx < w; wx += 8) {
+                          if (Math.random() > 0.3) windowData.push({ x: wx, y: wy });
+                      }
+                  }
+
+                  features.push({ 
+                      x: xPos, 
+                      type: 'building', 
+                      w, 
+                      h, 
+                      color: '#1e293b', 
+                      windowData 
+                  });
               }
           }
 
@@ -255,7 +274,23 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
               });
           }
 
+          // Birds (Daytime Only for Lush planets)
+          if (env.isDay) {
+              s.birds = Array.from({length: 15}).map(() => ({
+                  x: (Math.random() - 0.5) * 2000,
+                  y: -Math.random() * 600 - 100, 
+                  vx: 1 + Math.random() * 2,
+                  vy: (Math.random() - 0.5) * 0.5,
+                  wingSpan: 4 + Math.random() * 4,
+                  flapSpeed: 0.15 + Math.random() * 0.1,
+                  flapOffset: Math.random() * Math.PI
+              }));
+          } else {
+              s.birds = [];
+          }
+
       } else {
+          s.birds = []; // Ensure no birds on barren
           // BARREN PLANET: Industrial, Domes, Cranes
           // Add Hab/Radar Domes
           features.push({ x: -300, type: 'dome_std', variant: 'hab', scale: 1.2, w:0, h:0, color: '' });
@@ -551,6 +586,26 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
               ctx.fillStyle = horizonGrad; 
               ctx.fillRect(0, renderGroundY - 150, w, 150);
 
+              // Birds (Render Behind Features)
+              if (s.birds && s.birds.length > 0) {
+                 const birdYBase = renderGroundY - 300; 
+                 ctx.strokeStyle = env.isDay ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.4)';
+                 ctx.lineWidth = 1.5;
+                 ctx.beginPath();
+                 const nowSec = Date.now() / 1000;
+                 s.birds.forEach(b => {
+                     b.x += b.vx; 
+                     if (b.x > w/2 + 500) b.x = -w/2 - 500; 
+                     const by = birdYBase + b.y; 
+                     const bx = centerX + b.x;
+                     const wingY = Math.sin(nowSec * 10 * b.flapSpeed + b.flapOffset) * 5;
+                     ctx.moveTo(bx - b.wingSpan, by + wingY);
+                     ctx.lineTo(bx, by);
+                     ctx.lineTo(bx + b.wingSpan, by + wingY);
+                 });
+                 ctx.stroke();
+              }
+
               // Features
               s.environmentDetails.features.forEach(f => {
                   if (f.type === 'dome_std') {
@@ -560,13 +615,11 @@ const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, onComple
                       if (f.type === 'building') {
                           ctx.fillStyle = f.color; 
                           ctx.fillRect(fx - f.w/2, fy - f.h, f.w, f.h);
-                          if (f.windows) {
-                              ctx.fillStyle = env.isDay ? '#334155' : '#facc15';
-                              for(let wy = 5; wy < f.h; wy += 10) {
-                                  for(let wx = 5; wx < f.w; wx += 8) {
-                                      if (Math.random() > 0.3) ctx.fillRect(fx - f.w/2 + wx, fy - f.h + wy, 4, 6);
-                                  }
-                              }
+                          if (f.windowData && f.windowData.length > 0) {
+                              ctx.fillStyle = env.isDay ? '#60a5fa' : '#facc15'; // Blue in Day, Yellow in Night
+                              f.windowData.forEach((win: any) => {
+                                  ctx.fillRect(fx - f.w/2 + win.x, fy - f.h + win.y, 4, 6);
+                              });
                           }
                       } else if (f.type === 'tree') {
                           ctx.fillStyle = '#3f2c20'; ctx.fillRect(fx - 2, fy - f.h*0.3, 4, f.h*0.3);

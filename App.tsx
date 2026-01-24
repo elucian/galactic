@@ -20,7 +20,7 @@ import WarpSequence from './components/WarpSequence.tsx';
 import GameEngine from './components/GameEngine.tsx';
 import LandingScene from './components/LandingScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_28_market'; 
+const SAVE_KEY = 'galactic_defender_beta_31'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -509,7 +509,6 @@ export default function App() {
     else audioService.stop();
   }, [screen]);
 
-  // ... rest of file (uiStyles, repairSelected, etc.) remains unchanged
   
   const uiStyles = useMemo(() => {
       const s = gameState.settings.fontSize;
@@ -853,7 +852,7 @@ export default function App() {
                 </div>
             </div>
 
-            <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 28 - January 2026</div>
+            <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 31 - January 2026</div>
 
           </div>
         </div>
