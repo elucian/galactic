@@ -26,8 +26,8 @@ const mixColor = (c1: string, c2: string, weight: number) => {
 
 interface LandingSceneProps {
   planet: Planet | Moon;
-  shipShape?: string; // Kept for legacy compatibility if needed
-  shipConfig?: ExtendedShipConfig | null; // New Prop for exact ship
+  shipShape?: string; 
+  shipConfig?: ExtendedShipConfig | null; 
   onComplete: () => void;
   weaponId?: string;
   equippedWeapons?: (EquippedWeapon | null)[];
@@ -37,7 +37,7 @@ interface LandingSceneProps {
 
 export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, shipConfig: propShipConfig, onComplete, weaponId, equippedWeapons, currentFuel, maxFuel }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fgCanvasRef = useRef<HTMLCanvasElement>(null); // Canvas for foreground clouds (z-30)
+  const fgCanvasRef = useRef<HTMLCanvasElement>(null); 
   const shipDOMRef = useRef<HTMLDivElement>(null);
   
   const [status, setStatus] = useState("ORBITAL DECAY");
@@ -80,7 +80,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
     
     // Logic Vars
     hasThudded: false,
-    hasCompleted: false, // PREVENTS JAM
+    hasCompleted: false, 
     armRetract: 1, 
     shake: 0,
     steamTimer: 0,
@@ -98,16 +98,16 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
     isThrusting: false
   });
 
-  // Stop music on mount and init audio
   useEffect(() => {
-      // Removed audioService.stop() to prevent cutting off previous transition sounds.
-      
-      // Sound Enabled
-      audioService.startLandingThruster();
+      // Start Re-Entry Wind immediately
+      audioService.startReEntryWind();
+      audioService.startLandingThruster(); // Initialize silent
       
       const handleKeyDown = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); onComplete(); }};
       window.addEventListener('keydown', handleKeyDown);
       return () => { 
+          // Stop all sounds on unmount
+          audioService.stopReEntryWind();
           audioService.stopLandingThruster();
           window.removeEventListener('keydown', handleKeyDown);
       };
@@ -191,22 +191,33 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           
           // --- PHYSICS UPDATE ---
           if (s.viewY > 1000) {
-              setPhase('reentry');
+              if (phase !== 'reentry') {
+                  setPhase('reentry');
+                  audioService.startReEntryWind();
+                  audioService.updateLandingThruster(0); // Ensure engine silent
+              }
               s.velocity = 20; 
               s.viewY -= s.velocity;
               currentScale = 0.1 + (1.0 - (s.viewY / 2000)) * 0.3; 
               s.shipY = h * 0.3; 
-              s.shake = 0; // REMOVED AIR FRICTION SHAKE
+              // Re-entry shake
+              s.shake = (Math.random() - 0.5) * 4; 
               s.reEntryHeat = Math.min(1, s.reEntryHeat + 0.05);
               s.isThrusting = false;
               s.thrustIntensity = 0;
               setStatus("RE-ENTRY INTERFACE");
               
-              // NO SOUND during re-entry as requested
-              audioService.updateLandingThruster(0);
+              audioService.updateReEntryWind(s.reEntryHeat);
           } 
           else if (s.viewY > 200) {
-              setPhase('braking');
+              if (phase !== 'braking') {
+                  setPhase('braking');
+                  // IGNITION SOUNDS
+                  audioService.stopReEntryWind(); // Fade out wind
+                  audioService.playLandingIgnition(); // BANG
+                  audioService.startLandingThruster(); // Start rumble
+              }
+              
               s.velocity *= 0.96; 
               s.viewY -= s.velocity;
               if (s.velocity < 2) s.velocity = 2;
@@ -214,7 +225,9 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               const progress = 1.0 - (s.viewY / 1000);
               const targetY = touchY - 300; 
               s.shipY = (h * 0.3) + (targetY - (h * 0.3)) * progress;
-              s.shake = 0; // REMOVED AIR FRICTION SHAKE
+              
+              // Engine rumble shake
+              s.shake = (Math.random() - 0.5) * 3; 
               s.reEntryHeat = Math.max(0, s.reEntryHeat - 0.02); 
               
               if (s.reEntryHeat < 0.2) {
@@ -224,6 +237,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   audioService.updateLandingThruster(0.8 * s.thrustIntensity);
               } else {
                   s.isThrusting = false;
+                  // Still wind noise if heat high?
               }
               if (s.viewY < 600) {
                   s.legExtVal = Math.min(1, s.legExtVal + 0.02);
@@ -236,14 +250,14 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               const dist = touchY - s.shipY;
               s.shipY += dist * 0.1;
               currentScale = 1.0;
-              s.shake = (Math.random() - 0.5) * 2;
+              s.shake = (Math.random() - 0.5) * 1.5;
               s.legExtVal = Math.min(1, s.legExtVal + 0.05);
               s.isThrusting = true;
               const approachProgress = Math.max(0, s.viewY / 200);
               s.thrustIntensity = 0.4 + (0.6 * approachProgress);
               setStatus("FINAL DESCENT");
               
-              audioService.updateLandingThruster(0.6 * s.thrustIntensity);
+              audioService.updateLandingThruster(0.5 * s.thrustIntensity);
               
               if (Math.abs(s.shipY - touchY) < 4.0 && s.viewY < 5) {
                   s.hasThudded = true;
@@ -251,6 +265,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   s.thrustIntensity = 0;
                   s.suspensionVel = 3.0; 
                   audioService.playLandThud();
+                  audioService.playSteamRelease(); // STEAM SOUND ON LANDING
                   audioService.stopLandingThruster();
                   s.steamTimer = 120; 
                   for(let k=0; k<30; k++) { 
@@ -278,8 +293,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               if (s.armRetract > 0) s.armRetract = Math.max(0, s.armRetract - 0.04);
               if (s.steamTimer > 0) {
                   s.steamTimer--;
-                  if (s.steamTimer % 8 === 0) { 
-                      audioService.playSteamRelease();
+                  if (s.steamTimer % 8 === 0 && s.steamTimer > 60) { 
                       for(let k=0; k<3; k++) { s.particles.push({ x: cx + (Math.random()-0.5)*70, y: padSurfaceY - 5, vx: (Math.random()-0.5)*3, vy: -0.5 - Math.random()*1.5, size: 8 + Math.random()*12, life: 2.0, maxLife: 2.0, type: 'steam', color: 'rgba(255,255,255,0.15)' }); }
                   }
               }
@@ -647,15 +661,17 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   hill.trees.forEach((t: any, tIdx: number) => {
                       const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1];
                       if (p1 && p2) {
-                          const x1 = p1.xRatio * hillW - 1500; const y1 = - (p1.heightRatio * 300) - 50 + yOff;
-                          const x2 = p2.xRatio * hillW - 1500; const y2 = - (p2.heightRatio * 300) - 50 + yOff;
+                          const x1 = p1.xRatio * hillW - 1500; 
+                          const y1 = - (p1.heightRatio * 300) - 50 + yOff; 
+                          const x2 = p2.xRatio * hillW - 1500; 
+                          const y2 = - (p2.heightRatio * 300) - 50 + yOff;
                           const tx = x1 + (x2 - x1) * t.offset; 
                           let ty = y1 + (y2 - y1) * t.offset;
                           
-                          // Offset trees if on road to avoid clipping
+                          // Offset trees to sides of road
                           if (hill.hasRoad) {
                               const side = tIdx % 2 === 0 ? 1 : -1;
-                              ty += side * 25; 
+                              ty += side * 25;
                           }
                           
                           drawBuilding(ctx, { x: tx, y: ty, type: t.type === 'pine' ? 'tree' : 'palm', w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false);
@@ -723,31 +739,74 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               ctx.fillRect(0, 0, w, h);
           }
 
-          // RE-ENTRY SHIELD VISUAL (Replacing Aurora/Heat)
+          // RE-ENTRY SHIELD VISUAL (Improved Fractal Plasma)
           if ((s.viewY > 200 && s.viewY < 3000) && !s.isThrusting) {
-              const shieldY = s.shipY + 10;
-              const shieldScale = currentScale * 1.5;
-              const hue = (Date.now() * 0.2) % 360;
+              const shieldY = s.shipY + 15;
+              const shieldScale = currentScale * 1.6;
               
               ctx.save();
               ctx.translate(cx, shieldY);
               ctx.scale(shieldScale, shieldScale);
               
-              // Oval Shield
-              ctx.beginPath();
-              ctx.ellipse(0, 0, 50, 70, 0, 0, Math.PI * 2);
+              const time = Date.now() * 0.02;
               
-              // Glow Effect
-              ctx.strokeStyle = `hsl(${hue}, 100%, 60%)`;
+              // 1. Plasma Trails (Diffuse glow behind)
+              for(let i=0; i<3; i++) {
+                  const offset = Math.sin(time + i) * 10;
+                  ctx.beginPath();
+                  ctx.moveTo(-30 + offset, -10);
+                  ctx.lineTo(-40 + offset, -80 - (Math.random()*40)); // Trail up
+                  ctx.lineTo(-20 + offset, -80 - (Math.random()*40));
+                  ctx.fillStyle = `rgba(255, 100, 0, ${0.1 + Math.random()*0.2})`;
+                  ctx.fill();
+                  
+                  ctx.beginPath();
+                  ctx.moveTo(30 - offset, -10);
+                  ctx.lineTo(40 - offset, -80 - (Math.random()*40));
+                  ctx.lineTo(20 - offset, -80 - (Math.random()*40));
+                  ctx.fillStyle = `rgba(255, 100, 0, ${0.1 + Math.random()*0.2})`;
+                  ctx.fill();
+              }
+
+              // 2. Fractal Arc (Layered)
+              // Outer Red/Orange
+              ctx.beginPath();
+              for(let a = 0; a <= Math.PI; a += 0.2) {
+                  const r = 55 + (Math.random() * 5);
+                  const x = Math.cos(a) * r;
+                  const y = Math.sin(a) * r * 0.6; // Flattened
+                  if (a===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+              }
+              ctx.strokeStyle = '#ef4444';
+              ctx.lineWidth = 4;
+              ctx.shadowColor = '#f97316';
+              ctx.shadowBlur = 15;
+              ctx.globalAlpha = 0.6;
+              ctx.stroke();
+
+              // Mid Yellow/White
+              ctx.beginPath();
+              for(let a = 0; a <= Math.PI; a += 0.3) {
+                  const r = 50 + (Math.random() * 3);
+                  const x = Math.cos(a) * r;
+                  const y = Math.sin(a) * r * 0.6; 
+                  if (a===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+              }
+              ctx.strokeStyle = '#facc15';
               ctx.lineWidth = 3;
-              ctx.shadowColor = `hsl(${hue}, 100%, 60%)`;
-              ctx.shadowBlur = 20;
+              ctx.shadowBlur = 10;
+              ctx.globalAlpha = 0.8;
               ctx.stroke();
               
-              // Inner Energy
-              ctx.fillStyle = `hsla(${hue}, 100%, 70%, 0.1)`;
-              ctx.fill();
-              
+              // Inner White Core
+              ctx.beginPath();
+              ctx.arc(0, 0, 48, 0, Math.PI);
+              ctx.strokeStyle = '#ffffff';
+              ctx.lineWidth = 2;
+              ctx.shadowBlur = 5;
+              ctx.globalAlpha = 0.9;
+              ctx.stroke();
+
               ctx.restore();
           }
 
@@ -815,8 +874,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       return () => { 
           window.removeEventListener('resize', resize);
           cancelAnimationFrame(animId);
-          // Explicit cleanup: Stop thruster and ensure re-entry sound is off
-          audioService.stopLandingThruster();
+          // Cleanup handled by effect above
       };
   }, [env, shipConfig, engineLocs]);
 

@@ -166,8 +166,8 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       // 0.3s Delay for Engine Start
                       t4 = setTimeout(() => {
                           audioService.playLaunchBang();
-                          // audioService.playLaunchRoar(); // REMOVED - Sequence now handles sustained roar
-                          audioService.playLaunchSequence(); // Continuous loop
+                          // The looping sound starts here and will continue until stopped
+                          audioService.playLaunchSequence(); 
                           
                           // Proceed to Lift after engine stabilizes
                           t5 = setTimeout(() => {
@@ -179,7 +179,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                                   t7 = setTimeout(() => {
                                       setPhase('orbit'); 
                                       setStatusText("ORBIT INSERTION");
-                                      audioService.stopLaunchSequence(); // Stop engine
+                                      audioService.stopLaunchSequence(); // Stop engine explicitly at orbit insertion
                                       audioService.playOrbitLatch(); // Pac sound
                                       
                                       t8 = setTimeout(onComplete, 4000);
@@ -230,13 +230,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               s.shake = (Math.random() - 0.5) * 4;
               if (s.internalFuel > s.targetFuel) s.internalFuel -= 0.001;
               
-              // Only show jets if engine start delay has passed (300ms = ~18 frames at 60fps)
-              // But audio triggers via timeout, so we can just check frame count since phase change?
-              // Simpler: thrust active is controlled by state, but since we are inside loop, we'll assume active if phase is ignition
-              // Actually, thrust should visually match audio. 
-              // The timeout t4 fires 300ms after phase becomes ignition.
-              // We can't easily sync React state inside loop perfectly without refs or timestamps.
-              // Approximation: 300ms delay visual thrust?
               setThrustActive(true); 
               s.armRetract = 0; 
           }
