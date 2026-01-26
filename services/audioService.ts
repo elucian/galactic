@@ -26,8 +26,7 @@ class AudioService {
   private reactorGain: GainNode | null = null;
   
   // Landing Thruster Nodes
-  private landingOsc: AudioBufferSourceNode | null = null; // Rumble
-  private landingTurbine: OscillatorNode | null = null;    // Whine (New)
+  private landingOsc: AudioBufferSourceNode | null = null;
   private landingGain: GainNode | null = null;
   private landingFilter: BiquadFilterNode | null = null;
 
@@ -56,17 +55,17 @@ class AudioService {
             this.updateSfxState();
 
             // GENERATE PURE WHITE NOISE BUFFER (5 seconds)
-            // White noise + Filters = Better Control than pre-baked Pink Noise
+            // Used for all engine/wind effects
             const bufferSize = this.ctx.sampleRate * 5; 
             this.noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
             const data = this.noiseBuffer.getChannelData(0);
             
             for (let i = 0; i < bufferSize; i++) {
-                // Standard White Noise: -1.0 to 1.0
                 data[i] = (Math.random() * 2 - 1); 
             }
         }
     }
+    // Always try to resume context on user interaction
     if (this.ctx && this.ctx.state === 'suspended') {
         this.ctx.resume().catch(e => {});
     }
@@ -278,7 +277,6 @@ class AudioService {
 
       osc.connect(gain);
       if (type.includes('laser') || type.includes('electric')) {
-          // Pew Pew Sound
           osc.type = 'triangle';
           osc.frequency.setValueAtTime(1200, now);
           osc.frequency.exponentialRampToValueAtTime(250, now + 0.12);
@@ -286,7 +284,6 @@ class AudioService {
           gain.gain.exponentialRampToValueAtTime(0.01, now + 0.12);
           osc.start(); osc.stop(now + 0.12);
       } else {
-          // Cannon Sound
           osc.type = 'square'; 
           osc.frequency.setValueAtTime(120, now);
           osc.frequency.exponentialRampToValueAtTime(60, now + 0.06); 
@@ -432,7 +429,6 @@ class AudioService {
       this.windOsc.buffer = this.noiseBuffer;
       this.windOsc.loop = true;
 
-      // High-pass to create "Hiss" of wind
       this.windFilter = this.ctx.createBiquadFilter();
       this.windFilter.type = 'highpass'; 
       this.windFilter.frequency.setValueAtTime(800, this.ctx.currentTime); 
@@ -450,9 +446,7 @@ class AudioService {
   updateReEntryWind(intensity: number) {
       if (!this.ctx || !this.windGain || !this.windFilter) return;
       const now = this.ctx.currentTime;
-      // Fade in gain with intensity
       const targetGain = Math.max(0, Math.min(1, intensity)) * 0.6;
-      // Lower frequency cutoff as it gets more intense (fuller sound)
       const targetFreq = 1000 - (intensity * 600); 
 
       this.windGain.gain.setTargetAtTime(targetGain, now, 0.2);
@@ -476,7 +470,7 @@ class AudioService {
       this.windGain = null;
   }
 
-  // --- LAUNCH & LANDING THRUSTER LOGIC ---
+  // --- LAUNCH THRUSTER LOGIC ---
   playLaunchBang() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const now = this.ctx.currentTime;
@@ -511,19 +505,20 @@ class AudioService {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.noiseBuffer) return;
       if (this.launchOsc) return; 
 
+      const now = this.ctx.currentTime;
+
       this.launchOsc = this.ctx.createBufferSource();
       this.launchOsc.buffer = this.noiseBuffer;
       this.launchOsc.loop = true;
 
-      // Rocket Roar: LowPass Filter shaping White Noise
       this.launchFilter = this.ctx.createBiquadFilter();
       this.launchFilter.type = 'lowpass';
-      this.launchFilter.frequency.setValueAtTime(200, this.ctx.currentTime); 
-      this.launchFilter.Q.value = 1.0; // Minimal resonance
+      this.launchFilter.frequency.setValueAtTime(400, now); // Higher base start for launch
+      this.launchFilter.Q.value = 0.5;
 
       this.launchGain = this.ctx.createGain();
-      this.launchGain.gain.setValueAtTime(0, this.ctx.currentTime);
-      this.launchGain.gain.linearRampToValueAtTime(0.8, this.ctx.currentTime + 1.5); 
+      this.launchGain.gain.setValueAtTime(0, now);
+      this.launchGain.gain.setTargetAtTime(0.8, now, 0.5); // Fast smooth ramp up
 
       this.launchOsc.connect(this.launchFilter);
       this.launchFilter.connect(this.launchGain);
@@ -531,9 +526,8 @@ class AudioService {
 
       this.launchOsc.start();
 
-      const now = this.ctx.currentTime;
-      // Open up the filter over time for "acceleration" effect
-      this.launchFilter.frequency.exponentialRampToValueAtTime(800, now + 10.0);
+      // Roar up logic
+      this.launchFilter.frequency.exponentialRampToValueAtTime(1200, now + 8.0);
   }
 
   stopLaunchSequence() {
@@ -558,14 +552,13 @@ class AudioService {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const now = this.ctx.currentTime;
       
-      // REPLACED SAWTOOTH BUZZ WITH NOISE BURST + SINE THUMP
-      // 1. Noise Burst (Ignition "Chhhhh")
+      // Short Low Thump + Noise burst
       if (this.noiseBuffer) {
           const src = this.ctx.createBufferSource();
           src.buffer = this.noiseBuffer;
           const filter = this.ctx.createBiquadFilter();
           filter.type = 'lowpass';
-          filter.frequency.setValueAtTime(1000, now);
+          filter.frequency.setValueAtTime(800, now);
           filter.frequency.exponentialRampToValueAtTime(100, now + 0.3);
           const gain = this.ctx.createGain();
           gain.gain.setValueAtTime(0.8, now);
@@ -575,7 +568,6 @@ class AudioService {
           src.start(now); src.stop(now + 0.3);
       }
 
-      // 2. Low Frequency Punch (Sine wave - Thump)
       const osc = this.ctx.createOscillator();
       osc.type = 'sine'; 
       osc.frequency.setValueAtTime(150, now);
@@ -593,79 +585,54 @@ class AudioService {
 
       const now = this.ctx.currentTime;
 
-      // 1. RUMBLE (Soft Noise)
+      // Single Source: Filtered Noise for deep rumble
       this.landingOsc = this.ctx.createBufferSource();
       this.landingOsc.buffer = this.noiseBuffer;
       this.landingOsc.loop = true;
 
-      // Higher frequency base (400Hz) and lower Q (0.5) eliminates the "idling car" effect
       this.landingFilter = this.ctx.createBiquadFilter();
       this.landingFilter.type = 'lowpass';
-      this.landingFilter.frequency.setValueAtTime(400, now); 
-      this.landingFilter.Q.value = 0.5; // Soften edges
+      this.landingFilter.frequency.setValueAtTime(100, now); // Very low rumble start
+      this.landingFilter.Q.value = 0; // Flat response to prevent resonance cracks
 
-      // 2. TURBINE (Whine) - The "Vjjj"
-      this.landingTurbine = this.ctx.createOscillator();
-      this.landingTurbine.type = 'triangle'; // Soft tone
-      this.landingTurbine.frequency.setValueAtTime(1000, now); // Start high
-
-      // Master Landing Gain
       this.landingGain = this.ctx.createGain();
       this.landingGain.gain.setValueAtTime(0, now); 
 
-      // Connect Rumble
       this.landingOsc.connect(this.landingFilter);
       this.landingFilter.connect(this.landingGain);
-      
-      // Connect Turbine (lower relative mix)
-      const turbineGain = this.ctx.createGain();
-      turbineGain.gain.value = 0.15; 
-      this.landingTurbine.connect(turbineGain);
-      turbineGain.connect(this.landingGain);
-
       this.landingGain.connect(this.sfxGain);
 
       this.landingOsc.start();
-      this.landingTurbine.start();
   }
 
   updateLandingThruster(intensity: number) {
-      if (!this.ctx || !this.landingGain || !this.landingFilter || !this.landingTurbine) return;
+      if (!this.ctx || !this.landingGain || !this.landingFilter) return;
       const now = this.ctx.currentTime;
-      // Normalize Intensity 0-1
       const safeIntensity = Math.max(0, Math.min(1, intensity));
       
+      // Smooth updates using setTargetAtTime
+      // Intensity 0: Gain 0, Freq 100Hz
+      // Intensity 1: Gain 0.8, Freq 400Hz (Deep heavy rumble)
       const targetGain = safeIntensity * 0.8; 
-      
-      // Ramp Frequencies Up
-      // Rumble: 400 -> 1200
-      const targetRumbleFreq = 400 + (safeIntensity * 800);
-      // Turbine: 1000 -> 3000
-      const targetTurbineFreq = 1000 + (safeIntensity * 2000);
+      const targetFreq = 100 + (safeIntensity * 300);
 
       this.landingGain.gain.setTargetAtTime(targetGain, now, 0.1);
-      this.landingFilter.frequency.setTargetAtTime(targetRumbleFreq, now, 0.1);
-      this.landingTurbine.frequency.setTargetAtTime(targetTurbineFreq, now, 0.1);
+      this.landingFilter.frequency.setTargetAtTime(targetFreq, now, 0.1);
   }
 
   stopLandingThruster() {
       if (this.landingGain && this.ctx) {
           try {
              this.landingGain.gain.cancelScheduledValues(this.ctx.currentTime);
-             this.landingGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
+             this.landingGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
              const g = this.landingGain;
-             setTimeout(() => { try { g.disconnect(); } catch(e){} }, 200);
+             setTimeout(() => { try { g.disconnect(); } catch(e){} }, 300);
           } catch(e) {}
       }
       if (this.landingOsc) {
-          try { this.landingOsc.stop(this.ctx!.currentTime + 0.1); } catch(e) {}
+          try { this.landingOsc.stop(this.ctx!.currentTime + 0.3); } catch(e) {}
           try { this.landingOsc.disconnect(); } catch(e) {}
           this.landingOsc = null;
-      }
-      if (this.landingTurbine) {
-          try { this.landingTurbine.stop(this.ctx!.currentTime + 0.1); } catch(e) {}
-          try { this.landingTurbine.disconnect(); } catch(e) {}
-          this.landingTurbine = null;
       }
       this.landingGain = null;
   }
@@ -673,7 +640,6 @@ class AudioService {
   playLandThud() { 
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const now = this.ctx.currentTime;
-      // Low Metal Thud
       const sub = this.ctx.createOscillator();
       const subGain = this.ctx.createGain();
       sub.connect(subGain); subGain.connect(this.sfxGain);
@@ -698,26 +664,19 @@ class AudioService {
       osc.start(now); osc.stop(now + 0.15);
   }
 
-  // The "Tank" / Clank Sound
   playOrbitLatch() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const now = this.ctx.currentTime;
-      
-      // Metallic Clank
       const osc = this.ctx.createOscillator();
       osc.type = 'sawtooth';
       osc.frequency.setValueAtTime(200, now);
       osc.frequency.exponentialRampToValueAtTime(50, now + 0.1);
-      
       const g = this.ctx.createGain();
       g.gain.setValueAtTime(0.5, now);
       g.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-      
-      // Filter to dampen harmonics (make it duller like metal)
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.value = 600;
-
       osc.connect(filter); filter.connect(g); g.connect(this.sfxGain);
       osc.start(now); osc.stop(now + 0.1);
   }
@@ -730,7 +689,7 @@ class AudioService {
     src.buffer = this.noiseBuffer;
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'highpass'; 
-    filter.frequency.setValueAtTime(1000, now); // Higher freq for steam hiss
+    filter.frequency.setValueAtTime(1000, now); 
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(0.3, now);
     gain.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
