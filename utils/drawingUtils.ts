@@ -46,32 +46,32 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     // --- ATMOSPHERE (SKY) GENERATION ---
     let skyGradient = ['#000000', '#000000'];
-    let cloudColor = 'rgba(255,255,255,0.4)';
+    let cloudColor = '#ffffff';
     let sunColor = '#facc15';
     let atmosphereColor = '#000000';
 
     if (isReddish) {
-        if (isDay) skyGradient = ['#450a0a', '#ef4444']; 
+        if (isDay) skyGradient = ['#7f1d1d', '#ef4444']; 
         else skyGradient = ['#1a0505', '#450a0a']; 
-        cloudColor = 'rgba(254, 202, 202, 0.2)'; 
+        cloudColor = '#fca5a5'; // Red-200
         sunColor = '#fb923c'; 
         atmosphereColor = '#7f1d1d';
     } else if (isBluish) {
-        if (isDay) skyGradient = ['#1e3a8a', '#60a5fa']; 
+        if (isDay) skyGradient = ['#2563eb', '#bfdbfe']; // Blue-600 -> Blue-200 (Light Blue Sky)
         else skyGradient = ['#020617', '#172554']; 
-        cloudColor = 'rgba(219, 234, 254, 0.4)';
+        cloudColor = '#dbeafe'; // Blue-100
         sunColor = '#ffffff'; 
         atmosphereColor = '#1e3a8a';
     } else if (isGreenish) {
-        if (isDay) skyGradient = ['#0f172a', '#334155']; 
+        if (isDay) skyGradient = ['#0ea5e9', '#e0f2fe']; // Sky-500 -> Sky-100 (Light Blue Sky)
         else skyGradient = ['#020617', '#0f172a'];
-        cloudColor = 'rgba(209, 250, 229, 0.2)'; 
+        cloudColor = '#ecfdf5'; // Emerald-50
         sunColor = '#fef08a'; 
         atmosphereColor = '#064e3b';
     } else if (isPurple) {
         if (isDay) skyGradient = ['#2e1065', '#a855f7'];
         else skyGradient = ['#0f0518', '#3b0764'];
-        cloudColor = 'rgba(233, 213, 255, 0.3)';
+        cloudColor = '#f3e8ff'; // Purple-100
         atmosphereColor = '#581c87';
     } else {
         if (isDay) skyGradient = ['#3f3f46', '#a1a1aa'];
@@ -92,9 +92,9 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     // Barren planets have rare, toxic clouds
     if (isBarren) {
         const toxicColors = [
-            'rgba(244, 114, 182, 0.3)', // Pink
-            'rgba(75, 85, 99, 0.5)',    // Dark Gray
-            'rgba(190, 242, 100, 0.3)'  // Lime Green
+            '#fbcfe8', // Pink
+            '#9ca3af', // Gray
+            '#bef264'  // Lime
         ];
         cloudColor = toxicColors[Math.floor(rng() * toxicColors.length)];
     }
@@ -191,25 +191,37 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const waterFactor = (isBluish || isGreenish) ? 2.5 : 1.0;
     const quantityMod = isBarren ? 0.2 : 1.0; 
 
+    // Helper to generate cloud opacity
+    // 30% chance of being "heavy/opaque" (0.95+ alpha), otherwise transparent
+    const getCloudAlpha = () => rng() > 0.7 ? 0.95 : (0.2 + rng() * 0.5);
+
     // Background Layer
     const farCount = Math.floor((isDay ? 8 : 4) * quantityMod);
     for(let i=0; i<farCount; i++) {
         clouds.push({
             x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900,
-            w: 40 + rng() * 30, alpha: (0.7 + rng() * 0.3), speed: 0.03 + rng() * 0.04, layer: 0, type: rng() > 0.5 ? 'fluffy' : 'streak', color: cloudColor
+            w: 40 + rng() * 30, 
+            alpha: getCloudAlpha(), 
+            speed: 0.03 + rng() * 0.04, layer: 0, type: rng() > 0.5 ? 'fluffy' : 'streak', color: cloudColor
         });
     }
     // Mid Layer
     const midCount = Math.floor((isDay ? 10 : 5) * waterFactor * quantityMod);
     for(let i=0; i<midCount; i++) {
         clouds.push({
-            x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 60 + rng() * 40, alpha: (0.5 + rng() * 0.3), speed: 0.08 + rng() * 0.08, layer: 1, type: 'fluffy', color: cloudColor
+            x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 60 + rng() * 40, 
+            alpha: getCloudAlpha(), 
+            speed: 0.08 + rng() * 0.08, layer: 1, type: 'fluffy', color: cloudColor
         });
     }
     // Close Layer
     const closeCount = Math.floor((isDay ? 5 : 2) * waterFactor * (isOcean ? 1.5 : 1.0) * quantityMod);
     for(let i=0; i<closeCount; i++) {
-        clouds.push({ x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 120 + rng() * 80, alpha: 0.2 + rng() * 0.2, speed: 0.2 + rng() * 0.15, layer: 2, type: 'fluffy', color: cloudColor });
+        clouds.push({ 
+            x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 120 + rng() * 80, 
+            alpha: getCloudAlpha(), // Allow foreground clouds to be opaque too
+            speed: 0.2 + rng() * 0.15, layer: 2, type: 'fluffy', color: cloudColor 
+        });
     }
 
     // 3. HILLS & VEGETATION

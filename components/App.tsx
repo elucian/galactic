@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry } from '../types.ts';
+import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from '../types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from '../constants.ts';
 import { audioService } from '../services/audioService.ts';
 import { backendService } from '../services/backendService.ts';
@@ -24,6 +24,7 @@ const SAVE_KEY = 'galactic_defender_beta_32';
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
+const MAX_MESSAGE_HISTORY = 50; // Memory optimization limit
 
 const StarBackground = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -86,13 +87,23 @@ export default function App() {
       initialRegistry[p.id] = { id: p.id, status: i === 0 ? 'friendly' : p.status, wins: 0, losses: 0 };
     });
 
+    const initialMessage: GameMessage = { 
+        id: 'init', 
+        type: 'activity', 
+        category: 'system', 
+        pilotName: 'COMMAND', 
+        pilotAvatar: '🛰️', 
+        text: 'Welcome. Systems online.', 
+        timestamp: Date.now() 
+    };
+
     return {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
       currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
       marketListingsByPlanet: {}, marketRefreshes: {},
-      messages: [{ id: 'init', type: 'activity', category: 'system', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }],
+      messages: [initialMessage],
       leaderboard: [],
       planetOrbitOffsets: initialOffsets,
       universeStartTime: Date.now(),
@@ -137,6 +148,11 @@ export default function App() {
 
         if (parsed.pilotZoom === undefined) parsed.pilotZoom = 1.0;
 
+        // Truncate messages on load if they exceeded limit in storage
+        if (parsed.messages && parsed.messages.length > MAX_MESSAGE_HISTORY) {
+            parsed.messages = parsed.messages.slice(0, MAX_MESSAGE_HISTORY);
+        }
+
         // --- ALIEN INVASION PROGRESSION LOGIC ---
         const now = Date.now();
         const lastSave = parsed.lastSaveTime || now;
@@ -170,7 +186,7 @@ export default function App() {
                 if (lostCount >= 4) msgText = "CRITICAL ALERT: OUTER RIM DEFENSES COLLAPSED DURING HYPER-SLEEP.";
                 if (updatedRegistry['p12'].status === 'occupied') msgText = "DELTA QUADRANT LOST. RECLAMATION REQUIRED.";
                 
-                const msg: any = {
+                const msg: GameMessage = {
                     id: `invasion_${now}`,
                     type: 'activity',
                     category: 'combat',
@@ -179,7 +195,7 @@ export default function App() {
                     text: msgText,
                     timestamp: now
                 };
-                parsed.messages = [msg, ...parsed.messages];
+                parsed.messages = [msg, ...parsed.messages].slice(0, MAX_MESSAGE_HISTORY);
             }
         }
         
@@ -207,7 +223,7 @@ export default function App() {
       newState.pilotName = pilotName;
       newState.pilotAvatar = pilotAvatar;
       
-      const welcomeMsg = {
+      const welcomeMsg: GameMessage = {
           id: `reset_${Date.now()}`,
           type: 'activity',
           category: 'system',
@@ -216,7 +232,7 @@ export default function App() {
           text: `IDENTITY RECONFIGURED. WELCOME, ${pilotName}. SIMULATION RESET.`,
           timestamp: Date.now()
       };
-      newState.messages = [welcomeMsg as any, ...newState.messages];
+      newState.messages = [welcomeMsg, ...newState.messages];
       
       setGameState(newState);
       setScreen('hangar');
@@ -441,9 +457,8 @@ export default function App() {
       const hasWelcomed = sessionStorage.getItem('has_welcomed_session');
       if (!hasWelcomed) {
           backendService.registerUser(gameState.pilotName).then(msg => {
-              setGameState(p => ({
-                  ...p,
-                  messages: [{
+              setGameState(p => {
+                  const newMessage: GameMessage = {
                       id: `sys_${Date.now()}`,
                       type: 'activity',
                       category: 'system',
@@ -451,8 +466,12 @@ export default function App() {
                       pilotAvatar: '🛰️',
                       text: msg,
                       timestamp: Date.now()
-                  }, ...p.messages]
-              }));
+                  };
+                  return {
+                      ...p,
+                      messages: [newMessage, ...p.messages].slice(0, MAX_MESSAGE_HISTORY)
+                  };
+              });
               sessionStorage.setItem('has_welcomed_session', 'true');
           });
       }
@@ -572,7 +591,7 @@ export default function App() {
        const pEntry = { ...reg[currentPId] };
        let newMessages = [...prev.messages];
        if (success) { pEntry.wins += 1; pEntry.losses = 0; if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { pEntry.status = 'friendly'; pEntry.wins = 0; newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); } else { newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); } if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } } else { if (!aborted) { pEntry.losses += 1; if (pEntry.losses >= 1) { pEntry.losses = 0; const pIndex = PLANETS.findIndex(p => p.id === currentPId); if (pIndex > 0) { const prevPId = PLANETS[pIndex - 1].id; const prevEntry = { ...reg[prevPId] }; let regressionHappened = false; if (prevEntry.status === 'friendly') { prevEntry.status = 'siege'; regressionHappened = true; } else if (prevEntry.status === 'siege') { prevEntry.status = 'occupied'; regressionHappened = true; } if (regressionHappened) { reg[prevPId] = prevEntry; newMessages.unshift({ id: `loss_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, timestamp: Date.now() }); } } } } } reg[currentPId] = pEntry;
-       return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages, leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
+       return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
     });
     if (aborted) { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; const currentQuad = gameState.currentQuadrant; const showTrans = gameState.settings.showTransitions; if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } else { setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } } else { if (payload?.health > 0 && gameState.settings.showTransitions && success) { setScreen('landing'); } else { setScreen('hangar'); audioService.playTrack('command'); } }
   };
@@ -830,6 +849,7 @@ export default function App() {
           setIsMessagesOpen={setIsMessagesOpen}
           setIsMarketOpen={setIsMarketOpen}
           setIsCargoOpen={setIsCargoOpen}
+          setIsManualOpen={setIsManualOpen}
           activeSlotIndex={activeSlotIndex}
           setActiveSlotIndex={(i) => { setActiveSlotIndex(i); setGameState(p => ({ ...p, selectedShipInstanceId: p.ownedShips[i].instanceId })); }}
           systemMessage={systemMessage}

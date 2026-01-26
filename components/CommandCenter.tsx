@@ -20,6 +20,7 @@ interface CommandCenterProps {
   setIsMessagesOpen: (v: boolean) => void;
   setIsMarketOpen: (v: boolean) => void;
   setIsCargoOpen: (v: boolean) => void;
+  setIsManualOpen: (v: boolean) => void;
   activeSlotIndex: number;
   setActiveSlotIndex: (i: number) => void;
   systemMessage: { text: string, type: 'neutral' | 'success' | 'error' | 'warning' };
@@ -40,6 +41,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   setIsMessagesOpen,
   setIsMarketOpen,
   setIsCargoOpen,
+  setIsManualOpen,
   activeSlotIndex,
   setActiveSlotIndex,
   systemMessage
@@ -328,6 +330,9 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
       <div className="flex flex-col gap-2 shrink-0 mb-1">
         <footer className="bg-black p-2 rounded-xl border border-zinc-800 flex justify-between items-center shadow-lg">
           <div className="flex items-center gap-2">
+            <button onClick={() => setScreen('intro')} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-red-900/30 border border-red-800 rounded hover:bg-red-800/50 hover:border-red-500 relative`} title="Return to Start">
+                <span className={footerIconText}>🏠</span>
+            </button>
             <button onClick={() => setIsMessagesOpen(true)} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-800 rounded hover:border-emerald-500 relative`}><span className={footerIconText}>📡</span>{gameState.messages.length > 0 && <div className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full animate-pulse border-2 border-zinc-950" />}</button>
             <button onClick={() => { setIsMarketOpen(true); }} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-800 rounded hover:border-amber-500`}><span className={footerIconText}>💎</span></button>
             <div className="w-[1px] h-8 bg-zinc-800 mx-1 hidden xs:block"/>
@@ -338,6 +343,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                     <rect x="13" y="12" width="6" height="6" fill="#3b82f6" stroke="none" />
                 </svg>
             </button>
+            <button onClick={() => setIsManualOpen(true)} className={`flex flex-col items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-800 rounded hover:border-zinc-500 relative`}><span className={footerIconText}>📖</span></button>
           </div>
           
           {/* Status Text - No Flashing, Balanced Wrap */}
@@ -359,8 +365,12 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
           </div>
 
           <div className="flex gap-2 items-center">
-            <button disabled={selectedShipDestroyed} onClick={onRepair} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed`}>REPAIR</button>
-            <button disabled={selectedShipDestroyed} onClick={onRefuel} className={`${btnPad} md:py-3 bg-zinc-900 border border-zinc-700 ${btnSize} uppercase font-black rounded hover:bg-zinc-800 text-zinc-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed`}>REFUEL</button>
+            <button disabled={selectedShipDestroyed} onClick={onRepair} className={`flex items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-700 rounded hover:bg-zinc-800 text-zinc-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed`} title="Repair">
+                <span className={footerIconText}>🔧</span>
+            </button>
+            <button disabled={selectedShipDestroyed} onClick={onRefuel} className={`flex items-center justify-center ${footerIconClass} md:w-12 md:h-12 bg-zinc-900 border border-zinc-700 rounded hover:bg-zinc-800 text-zinc-300 hover:text-white disabled:opacity-50 disabled:cursor-not-allowed`} title="Refuel">
+                <span className={footerIconText}>⛽</span>
+            </button>
             <div className="w-[1px] h-8 bg-zinc-800 mx-1 hidden md:block landscape:block"/>
             {allShipsCompromised ? (
                 <button onClick={() => setScreen('intro')} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-red-600 border-2 border-red-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all hover:scale-105 active:scale-95 animate-pulse`}>ABORT</button>

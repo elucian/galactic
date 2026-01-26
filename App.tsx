@@ -1,6 +1,5 @@
-
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry } from './types.ts';
+import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from './types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from './constants.ts';
 import { audioService } from './services/audioService.ts';
 import { backendService } from './services/backendService.ts';
@@ -24,6 +23,7 @@ const SAVE_KEY = 'galactic_defender_beta_32';
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
+const MAX_MESSAGE_HISTORY = 50; // Memory optimization limit
 
 const StarBackground = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -137,19 +137,21 @@ export default function App() {
 
         if (parsed.pilotZoom === undefined) parsed.pilotZoom = 1.0;
 
+        // Truncate messages on load if they exceeded limit in storage
+        if (parsed.messages && parsed.messages.length > MAX_MESSAGE_HISTORY) {
+            parsed.messages = parsed.messages.slice(0, MAX_MESSAGE_HISTORY);
+        }
+
         // --- ALIEN INVASION PROGRESSION LOGIC ---
         const now = Date.now();
         const lastSave = parsed.lastSaveTime || now;
         const elapsedHours = (now - lastSave) / (1000 * 60 * 60);
         
-        // Progression starts after 8 hours of inactivity
         if (elapsedHours >= 8) {
-            const invasionSteps = Math.floor(elapsedHours - 8) + 1; // 1 step per hour after 8h grace
+            const invasionSteps = Math.floor(elapsedHours - 8) + 1; 
             let lostCount = 0;
             const updatedRegistry = { ...parsed.planetRegistry };
             
-            // Iterate reverse: Delta (p12) down to Beta (p4), stopping before p2/p1
-            // Planet IDs in PLANETS array are ordered roughly by difficulty
             for (let i = PLANETS.length - 1; i >= 2; i--) {
                 if (lostCount >= invasionSteps) break;
                 
@@ -182,11 +184,10 @@ export default function App() {
                     text: msgText,
                     timestamp: now
                 };
-                parsed.messages = [msg, ...parsed.messages];
+                parsed.messages = [msg, ...parsed.messages].slice(0, MAX_MESSAGE_HISTORY);
             }
         }
         
-        // Ensure lastSaveTime is updated to now on load
         parsed.lastSaveTime = now;
 
         return { ...createInitialState(), ...parsed }; 
@@ -204,10 +205,8 @@ export default function App() {
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
 
-  // --- RESET GAME LOGIC ---
   const handleProfileReset = (pilotName: string, pilotAvatar: string) => {
       const newState = createInitialState();
-      // Preserve settings but apply new identity
       newState.settings = { ...gameState.settings };
       newState.leaderboard = [...gameState.leaderboard];
       newState.pilotName = pilotName;
@@ -215,14 +214,13 @@ export default function App() {
       
       const welcomeMsg = {
           id: `reset_${Date.now()}`,
-          type: 'activity',
-          category: 'system',
+          type: 'activity' as const,
+          category: 'system' as const,
           pilotName: 'SYSTEM',
           pilotAvatar: '🔄',
           text: `IDENTITY RECONFIGURED. WELCOME, ${pilotName}. SIMULATION RESET.`,
           timestamp: Date.now()
       };
-      // Explicitly cast to any to avoid strict TS issues in this simplified context if types slightly mismatch
       newState.messages = [welcomeMsg as any, ...newState.messages];
       
       setGameState(newState);
@@ -231,7 +229,6 @@ export default function App() {
       audioService.playSfx('buy');
   };
 
-  // --- MARKET GENERATION LOGIC ---
   const generatePlanetMarket = (planetId: string): CargoItem[] => {
       const planet = PLANETS.find(p => p.id === planetId);
       if (!planet) return [];
@@ -244,7 +241,6 @@ export default function App() {
       
       const isTestMode = gameState.settings.testMode;
 
-      // 1. COMMODITIES
       COMMODITIES.forEach(c => {
           let chance = 0.5;
           let qtyBase = 10;
@@ -257,7 +253,7 @@ export default function App() {
               if (isBarren) { chance = 0.8; qtyBase = 40; priceMult = 0.6; }
               else { chance = 0.4; qtyBase = 10; priceMult = 1.5; }
           } else if (['fuel', 'energy'].includes(c.type)) {
-              chance = 0.9; qtyBase = 100; // Always available
+              chance = 0.9; qtyBase = 100; 
           }
 
           if (isTestMode || Math.random() < chance) {
@@ -275,7 +271,6 @@ export default function App() {
           }
       });
 
-      // 2. ORDNANCE (Missiles/Mines)
       EXPLODING_ORDNANCE.forEach(o => {
           const type = o.id.includes('missile') ? 'missile' : 'mine';
           if (!isTestMode && o.id === 'ord_mine_red' && !isHighTech) return; 
@@ -294,7 +289,6 @@ export default function App() {
           }
       });
 
-      // 3. AMMO
       AMMO_MARKET_ITEMS.forEach(a => {
           if (isTestMode || Math.random() < 0.8) {
               const qty = isTestMode ? 100 : Math.floor(5 + Math.random() * 10); 
@@ -311,22 +305,17 @@ export default function App() {
           }
       });
 
-      // 4. WEAPONS & SHIELDS
       const gearPool = [...WEAPONS, ...SHIELDS];
       gearPool.forEach(g => {
           const isShield = 'capacity' in g;
           
           if (!isTestMode) {
-              // Difficulty Constraints
               if (g.id === 'gun_repeater' && planet.difficulty < 3) return;
               if (g.id === 'gun_hyper' && planet.difficulty < 5) return;
-              
-              // Generic High Tier constraint (price > 50k means level 4+)
               const isHighTier = g.price > 50000;
               if (isHighTier && planet.difficulty < 4) return;
           }
           
-          // Rarity check
           let chance = g.price > 50000 ? 0.3 : 0.7;
           if (isWarZone) chance += 0.2; 
 
@@ -347,22 +336,16 @@ export default function App() {
           }
       });
 
-      // 5. EXOTICS (Very Rare, specific planets)
       const exoticPool = [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
       exoticPool.forEach(e => {
           const pQuadrant = planet.quadrant;
           
           if (!isTestMode) {
-              // 1. Exotics only in GAMA or DELTA
               if (pQuadrant !== QuadrantType.GAMA && pQuadrant !== QuadrantType.DELTA) return;
-
-              // 2. Spreading Exotics ONLY in GAMA
               const spreadingIds = ['exotic_star_shatter', 'exotic_rainbow_spread', 'exotic_flamer'];
               if (spreadingIds.includes(e.id) && pQuadrant !== QuadrantType.GAMA) return;
           }
 
-          // Probability Check
-          // Slightly higher chance in war zones or high tech
           if (isTestMode || Math.random() < 0.05) { 
               newListings.push({
                   instanceId: `market_${planetId}_${e.id}_${Date.now()}`,
@@ -379,14 +362,12 @@ export default function App() {
       return newListings;
   };
 
-  // Check and refresh market if needed
   useEffect(() => {
       const dockedId = gameState.dockedPlanetId || 'p1';
       const lastRefresh = gameState.marketRefreshes[dockedId] || 0;
       const now = Date.now();
-      const REFRESH_INTERVAL = 3600000; // 1 Hour
+      const REFRESH_INTERVAL = 3600000; 
 
-      // Check testMode change to force refresh if enabled
       if (gameState.settings.testMode || now - lastRefresh > REFRESH_INTERVAL || !gameState.marketListingsByPlanet[dockedId]) {
           const newListings = generatePlanetMarket(dockedId);
           setGameState(prev => ({
@@ -458,7 +439,6 @@ export default function App() {
   const dockedPlanet = PLANETS.find(p => p.id === dockedId);
   const currentReserves = useMemo(() => gameState.reserveByPlanet[dockedId] || [], [gameState.reserveByPlanet, dockedId]);
 
-  // Initial Backend Sync & Welcome
   useEffect(() => {
       backendService.getLeaderboard().then(lb => {
           setGameState(p => ({ ...p, leaderboard: lb }));
@@ -470,13 +450,13 @@ export default function App() {
                   ...p,
                   messages: [{
                       id: `sys_${Date.now()}`,
-                      type: 'activity',
-                      category: 'system',
+                      type: 'activity' as const,
+                      category: 'system' as const,
                       pilotName: 'SYSTEM',
                       pilotAvatar: '🛰️',
                       text: msg,
                       timestamp: Date.now()
-                  }, ...p.messages]
+                  } as GameMessage, ...p.messages].slice(0, MAX_MESSAGE_HISTORY)
               }));
               sessionStorage.setItem('has_welcomed_session', 'true');
           });
@@ -484,11 +464,9 @@ export default function App() {
   }, [gameState.pilotName]);
 
   useEffect(() => {
-    // Update lastSaveTime before saving
     const stateToSave = { ...gameState, lastSaveTime: Date.now() };
     localStorage.setItem(SAVE_KEY, JSON.stringify(stateToSave));
     
-    // Separate update calls for music and sfx controls
     audioService.setMusicVolume(gameState.settings.musicVolume);
     audioService.setSfxVolume(gameState.settings.sfxVolume);
     audioService.setMusicEnabled(gameState.settings.musicEnabled);
@@ -599,7 +577,7 @@ export default function App() {
        const pEntry = { ...reg[currentPId] };
        let newMessages = [...prev.messages];
        if (success) { pEntry.wins += 1; pEntry.losses = 0; if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { pEntry.status = 'friendly'; pEntry.wins = 0; newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); } else { newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); } if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } } else { if (!aborted) { pEntry.losses += 1; if (pEntry.losses >= 1) { pEntry.losses = 0; const pIndex = PLANETS.findIndex(p => p.id === currentPId); if (pIndex > 0) { const prevPId = PLANETS[pIndex - 1].id; const prevEntry = { ...reg[prevPId] }; let regressionHappened = false; if (prevEntry.status === 'friendly') { prevEntry.status = 'siege'; regressionHappened = true; } else if (prevEntry.status === 'siege') { prevEntry.status = 'occupied'; regressionHappened = true; } if (regressionHappened) { reg[prevPId] = prevEntry; newMessages.unshift({ id: `loss_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, timestamp: Date.now() }); } } } } } reg[currentPId] = pEntry;
-       return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages, leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
+       return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
     });
     if (aborted) { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; const currentQuad = gameState.currentQuadrant; const showTrans = gameState.settings.showTransitions; if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } else { setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } } else { if (payload?.health > 0 && gameState.settings.showTransitions && success) { setScreen('landing'); } else { setScreen('hangar'); audioService.playTrack('command'); } }
   };
@@ -636,7 +614,6 @@ export default function App() {
   const moveAllItems = (direction: 'to_reserve' | 'to_ship') => { if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; const config = selectedShipConfig; if (!config) return; setGameState(prev => { const fit = prev.shipFittings[sId]; const reserves = [...(prev.reserveByPlanet[dockedId] || [])]; let cargo = [...fit.cargo]; if (direction === 'to_reserve') { cargo.forEach(item => { const resIdx = reserves.findIndex(r => r.id === item.id); if (resIdx >= 0) { reserves[resIdx] = { ...reserves[resIdx], quantity: reserves[resIdx].quantity + item.quantity }; } else { reserves.push({ ...item, instanceId: `res_${Date.now()}_${Math.random()}` }); } }); cargo = []; } else { let currentLoad = cargo.reduce((acc, i) => acc + i.quantity, 0); const max = config.maxCargo; for (let i = reserves.length - 1; i >= 0; i--) { if (currentLoad >= max) break; const item = reserves[i]; const space = max - currentLoad; const amount = Math.min(item.quantity, space); if (amount > 0) { const cargoIdx = cargo.findIndex(c => c.id === item.id); if (cargoIdx >= 0) { cargo[cargoIdx] = { ...cargo[cargoIdx], quantity: cargo[cargoIdx].quantity + amount }; } else { cargo.push({ ...item, quantity: amount, instanceId: `cargo_${Date.now()}_${Math.random()}` }); } if (item.quantity === amount) { reserves.splice(i, 1); } else { reserves[i] = { ...item, quantity: item.quantity - amount }; } currentLoad += amount; } } } const newFittings = { ...prev.shipFittings, [sId]: { ...fit, cargo } }; const newReserveByPlanet = { ...prev.reserveByPlanet, [dockedId]: reserves }; return { ...prev, shipFittings: newFittings, reserveByPlanet: newReserveByPlanet }; }); audioService.playSfx('click'); setSelectedCargoIdx(null); setSelectedReserveIdx(null); };
   const moveItems = (direction: 'to_reserve' | 'to_ship', all: boolean) => { if (!gameState.selectedShipInstanceId) return; const sId = gameState.selectedShipInstanceId; const config = selectedShipConfig; if (!config) return; let shouldNullCargo = false; let shouldNullReserve = false; const fit = gameState.shipFittings[sId]; const reserves = gameState.reserveByPlanet[dockedId] || []; const cargo = fit.cargo; if (direction === 'to_reserve') { if (selectedCargoIdx === null) return; const item = cargo[selectedCargoIdx]; if (item) { const batchSize = getTransferBatchSize(item.type); const amount = all ? item.quantity : Math.min(item.quantity, batchSize); if (item.quantity === amount) shouldNullCargo = true; } } else { if (selectedReserveIdx === null) return; const item = reserves[selectedReserveIdx]; if (item) { const currentLoad = cargo.reduce((acc, i) => acc + i.quantity, 0); const space = config.maxCargo - currentLoad; if (space > 0) { const batchSize = getTransferBatchSize(item.type); let amount = all ? item.quantity : Math.min(item.quantity, batchSize); amount = Math.min(amount, space); if (item.quantity === amount) shouldNullReserve = true; } } } setGameState(prev => { const fit = prev.shipFittings[sId]; const reserves = [...(prev.reserveByPlanet[dockedId] || [])]; const cargo = [...fit.cargo]; const newFittings = { ...prev.shipFittings }; const newReserveByPlanet = { ...prev.reserveByPlanet }; if (direction === 'to_reserve') { if (selectedCargoIdx === null) return prev; const item = cargo[selectedCargoIdx]; if (!item) return prev; const batchSize = getTransferBatchSize(item.type); const amount = all ? item.quantity : Math.min(item.quantity, batchSize); if (item.quantity === amount) { cargo.splice(selectedCargoIdx, 1); } else { cargo[selectedCargoIdx] = { ...item, quantity: item.quantity - amount }; } const resIdx = reserves.findIndex(r => r.id === item.id); if (resIdx >= 0) { reserves[resIdx] = { ...reserves[resIdx], quantity: reserves[resIdx].quantity + amount }; } else { reserves.push({ ...item, quantity: amount, instanceId: `res_${Date.now()}_${Math.random()}` }); } } else if (direction === 'to_ship') { if (selectedReserveIdx === null) return prev; const item = reserves[selectedReserveIdx]; if (!item) return prev; const currentLoad = cargo.reduce((acc, i) => acc + i.quantity, 0); const space = config.maxCargo - currentLoad; if (space <= 0) { return prev; } const batchSize = getTransferBatchSize(item.type); let amount = all ? item.quantity : Math.min(item.quantity, batchSize); amount = Math.min(amount, space); if (amount <= 0) return prev; if (item.quantity === amount) { reserves.splice(selectedReserveIdx, 1); } else { reserves[selectedReserveIdx] = { ...item, quantity: item.quantity - amount }; } const cargoIdx = cargo.findIndex(c => c.id === item.id); if (cargoIdx >= 0) { cargo[cargoIdx] = { ...cargo[cargoIdx], quantity: cargo[cargoIdx].quantity + amount }; } else { cargo.push({ ...item, quantity: amount, instanceId: `cargo_${Date.now()}_${Math.random()}` }); } } newFittings[sId] = { ...fit, cargo }; newReserveByPlanet[dockedId] = reserves; return { ...prev, shipFittings: newFittings, reserveByPlanet: newReserveByPlanet }; }); audioService.playSfx('click'); if (shouldNullCargo) setSelectedCargoIdx(null); if (shouldNullReserve) setSelectedReserveIdx(null); };
   
-  // Updated Market Buy with Quantity Logic and Removal
   const marketBuy = (item: CargoItem, qtyToBuy: number = 1, listingId?: string) => {
       const sId = gameState.selectedShipInstanceId;
       if (!sId) return;
@@ -652,7 +629,6 @@ export default function App() {
       
       const currentCargoCount = fit.cargo.reduce((acc, c) => acc + c.quantity, 0);
       
-      // Determine Item Category for space checks
       const isMissile = item.type === 'missile';
       const isMine = item.type === 'mine';
       const isOmega = item.id === 'ord_mine_red';
@@ -691,7 +667,6 @@ export default function App() {
           }
 
           if (remainingQty > 0) {
-              // ALWAYS add to Cargo array for better inventory management visibility
               const cargoSpace = config.maxCargo - newCargo.reduce((acc, c) => acc + c.quantity, 0);
               const toCargo = Math.min(remainingQty, cargoSpace);
               
@@ -705,7 +680,6 @@ export default function App() {
                   updatedFit.cargo = newCargo;
                   purchased = true;
                   
-                  // Auto-select new ammo type for convenience if ammo bought
                   if (itemType === 'ammo') {
                       updatedFit.selectedAmmo = item.id as AmmoType;
                   }
@@ -713,9 +687,7 @@ export default function App() {
           }
 
           if (purchased) {
-              // REMOVE FROM MARKET LISTING
               const currentListings = [...(prev.marketListingsByPlanet[dockedId] || [])];
-              // Find listing by instanceId if provided, or fallback to first matching ID
               const listingIdx = listingId 
                   ? currentListings.findIndex(l => l.instanceId === listingId)
                   : currentListings.findIndex(l => l.id === item.id);
@@ -723,10 +695,8 @@ export default function App() {
               if (listingIdx >= 0) {
                   const listing = currentListings[listingIdx];
                   if (listing.quantity <= qtyToBuy) {
-                      // Depleted: Remove entirely
                       currentListings.splice(listingIdx, 1);
                   } else {
-                      // Decrease quantity
                       currentListings[listingIdx] = { ...listing, quantity: listing.quantity - qtyToBuy };
                   }
               }
@@ -760,13 +730,10 @@ export default function App() {
           
           const item = newRes[resIdx];
 
-          // For selling, we need to find the base price. Since sell items come from Reserve which might not have price info
-          // We look up definitions.
           const baseDef = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS, ...AMMO_MARKET_ITEMS].find(x => x.id === item.id);
           const basePrice = baseDef?.price || item.price || 1000; 
           
           let multiplier = 0.5; 
-          // Fix: use planet instead of currentPlanet
           const isHabitable = ['#10b981', '#064e3b', '#60a5fa', '#3b82f6'].includes(planet.color);
           const isBarren = !isHabitable;
           const level = planet.difficulty;
@@ -804,10 +771,8 @@ export default function App() {
       {screen === 'intro' && (
         <div className="relative w-full h-full flex items-center justify-center">
           <StoryScene />
-          {/* Main Overlay - Simplified Layout */}
           <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
             
-            {/* Title Block - Static Responsive Sizing */}
             <div className="mb-12 text-center pointer-events-auto">
                 <h1 className={`retro-font text-4xl sm:text-6xl md:text-8xl lg:text-9xl text-emerald-500 animate-pulse drop-shadow-[0_0_20px_rgba(16,185,129,0.6)] leading-none text-center flex flex-col items-center`}>
                     GALACTIC
@@ -816,9 +781,7 @@ export default function App() {
                 
             </div>
 
-            {/* Controls - Dynamic UI Sizing based on settings */}
             <div className={`flex flex-col ${uiStyles.spacing} pointer-events-auto ${uiStyles.container}`}>
-                {/* 1. START MISSION */}
                 <button 
                   onClick={startNewGame}
                   className={`w-full h-14 bg-zinc-900 border-2 border-emerald-500 text-emerald-400 font-black ${uiStyles.btn} tracking-[0.2em] uppercase overflow-hidden hover:bg-emerald-500 hover:text-black transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] flex items-center justify-center`}
@@ -826,7 +789,6 @@ export default function App() {
                   START MISSION
                 </button>
 
-                {/* 2. RESUME MISSION */}
                 <button 
                   onClick={resumeGame}
                   className={`w-full h-14 bg-zinc-900 border border-zinc-600 text-zinc-400 font-black ${uiStyles.btn} tracking-[0.15em] uppercase hover:border-emerald-500 hover:text-emerald-400 transition-all duration-300 flex items-center justify-center`}
@@ -834,7 +796,6 @@ export default function App() {
                   RESUME MISSION
                 </button>
 
-                {/* 3. ROW: STORY | OPTIONS */}
                 <div className="flex gap-4 w-full">
                     <button 
                       onClick={() => setIsManualOpen(true)}
@@ -874,6 +835,7 @@ export default function App() {
           setIsMessagesOpen={setIsMessagesOpen}
           setIsMarketOpen={setIsMarketOpen}
           setIsCargoOpen={setIsCargoOpen}
+          setIsManualOpen={setIsManualOpen}
           activeSlotIndex={activeSlotIndex}
           setActiveSlotIndex={(i) => { setActiveSlotIndex(i); setGameState(p => ({ ...p, selectedShipInstanceId: p.ownedShips[i].instanceId })); }}
           systemMessage={systemMessage}
@@ -984,8 +946,9 @@ export default function App() {
               shipShape={selectedShipConfig.shape} 
               shipConfig={selectedShipConfig}
               onComplete={() => { 
+                  const pid = gameState.currentPlanet?.id || 'p1';
+                  setGameState(p => ({ ...p, dockedPlanetId: pid })); 
                   setScreen('hangar'); 
-                  setGameState(p => ({ ...p, dockedPlanetId: p.currentPlanet!.id })); 
                   audioService.playTrack('command'); 
               }} 
               weaponId={activeWeaponId}
@@ -995,7 +958,6 @@ export default function App() {
           />
       )}
 
-      {/* DIALOGS */}
       <OptionsDialog 
           isOpen={isOptionsOpen} 
           onClose={() => setIsOptionsOpen(false)} 
