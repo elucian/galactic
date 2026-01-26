@@ -119,7 +119,15 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       // STOP MUSIC ON MOUNT
       audioService.stop();
 
-      const handleKeyDown = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); onComplete(); }};
+      const handleKeyDown = (e: KeyboardEvent) => { 
+          if (e.code === 'Space') { 
+              e.preventDefault(); 
+              // Stop audio immediately on skip key
+              audioService.stopLaunchSequence();
+              audioService.stop();
+              onComplete(); 
+          }
+      };
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onComplete]);
@@ -295,7 +303,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           ctx.fillStyle = grad; 
           ctx.fillRect(0, 0, w, h);
 
-          // STAR VISIBILITY FIX
+          // 2. STARS
           const baseStarVis = (!env.isDay ? 0.8 : 0);
           const starVis = Math.max(baseStarVis, Math.min(1, baseStarVis + (spaceRatio * 1.5)));
           
@@ -318,6 +326,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           const celScale = 1 + (spaceRatio * 0.2); 
           let dimFactor = 0;
 
+          // 3. SUN / MOON
           // DELTA QUADRANT SPECIAL: Black Hole + Red Dwarf
           if (env.quadrant === QuadrantType.DELTA) {
               const time = Date.now();
@@ -383,6 +392,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               if (isBehind) { drawDwarf(); drawBlackHole(); } else { drawBlackHole(); drawDwarf(); }
 
           } else {
+              // Standard Sun/Moon Logic
               if (s.celestialY > -100 && env.isDay) { 
                   const sunR = 30 * celScale; 
                   const sGrad = ctx.createRadialGradient(celX, celY, sunR*0.2, celX, celY, sunR*2.5); 
@@ -396,6 +406,28 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               }
           }
 
+          // 4. WANDERERS - Inserted HERE (After Sun/Moon, Before Clouds)
+          // Only render if visible (at night or in space)
+          if (env.wanderers && env.wanderers.length > 0 && starVis > 0.3) { 
+              env.wanderers.forEach(wd => {
+                  // Calculate parallax position (faster than stars, slower than clouds)
+                  const wx = (wd.x * w + s.startTime * 0.005) % (w + 100) - 50;
+                  const wy = (wd.y * h + s.viewY * 0.1) % (h + 100) - 50; // Parallax Y
+                  
+                  // Force white/grey color
+                  ctx.fillStyle = wd.color || '#e5e7eb'; 
+                  ctx.shadowColor = '#ffffff'; 
+                  ctx.shadowBlur = 2; 
+                  ctx.globalAlpha = starVis;
+                  ctx.beginPath();
+                  ctx.arc(wx, wy, Math.min(2.5, wd.size), 0, Math.PI*2);
+                  ctx.fill();
+                  ctx.shadowBlur = 0;
+                  ctx.globalAlpha = 1.0;
+              });
+          }
+
+          // 5. CLOUDS (Layers 0, 1, 2)
           if (env.clouds && env.clouds.length > 0 && spaceRatio < 0.9) {
               env.clouds.forEach(c => {
                   const cloudY = (c.y + s.viewY * 0.5) % (h + 400) - 200;
@@ -690,6 +722,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           cancelAnimationFrame(raf); 
           clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); 
           clearTimeout(t4); clearTimeout(t5); clearTimeout(t6); clearTimeout(t7); clearTimeout(t8);
+          // Safety cleanup
           audioService.stopLaunchSequence();
       };
   }, [env, shipConfig, engineLocs]);
@@ -703,7 +736,12 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           fuel={visualFuel} 
           maxFuel={maxFuel} 
           status={statusText} 
-          onSkip={onComplete} 
+          onSkip={() => {
+              // Surgical fix: Explicitly stop all audio when skipping
+              audioService.stopLaunchSequence();
+              audioService.stop();
+              onComplete();
+          }} 
           phase={phase} 
       />
       {countdown !== null && countdown > 0 && (

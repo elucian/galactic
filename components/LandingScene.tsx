@@ -5,7 +5,7 @@ import { SHIPS, ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { audioService } from '../services/audioService.ts';
 import { LandingGear } from './LandingGear.tsx';
-import { drawDome, drawPlatform, getEngineCoordinates, drawPowerPlant, drawBoulder, generatePlanetEnvironment, drawBuilding, drawVehicle, drawStreetLight, drawTower, drawCloud } from '../utils/drawingUtils.ts';
+import { drawDome, drawPlatform, getEngineCoordinates, drawPowerPlant, drawBoulder, generatePlanetEnvironment, drawBuilding, drawVehicle, drawStreetLight, drawTower, drawCloud, drawHangar, drawWindmill } from '../utils/drawingUtils.ts';
 import { SequenceStatusBar } from './SequenceStatusBar.tsx';
 
 // --- Local Helpers ---
@@ -49,9 +49,10 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
   const [thrustActive, setThrustActive] = useState(false);
   const [phase, setPhase] = useState<'reentry' | 'braking' | 'approach' | 'landed'>('reentry');
   
+  const phaseRef = useRef<'reentry' | 'braking' | 'approach' | 'landed'>('reentry');
+
   const DOM_SCALE = 1.28;
 
-  // Resolve Ship Config: Prefer passed object, fallback to shape find
   const shipConfig = useMemo(() => {
       if (propShipConfig) return propShipConfig;
       const match = SHIPS.find((s) => s.shape === shipShape);
@@ -106,7 +107,16 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       if (audioService.startLandingThruster) audioService.startLandingThruster();
       if (audioService.updateLandingThruster) audioService.updateLandingThruster(0);
       
-      const handleKeyDown = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); onComplete(); }};
+      const handleKeyDown = (e: KeyboardEvent) => { 
+          if (e.code === 'Space') { 
+              e.preventDefault(); 
+              // Stop audio immediately
+              audioService.stopReEntryWind();
+              audioService.stopLandingThruster();
+              audioService.stop();
+              onComplete(); 
+          }
+      };
       window.addEventListener('keydown', handleKeyDown);
       return () => { 
           // Stop all sounds on unmount
@@ -115,6 +125,22 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           window.removeEventListener('keydown', handleKeyDown);
       };
   }, [onComplete]);
+
+  // AUDIO PHASE LOGIC - Moved OUT of the loop to prevent crashes
+  useEffect(() => {
+      if (phase === 'reentry') {
+          audioService.startReEntryWind();
+      } else if (phase === 'braking') {
+          audioService.stopReEntryWind();
+          audioService.playLandingIgnition();
+          audioService.startLandingThruster();
+      } else if (stateRef.current.hasThudded) {
+          audioService.stopLandingThruster();
+          audioService.playOrbitLatch();
+          audioService.playLandThud();
+          audioService.playSteamRelease();
+      }
+  }, [phase, stateRef.current.hasThudded]);
 
   useEffect(() => {
       const s = stateRef.current;
@@ -167,10 +193,8 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       
       const isComplexGear = ['mechanical', 'insect', 'magnetic'].includes(shipConfig.landingGearType);
       const svgLegLength = isComplexGear ? 72 : 55;
-      const maxSvgCompression = isComplexGear ? 15 : 10;
-      
       const LEG_OFFSET = svgLegLength * DOM_SCALE; 
-      const MAX_COMPRESSION_PX = maxSvgCompression * DOM_SCALE;
+      const MAX_COMPRESSION_PX = (isComplexGear ? 15 : 10) * DOM_SCALE;
 
       // Determine Sun Color based on Quadrant
       const sunColor = (planet as Planet).quadrant === QuadrantType.ALFA ? '#facc15' : 
@@ -194,17 +218,11 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           
           // --- PHYSICS UPDATE ---
           if (s.viewY > 1000) {
-              if (phase !== 'reentry') {
-                  setPhase('reentry');
-                  // Re-entry Phase: Only Wind
-                  audioService.startReEntryWind();
-                  audioService.stopLandingThruster();
-              }
+              if (phase !== 'reentry') { setPhase('reentry'); phaseRef.current = 'reentry'; }
               s.velocity = 20; 
               s.viewY -= s.velocity;
               currentScale = 0.1 + (1.0 - (s.viewY / 2000)) * 0.3; 
               s.shipY = h * 0.3; 
-              // Re-entry shake
               s.shake = (Math.random() - 0.5) * 4; 
               s.reEntryHeat = Math.min(1, s.reEntryHeat + 0.05);
               s.isThrusting = false;
@@ -214,15 +232,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               audioService.updateReEntryWind(s.reEntryHeat);
           } 
           else if (s.viewY > 200) {
-              if (phase !== 'braking') {
-                  setPhase('braking');
-                  // Braking Phase: Cut wind, Start engine
-                  // Stop wind BEFORE engine to avoid clash
-                  audioService.stopReEntryWind(); 
-                  audioService.playLandingIgnition(); // Start with a bang
-                  audioService.startLandingThruster(); // Start rumble
-              }
-              
+              if (phase !== 'braking') { setPhase('braking'); phaseRef.current = 'braking'; }
               s.velocity *= 0.96; 
               s.viewY -= s.velocity;
               if (s.velocity < 2) s.velocity = 2;
@@ -230,26 +240,17 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               const progress = 1.0 - (s.viewY / 1000);
               const targetY = touchY - 300; 
               s.shipY = (h * 0.3) + (targetY - (h * 0.3)) * progress;
-              
-              // Engine rumble shake
               s.shake = (Math.random() - 0.5) * 3; 
               s.reEntryHeat = Math.max(0, s.reEntryHeat - 0.05); 
-              
-              // Always thrusting in this phase to slow down
               s.isThrusting = true;
               s.thrustIntensity = Math.min(1.0, s.thrustIntensity + 0.05);
               setStatus("MAIN THRUSTERS ENGAGED");
               
-              // Volume ramp up
               audioService.updateLandingThruster(0.8 * s.thrustIntensity);
-
-              if (s.viewY < 600) {
-                  s.legExtVal = Math.min(1, s.legExtVal + 0.02);
-              }
+              if (s.viewY < 600) s.legExtVal = Math.min(1, s.legExtVal + 0.02);
           }
           else if (!s.hasThudded) {
-              setPhase('approach');
-              // Final Descent
+              if (phase !== 'approach') { setPhase('approach'); phaseRef.current = 'approach'; }
               s.viewY = Math.max(0, s.viewY - s.velocity);
               s.velocity = Math.max(0.5, s.velocity * 0.9); 
               const dist = touchY - s.shipY;
@@ -266,25 +267,19 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               
               if (Math.abs(s.shipY - touchY) < 4.0 && s.viewY < 5) {
                   s.hasThudded = true;
-                  s.viewY = 0; 
-                  s.thrustIntensity = 0;
+                  s.viewY = 0; s.thrustIntensity = 0;
                   s.suspensionVel = 3.0; 
-                  
-                  // LANDING SEQUENCE AUDIO: Cut Engine -> Clank -> Hiss
-                  audioService.stopLandingThruster();
-                  audioService.playOrbitLatch(); // Tank/Clank
-                  audioService.playLandThud();   // Thud
-                  audioService.playSteamRelease(); // Steam
-                  
                   s.steamTimer = 120; 
                   for(let k=0; k<30; k++) { 
                       const dir = Math.random() > 0.5 ? 1 : -1; 
                       s.particles.push({ x: cx + dir * (20 + Math.random()*50), y: padSurfaceY, vx: dir * (2 + Math.random() * 8), vy: -0.5 - Math.random() * 2, size: 15 + Math.random() * 25, life: 2.5 + Math.random() * 1.0, maxLife: 3.0, type: 'dust', color: '#a1a1aa' }); 
                   }
+                  // Force phase update to trigger sound useEffect
+                  setPhase(p => p); 
               }
           }
           else {
-              setPhase('landed');
+              if (phase !== 'landed') { setPhase('landed'); phaseRef.current = 'landed'; }
               s.isThrusting = false;
               s.legExtVal = 1.0;
               setStatus("TOUCHDOWN CONFIRMED");
@@ -307,7 +302,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   }
               }
               s.autoCompleteTimer++;
-              // PREVENTS JAM: Ensure onComplete called only once
               if (s.autoCompleteTimer > 400 && !s.hasCompleted) { 
                   s.hasCompleted = true;
                   onComplete();
@@ -320,15 +314,11 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           setThrustActive(s.isThrusting);
 
           // DRAWING
-          
-          // 1. CLEAR
           if (fgCtx) fgCtx.clearRect(0, 0, w, h);
           
-          // 2. MAIN BACKGROUND CANVAS (Transition to Black at High Altitude)
           const spaceTransitionHeight = 3000;
           const spaceRatio = Math.min(1, Math.max(0, (s.viewY - 500) / spaceTransitionHeight));
           
-          // Interpolate sky colors to black for space transition
           const sky1 = mixColor(env.skyGradient[0], '#000000', spaceRatio);
           const sky2 = mixColor(env.skyGradient[1], '#000000', spaceRatio);
           
@@ -338,7 +328,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           ctx.fillStyle = grad; 
           ctx.fillRect(0, 0, w, h);
 
-          // ADJUSTED STAR VISIBILITY LOGIC
+          // 2. STARS
           let starVis = 0;
           if (env.isDay) {
               const baseStarOpacity = Math.min(1, Math.max(0, (s.viewY - 200) / 1000));
@@ -354,23 +344,14 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               ctx.globalAlpha = 1.0;
           }
 
-          // CELESTIAL BODIES (SUN / MOON / WANDERERS) - Drawn before hills
+          // 3. SUN / MOON
           const sunY = h * 0.2 + (s.viewY * 0.05); 
           const sunX = w * 0.7;
           let dimFactor = 0;
 
-          // ... (Space Object Drawing Logic Same as Before) ...
-          // DELTA QUADRANT SPECIAL: Black Hole + Red Dwarf
+          // ... (Celestial Bodies drawing logic from util/inline)
           if (env.quadrant === QuadrantType.DELTA) {
               const time = Date.now();
-              const jetCycle = time % 20000;
-              let jetAlpha = 0;
-              if (jetCycle < 10000) {
-                  if (jetCycle < 1000) jetAlpha = jetCycle / 1000; 
-                  else if (jetCycle > 9000) jetAlpha = (10000 - jetCycle) / 1000; 
-                  else jetAlpha = 1;
-              }
-
               const slowTime = time * 0.00025; 
               const dwarfDist = 120;
               const dwarfX = sunX + Math.cos(slowTime) * dwarfDist;
@@ -378,131 +359,57 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               const dwarfR = 15 * 0.7; 
               const zDepth = Math.sin(slowTime);
               const isBehind = zDepth < 0;
-              
-              if (isBehind) {
-                  dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
-              }
+              if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
 
-              const drawDwarf = () => {
-                  ctx.fillStyle = '#ef4444';
-                  ctx.shadowColor = '#ef4444';
-                  ctx.shadowBlur = 20;
-                  ctx.beginPath(); ctx.arc(dwarfX, dwarfY, dwarfR, 0, Math.PI*2); ctx.fill();
-                  ctx.shadowBlur = 0;
-              };
-
+              const drawDwarf = () => { ctx.fillStyle = '#ef4444'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(dwarfX, dwarfY, dwarfR, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; };
               const drawBlackHole = () => {
                   const bhRadius = 40;
                   const bhGrad = ctx.createRadialGradient(sunX, sunY, bhRadius*0.8, sunX, sunY, bhRadius*2.5);
-                  bhGrad.addColorStop(0, '#000000');
-                  bhGrad.addColorStop(0.4, '#4c1d95'); 
-                  bhGrad.addColorStop(0.6, '#a855f7'); 
-                  bhGrad.addColorStop(1, 'rgba(0,0,0,0)');
-                  ctx.fillStyle = bhGrad;
-                  ctx.beginPath(); ctx.arc(sunX, sunY, bhRadius*2.5, 0, Math.PI*2); ctx.fill();
-                  
-                  ctx.fillStyle = '#000000';
-                  ctx.shadowColor = '#fff';
-                  ctx.shadowBlur = 10;
-                  ctx.beginPath(); ctx.arc(sunX, sunY, bhRadius, 0, Math.PI*2); ctx.fill();
-                  ctx.shadowBlur = 0;
-
-                  if (jetAlpha > 0) {
-                      ctx.save();
-                      ctx.globalAlpha = jetAlpha;
-                      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-                      ctx.beginPath();
-                      ctx.moveTo(sunX - 3, sunY - bhRadius);
-                      ctx.lineTo(sunX + 3, sunY - bhRadius);
-                      ctx.lineTo(sunX, sunY - 1000); 
-                      ctx.fill();
-                      ctx.beginPath();
-                      ctx.moveTo(sunX - 3, sunY + bhRadius);
-                      ctx.lineTo(sunX + 3, sunY + bhRadius);
-                      ctx.lineTo(sunX, sunY + 1000); 
-                      ctx.fill();
-                      ctx.restore();
-                  }
+                  bhGrad.addColorStop(0, '#000000'); bhGrad.addColorStop(0.4, '#4c1d95'); bhGrad.addColorStop(0.6, '#a855f7'); bhGrad.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = bhGrad; ctx.beginPath(); ctx.arc(sunX, sunY, bhRadius*2.5, 0, Math.PI*2); ctx.fill();
+                  ctx.fillStyle = '#000000'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(sunX, sunY, bhRadius, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
               };
-
-              if (isBehind) {
-                  drawDwarf();
-                  drawBlackHole();
-              } else {
-                  drawBlackHole();
-                  drawDwarf();
-              }
-
+              if (isBehind) { drawDwarf(); drawBlackHole(); } else { drawBlackHole(); drawDwarf(); }
           } else {
               if (env.isDay) {
                   const sunR = 40;
                   const sGrad = ctx.createRadialGradient(sunX, sunY, sunR*0.2, sunX, sunY, sunR*2.5);
-                  sGrad.addColorStop(0, sunColor); 
-                  sGrad.addColorStop(1, 'rgba(0,0,0,0)');
-                  ctx.fillStyle = sGrad;
-                  ctx.beginPath(); ctx.arc(sunX, sunY, sunR*2.5, 0, Math.PI*2); ctx.fill();
-                  ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8; 
-                  ctx.beginPath(); ctx.arc(sunX, sunY, sunR*0.8, 0, Math.PI*2); ctx.fill(); 
-                  ctx.globalAlpha = 1.0;
+                  sGrad.addColorStop(0, sunColor); sGrad.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = sGrad; ctx.beginPath(); ctx.arc(sunX, sunY, sunR*2.5, 0, Math.PI*2); ctx.fill();
+                  ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.arc(sunX, sunY, sunR*0.8, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0;
               } else {
                   const moonR = 30;
-                  ctx.fillStyle = '#fff';
-                  ctx.shadowColor = '#fff';
-                  ctx.shadowBlur = 15;
-                  ctx.beginPath(); ctx.arc(sunX, sunY, moonR, 0, Math.PI*2); ctx.fill();
-                  ctx.shadowBlur = 0;
-                  
+                  ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 15; ctx.beginPath(); ctx.arc(sunX, sunY, moonR, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
                   const phaseShift = (Date.now() / 10000) % Math.PI; 
-                  ctx.fillStyle = 'rgba(0,0,0,0.8)';
-                  ctx.beginPath(); 
-                  ctx.arc(sunX - (Math.cos(phaseShift)*15), sunY, moonR, 0, Math.PI*2); 
-                  ctx.fill();
+                  ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.beginPath(); ctx.arc(sunX - (Math.cos(phaseShift)*15), sunY, moonR, 0, Math.PI*2); ctx.fill();
               }
           }
 
+          // 4. WANDERERS - Inserted HERE (After Sun/Moon, Before Clouds)
+          // Only render if visible (at night or in space)
           if (env.wanderers && env.wanderers.length > 0 && starVis > 0.3) { 
               env.wanderers.forEach(wd => {
                   const wx = (wd.x * w + s.startTime * 0.005) % (w + 100) - 50;
                   const wy = wd.y * h;
-                  ctx.fillStyle = wd.color;
-                  ctx.shadowColor = wd.color;
-                  ctx.shadowBlur = 10;
+                  // Force white/grey color
+                  ctx.fillStyle = wd.color || '#e5e7eb'; 
+                  ctx.shadowColor = '#ffffff'; 
+                  ctx.shadowBlur = 2; // Small crisp glow
                   ctx.globalAlpha = starVis;
                   ctx.beginPath();
-                  ctx.arc(wx, wy, wd.size, 0, Math.PI*2);
+                  // Ensure small size
+                  ctx.arc(wx, wy, Math.min(2.5, wd.size), 0, Math.PI*2);
                   ctx.fill();
                   ctx.shadowBlur = 0;
-                  
-                  if (wd.hasRings) {
-                      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-                      ctx.lineWidth = 2;
-                      ctx.beginPath();
-                      ctx.ellipse(wx, wy, wd.size * 2, wd.size * 0.5, -0.2, 0, Math.PI*2);
-                      ctx.stroke();
-                  }
                   ctx.globalAlpha = 1.0;
               });
           }
 
-          if (s.viewY > 200 && s.viewY < 3000) {
-              ctx.fillStyle = '#000';
-              s.flock.forEach(bird => {
-                  bird.x += bird.vx; bird.y -= s.velocity * 0.5; bird.timer += bird.flapSpeed;
-                  const wingOffset = Math.sin(bird.timer) * 4;
-                  if (bird.x > w + 50) bird.x = -50; if (bird.x < -50) bird.x = w + 50;
-                  const screenY = (bird.y + s.viewY * 0.5) % (h + 500) - 250;
-                  if (screenY > -50 && screenY < h + 50) { ctx.beginPath(); ctx.moveTo(bird.x - 4, screenY + wingOffset); ctx.lineTo(bird.x, screenY); ctx.lineTo(bird.x + 4, screenY + wingOffset); ctx.stroke(); }
-              });
-          }
-
-          // RENDER CLOUDS (Background on ctx, Foreground on fgCtx)
+          // 5. CLOUDS (Drawn AFTER Wanderers, so they cover them)
           if (env.clouds && env.clouds.length > 0 && s.viewY < 15000) {
               const cloudSpaceRatio = Math.min(1, s.viewY / 15000); 
               env.clouds.forEach(c => { 
-                  let pFactor = 0.6;
-                  if (c.layer === 0) pFactor = 0.2;
-                  if (c.layer === 2) pFactor = 1.2;
-
+                  let pFactor = 0.6; if (c.layer === 0) pFactor = 0.2; if (c.layer === 2) pFactor = 1.2;
                   const cloudY = (c.y + s.viewY * pFactor) % (h + 800) - 400; 
                   const cloudX = (c.x + (Date.now() - s.startTime)*0.01 * c.speed) % (w + 800) - 400; 
                   
@@ -516,12 +423,22 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               });
           }
 
+          // ... HILLS, BIRDS, SHIPS, PARTICLES ... (Standard flow continues)
+          if (s.viewY > 200 && s.viewY < 3000) {
+              ctx.fillStyle = '#000';
+              s.flock.forEach(bird => {
+                  bird.x += bird.vx; bird.y -= s.velocity * 0.5; bird.timer += bird.flapSpeed;
+                  const wingOffset = Math.sin(bird.timer) * 4;
+                  if (bird.x > w + 50) bird.x = -50; if (bird.x < -50) bird.x = w + 50;
+                  const screenY = (bird.y + s.viewY * 0.5) % (h + 500) - 250;
+                  if (screenY > -50 && screenY < h + 50) { ctx.beginPath(); ctx.moveTo(bird.x - 4, screenY + wingOffset); ctx.lineTo(bird.x, screenY); ctx.lineTo(bird.x + 4, screenY + wingOffset); ctx.stroke(); }
+              });
+          }
+
           const worldY = groundY + s.viewY + s.shake;
           ctx.save();
           ctx.translate(cx, worldY); 
-
-          // ... (Environment Rendering) ...
-          // HILLS RENDER - Back to Front
+          
           env.hills.forEach((hill: any, i: number) => {
               const pFactor = hill.parallaxFactor;
               const yOff = (s.viewY * pFactor * 0.1); 
@@ -539,9 +456,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               ctx.lineTo(px0, h);
               ctx.lineTo(px0, py0);
 
-              // TERRAIN DRAWING
               const pathPoints: {x:number, y:number}[] = [];
-              
               if (hill.type === 'hill') {
                   for (let j = 0; j < hill.points.length - 1; j++) {
                       const pCurrent = hill.points[j];
@@ -553,8 +468,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                       const xc = (x1 + x2) / 2;
                       const yc = (y1 + y2) / 2;
                       ctx.quadraticCurveTo(x1, y1, xc, yc);
-                      
-                      // Collect path points for road
                       if (hill.hasRoad) {
                           if (j === 0) pathPoints.push({x: x1, y: y1});
                           pathPoints.push({x: xc, y: yc});
@@ -562,9 +475,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                       }
                   }
                   const lastP = hill.points[hill.points.length - 1];
-                  const lx = lastP.xRatio * hillW - 1500;
-                  const ly = -(lastP.heightRatio * hillHeight) - 50 + yOff;
-                  ctx.lineTo(lx, ly);
+                  ctx.lineTo(lastP.xRatio * hillW - 1500, -(lastP.heightRatio * hillHeight) - 50 + yOff);
               } else {
                   for (let j = 1; j < hill.points.length - 1; j++) {
                       const pCurr = hill.points[j];
@@ -576,13 +487,10 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                       ctx.arcTo(xCurr, yCurr, xNextP, yNextP, 12);
                   }
                   const lastP = hill.points[hill.points.length - 1];
-                  const lx = lastP.xRatio * hillW - 1500;
-                  const ly = -(lastP.heightRatio * hillHeight) - 50 + yOff;
-                  ctx.lineTo(lx, ly);
+                  ctx.lineTo(lastP.xRatio * hillW - 1500, -(lastP.heightRatio * hillHeight) - 50 + yOff);
                   ctx.lineJoin = 'round';
                   ctx.lineWidth = 10;
               }
-
               ctx.lineTo(w, h);
               ctx.fill();
               ctx.lineJoin = 'miter'; 
@@ -593,39 +501,31 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   ctx.strokeStyle = '#27272a'; ctx.lineWidth = 4; ctx.beginPath();
                   let first = true;
                   hill.points.forEach((p:any) => {
-                      const px = (p.xRatio * hillW) - 1500;
-                      const py = -(p.heightRatio * hillHeight) - 50 + yOff;
+                      const px = (p.xRatio * hillW) - 1500; const py = -(p.heightRatio * hillHeight) - 50 + yOff;
                       if(first) { ctx.moveTo(px, py); first=false; } else ctx.lineTo(px, py);
                   });
                   ctx.stroke();
                   env.trains.forEach(train => {
                       train.progress += train.speed * (train.dir || 1);
-                      if (train.progress > 1) train.progress -= 1; 
-                      if (train.progress < 0) train.progress += 1;
+                      if (train.progress > 1) train.progress -= 1; if (train.progress < 0) train.progress += 1;
                       const idxF = train.progress * (hill.points.length - 1);
-                      const idx = Math.floor(idxF);
-                      const sub = idxF - idx;
-                      const p1 = hill.points[idx];
-                      const p2 = hill.points[Math.min(idx+1, hill.points.length-1)];
+                      const idx = Math.floor(idxF); const sub = idxF - idx;
+                      const p1 = hill.points[idx]; const p2 = hill.points[Math.min(idx+1, hill.points.length-1)];
                       if (p1 && p2) {
-                          const x1 = (p1.xRatio * hillW) - 1500;
-                          const y1 = -(p1.heightRatio * hillHeight) - 50 + yOff;
-                          const x2 = (p2.xRatio * hillW) - 1500;
-                          const y2 = -(p2.heightRatio * hillHeight) - 50 + yOff;
-                          const tx = x1 + (x2 - x1) * sub;
-                          const ty = y1 + (y2 - y1) * sub;
+                          const x1 = (p1.xRatio * hillW) - 1500; const y1 = -(p1.heightRatio * hillHeight) - 50 + yOff;
+                          const x2 = (p2.xRatio * hillW) - 1500; const y2 = -(p2.heightRatio * hillHeight) - 50 + yOff;
+                          const tx = x1 + (x2 - x1) * sub; const ty = y1 + (y2 - y1) * sub;
                           const angle = Math.atan2(y2-y1, x2-x1);
                           for(let k=0; k<train.cars; k++) {
                               const carOff = k * 35; 
-                              const cx = tx - (Math.cos(angle) * carOff * train.dir);
-                              const cy = ty - (Math.sin(angle) * carOff * train.dir);
+                              const cx = tx - (Math.cos(angle) * carOff * train.dir); const cy = ty - (Math.sin(angle) * carOff * train.dir);
                               drawVehicle(ctx, cx, cy - 6, angle, k===0 ? 'train' : 'car', train.color, env.isDay, train.dir);
                           }
                       }
                   });
               }
 
-              // ROADS - Updated to follow terrain curve
+              // ROADS
               if (hill.hasRoad && pathPoints.length > 0) {
                   ctx.beginPath();
                   pathPoints.forEach((p, idx) => { if(idx===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
@@ -635,243 +535,71 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   if (env.cars.length > 0 && s.viewY < 1000) {
                       env.cars.forEach(car => {
                           car.progress += car.speed * (car.dir || 1); 
-                          if (car.progress > 1) car.progress -= 1; 
-                          if (car.progress < 0) car.progress += 1;
-                          
-                          const trackLen = pathPoints.length - 1;
-                          const exactIdx = car.progress * trackLen;
-                          const idx = Math.floor(exactIdx);
-                          const sub = exactIdx - idx;
-                          const p1 = pathPoints[idx];
-                          const p2 = pathPoints[Math.min(idx + 1, trackLen)];
-                          
+                          if (car.progress > 1) car.progress -= 1; if (car.progress < 0) car.progress += 1;
+                          const trackLen = pathPoints.length - 1; const exactIdx = car.progress * trackLen;
+                          const idx = Math.floor(exactIdx); const sub = exactIdx - idx;
+                          const p1 = pathPoints[idx]; const p2 = pathPoints[Math.min(idx + 1, trackLen)];
                           if (p1 && p2) {
-                              const vx = p1.x + (p2.x - p1.x) * sub;
-                              const vy = p1.y + (p2.y - p1.y) * sub;
+                              const vx = p1.x + (p2.x - p1.x) * sub; const vy = p1.y + (p2.y - p1.y) * sub;
                               const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
                               drawVehicle(ctx, vx, vy - 4, angle, 'car', car.color, env.isDay, car.dir);
                           }
                       });
                   }
-                  
-                  // STREET LIGHTS
-                  if (env.streetLights) {
-                      env.streetLights.forEach(sl => {
-                          const ratio = (sl.x + 1500) / 3000;
-                          if (ratio >= 0 && ratio <= 1) {
-                              const idx = Math.floor(ratio * (pathPoints.length - 1));
-                              const p = pathPoints[idx];
-                              if (p) drawStreetLight(ctx, p.x, p.y, sl.h, env.isDay);
-                          }
-                      });
-                  }
+                  if (env.streetLights) { env.streetLights.forEach(sl => { const ratio = (sl.x + 1500) / 3000; if (ratio >= 0 && ratio <= 1) { const idx = Math.floor(ratio * (pathPoints.length - 1)); const p = pathPoints[idx]; if (p) drawStreetLight(ctx, p.x, p.y, sl.h, env.isDay); } }); }
               }
 
-              // HILL FEATURES (TREES) - Drawn AFTER roads to be visually on top (in front)
-              if (hill.trees) {
-                  hill.trees.forEach((t: any, tIdx: number) => {
-                      const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1];
-                      if (p1 && p2) {
-                          const x1 = p1.xRatio * hillW - 1500; 
-                          const y1 = - (p1.heightRatio * 300) - 50 + yOff; 
-                          const x2 = p2.xRatio * hillW - 1500; 
-                          const y2 = - (p2.heightRatio * 300) - 50 + yOff;
-                          const tx = x1 + (x2 - x1) * t.offset; 
-                          let ty = y1 + (y2 - y1) * t.offset;
-                          
-                          // Offset trees to sides of road
-                          if (hill.hasRoad) {
-                              const side = tIdx % 2 === 0 ? 1 : -1;
-                              ty += side * 25;
-                          }
-                          
-                          drawBuilding(ctx, { x: tx, y: ty, type: t.type === 'pine' ? 'tree' : 'palm', w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false);
-                      }
-                  });
-              }
-              if (hill.cityBuildings) {
-                  hill.cityBuildings.forEach((b: any) => {
-                      const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff;
-                      drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color }, env.isDay, false);
-                  });
-              }
+              // OBJECTS
+              if (hill.trees) { hill.trees.forEach((t: any, tIdx: number) => { const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1]; if (p1 && p2) { const x1 = p1.xRatio * hillW - 1500; const y1 = - (p1.heightRatio * 300) - 50 + yOff; const x2 = p2.xRatio * hillW - 1500; const y2 = - (p2.heightRatio * 300) - 50 + yOff; const tx = x1 + (x2 - x1) * t.offset; let ty = y1 + (y2 - y1) * t.offset; if (hill.hasRoad) { const side = tIdx % 2 === 0 ? 1 : -1; ty += side * 25; } drawBuilding(ctx, { x: tx, y: ty, type: t.type === 'pine' ? 'tree' : 'palm', w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false); } }); }
+              if (hill.cityBuildings) { hill.cityBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff; drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color }, env.isDay, false); }); }
           });
 
-          // GROUND
-          ctx.fillStyle = env.groundColor;
-          ctx.fillRect(-w, 0, w*2, h*2); 
+          // GROUND & FEATURES
+          ctx.fillStyle = env.groundColor; ctx.fillRect(-w, 0, w*2, h*2); 
           drawPlatform(ctx, 0, 0, env.isOcean);
-
-          // FEATURES & POWER LINES
+          
           env.features.forEach(f => {
               const fy = f.yOff || 0; 
-              // Steam Emitter for Power Plant
               if (f.type === 'power_plant' && !f.isUnderground) {
-                  if (Math.random() > 0.8) {
-                      s.particles.push({
-                          x: f.x + 40, 
-                          y: fy - 80, 
-                          vx: (Math.random()-0.5)*1,
-                          vy: -1 - Math.random()*1,
-                          life: 1.0, maxLife: 1.0,
-                          size: 5 + Math.random()*5,
-                          color: 'rgba(255,255,255,0.1)',
-                          type: 'steam'
-                      });
-                  }
+                  if (Math.random() > 0.8) { s.particles.push({ x: f.x + 40, y: fy - 80, vx: (Math.random()-0.5)*1, vy: -1 - Math.random()*1, life: 1.0, maxLife: 1.0, size: 5 + Math.random()*5, color: 'rgba(255,255,255,0.1)', type: 'steam' }); }
               }
-
               if (f.type === 'tower') drawTower(ctx, f.x, fy, f, env.isDay, env.isOcean, s.armRetract);
               else if (f.type === 'dome_std') drawDome(ctx, f.x, fy, f, !!env.isOcean);
               else if (f.type === 'building_std' || f.type === 'power_pole' || f.type === 'hangar') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean);
               else if (f.type === 'power_plant') drawPowerPlant(ctx, f.x, fy, f.scale, f.isUnderground);
           });
 
-          if (env.powerLines) {
-              env.powerLines.forEach((chain: any[]) => {
-                  ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1;
-                  for (let k=0; k<chain.length-1; k++) {
-                      const p1 = chain[k]; const p2 = chain[k+1];
-                      const y1 = -p1.h + (p1.yOff || 0);
-                      const y2 = -p2.h + (p2.yOff || 0);
-                      
-                      // Draw 3 wires
-                      for(let wIdx=0; wIdx<3; wIdx++) {
-                          const sag = 15 + (wIdx * 5);
-                          const midX = (p1.x + p2.x) / 2;
-                          const midY = Math.max(y1, y2) + sag;
-                          ctx.beginPath();
-                          ctx.moveTo(p1.x, y1 + (wIdx * 4));
-                          ctx.quadraticCurveTo(midX, midY + (wIdx * 4), p2.x, y2 + (wIdx * 4));
-                          ctx.stroke();
-                      }
-                  }
-              });
-          }
-
+          if (env.powerLines) { env.powerLines.forEach((chain: any[]) => { ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1; for (let k=0; k<chain.length-1; k++) { const p1 = chain[k]; const p2 = chain[k+1]; const y1 = -p1.h + (p1.yOff || 0); const y2 = -p2.h + (p2.yOff || 0); for(let wIdx=0; wIdx<3; wIdx++) { const sag = 15 + (wIdx * 5); const midX = (p1.x + p2.x) / 2; const midY = Math.max(y1, y2) + sag; ctx.beginPath(); ctx.moveTo(p1.x, y1 + (wIdx * 4)); ctx.quadraticCurveTo(midX, midY + (wIdx * 4), p2.x, y2 + (wIdx * 4)); ctx.stroke(); } } }); }
           ctx.restore();
 
           // Darken Planet on Eclipse (Delta Quadrant)
-          if (dimFactor > 0) {
-              ctx.fillStyle = `rgba(0,0,0,${dimFactor})`;
-              ctx.fillRect(0, 0, w, h);
-          }
+          if (dimFactor > 0) { ctx.fillStyle = `rgba(0,0,0,${dimFactor})`; ctx.fillRect(0, 0, w, h); }
 
-          // RE-ENTRY VISUALS (Updated Soft Plasma)
+          // ... REST OF THE RENDER LOOP (Particles, Ship) ...
           if ((s.viewY > 200 && s.viewY < 3000) && !s.isThrusting) {
-              const shieldY = s.shipY + 20;
-              const shieldScale = currentScale * 1.5;
-              
-              ctx.save();
-              ctx.translate(cx, shieldY);
-              ctx.scale(shieldScale, shieldScale);
-              
-              // 1. Plasma Shield (Rainbow Gradient Arc)
+              const shieldY = s.shipY + 20; const shieldScale = currentScale * 1.5;
+              ctx.save(); ctx.translate(cx, shieldY); ctx.scale(shieldScale, shieldScale);
               const grad = ctx.createRadialGradient(0, -20, 30, 0, -10, 60);
-              // Spectrum: White -> Cyan -> Green -> Yellow -> Red -> Purple
-              grad.addColorStop(0, 'rgba(255, 255, 255, 0.9)'); 
-              grad.addColorStop(0.2, 'rgba(34, 211, 238, 0.6)'); // Cyan
-              grad.addColorStop(0.4, 'rgba(34, 197, 94, 0.5)'); // Green
-              grad.addColorStop(0.6, 'rgba(250, 204, 21, 0.4)'); // Yellow
-              grad.addColorStop(0.8, 'rgba(239, 68, 68, 0.3)'); // Red
-              grad.addColorStop(1, 'rgba(168, 85, 247, 0)'); // Purple Fade
-              
-              ctx.fillStyle = grad;
-              ctx.globalCompositeOperation = 'screen';
-              ctx.beginPath();
-              // Semi-circle arc
-              ctx.arc(0, -20, 60, 0, Math.PI, false);
-              ctx.fill();
-
-              // 2. Plasma Trails (Diffuse Particles)
-              if (s.frame % 2 === 0) {
-                  for(let t=0; t<3; t++) {
-                      const xOff = (Math.random() - 0.5) * 80;
-                      const size = 10 + Math.random() * 15;
-                      const speed = 8 + Math.random() * 8;
-                      // Randomize colors for rainbow effect
-                      const colors = ['#22d3ee', '#facc15', '#ef4444', '#a855f7'];
-                      const pColor = colors[Math.floor(Math.random() * colors.length)];
-                      
-                      s.particles.push({
-                          x: cx + xOff * shieldScale, 
-                          y: shieldY - 10, 
-                          vx: (Math.random()-0.5) * 3, 
-                          vy: -speed * 2, // Upwards relative to ship falling
-                          life: 0.5 + Math.random() * 0.5, 
-                          maxLife: 1.0, 
-                          size: size * shieldScale,
-                          type: 'plasma', 
-                          color: pColor,
-                          decay: 0.04
-                      });
-                  }
-              }
+              grad.addColorStop(0, 'rgba(255, 255, 255, 0)'); grad.addColorStop(0.1, 'rgba(34, 211, 238, 0)'); grad.addColorStop(0.2, 'rgba(34, 211, 238, 0.6)'); grad.addColorStop(0.4, 'rgba(34, 197, 94, 0.5)'); grad.addColorStop(0.6, 'rgba(250, 204, 21, 0.4)'); grad.addColorStop(0.8, 'rgba(239, 68, 68, 0.3)'); grad.addColorStop(1, 'rgba(168, 85, 247, 0)');
+              ctx.fillStyle = grad; ctx.globalCompositeOperation = 'screen'; ctx.beginPath(); ctx.arc(0, -20, 60, 0, Math.PI, false); ctx.fill();
+              if (s.frame % 2 === 0) { for(let t=0; t<3; t++) { const xOff = (Math.random() - 0.5) * 80; const size = 10 + Math.random() * 15; const speed = 8 + Math.random() * 8; const colors = ['#22d3ee', '#facc15', '#ef4444', '#a855f7']; const pColor = colors[Math.floor(Math.random() * colors.length)]; s.particles.push({ x: cx + xOff * shieldScale, y: shieldY - 10, vx: (Math.random()-0.5) * 3, vy: -speed * 2, life: 0.5 + Math.random() * 0.5, maxLife: 1.0, size: size * shieldScale, type: 'plasma', color: pColor, decay: 0.04 }); } }
               ctx.restore();
           }
 
-          // PARTICLES RENDER
           if (s.isThrusting) {
               const spawnCount = 5; 
               for(let i=0; i<spawnCount; i++) {
                   const eng = engineLocs[Math.floor(Math.random() * engineLocs.length)];
-                  const nozzleRelX = (eng.x - 50) * DOM_SCALE;
-                  const nozzleRelY = (eng.y + eng.h + 6 - 50) * DOM_SCALE;
-                  let pType = 'fire';
-                  let pColor = Math.random() > 0.5 ? '#ef4444' : '#facc15'; 
-                  
-                  s.particles.push({
-                      x: cx + nozzleRelX + (Math.random()-0.5)*3,
-                      y: s.shipY + s.shake + nozzleRelY,
-                      vx: (Math.random()-0.5) * 2,
-                      vy: (6 + Math.random() * 6), 
-                      life: 0.5,
-                      maxLife: 0.5,
-                      size: 4 + Math.random() * 4, 
-                      type: pType,
-                      color: pColor,
-                      decay: 0.05,
-                      grow: 0.5 
-                  });
+                  const nozzleRelX = (eng.x - 50) * DOM_SCALE; const nozzleRelY = (eng.y + eng.h + 6 - 50) * DOM_SCALE;
+                  let pType = 'fire'; let pColor = Math.random() > 0.5 ? '#ef4444' : '#facc15'; 
+                  s.particles.push({ x: cx + nozzleRelX + (Math.random()-0.5)*3, y: s.shipY + s.shake + nozzleRelY, vx: (Math.random()-0.5) * 2, vy: (6 + Math.random() * 6), life: 0.5, maxLife: 0.5, size: 4 + Math.random() * 4, type: pType, color: pColor, decay: 0.05, grow: 0.5 });
               }
           }
 
           s.particles.forEach(p => {
-              if (p.type === 'plasma') {
-                  p.x += p.vx;
-                  p.y += p.vy; // Moves UP
-                  p.life -= p.decay || 0.02;
-                  p.size *= 0.96; // Shrink
-              } else {
-                  p.x += p.vx;
-                  p.y += p.vy;
-                  p.life -= p.decay || 0.01;
-                  if (p.grow) p.size += p.grow;
-                  
-                  const currentGroundY = worldY;
-                  if (p.y > currentGroundY && p.vy > 0 && p.type !== 'steam') {
-                      p.y = currentGroundY;
-                      p.vy = 0;
-                      p.vx = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 10); // Spread
-                      p.grow = 2.0;
-                      p.decay = 0.1; 
-                  }
-              }
-
-              if (p.life > 0) {
-                  ctx.save();
-                  ctx.globalAlpha = p.life;
-                  ctx.fillStyle = p.color || '#fff';
-                  
-                  if (p.type === 'fire' || p.type === 'plasma') {
-                      ctx.globalCompositeOperation = 'screen';
-                      ctx.shadowColor = p.color || '#f00';
-                      ctx.shadowBlur = p.type === 'plasma' ? 20 : 10;
-                  }
-                  
-                  ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-                  ctx.restore();
-              }
+              if (p.type === 'plasma') { p.x += p.vx; p.y += p.vy; p.life -= p.decay || 0.02; p.size *= 0.96; } 
+              else { p.x += p.vx; p.y += p.vy; p.life -= p.decay || 0.01; if (p.grow) p.size += p.grow; const currentGroundY = worldY; if (p.y > currentGroundY && p.vy > 0 && p.type !== 'steam') { p.y = currentGroundY; p.vy = 0; p.vx = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 10); p.grow = 2.0; p.decay = 0.1; } }
+              if (p.life > 0) { ctx.save(); ctx.globalAlpha = p.life; ctx.fillStyle = p.color || '#fff'; if (p.type === 'fire' || p.type === 'plasma') { ctx.globalCompositeOperation = 'screen'; ctx.shadowColor = p.color || '#f00'; ctx.shadowBlur = p.type === 'plasma' ? 20 : 10; } ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
           });
           s.particles = s.particles.filter(p => p.life > 0);
 
@@ -887,7 +615,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       return () => { 
           window.removeEventListener('resize', resize);
           cancelAnimationFrame(animId);
-          // Cleanup handled by effect above
+          audioService.stopLandingThruster();
       };
   }, [env, shipConfig, engineLocs]);
 
@@ -895,37 +623,16 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
     <div className="fixed inset-0 z-[5000] bg-black overflow-hidden font-mono select-none absolute w-full h-full">
       <canvas ref={canvasRef} className="absolute inset-0 z-0 w-full h-full" />
       <canvas ref={fgCanvasRef} className="absolute inset-0 z-30 pointer-events-none w-full h-full" />
-      
-      <SequenceStatusBar 
-          altitude={altitude} 
-          velocity={speed} 
-          fuel={visualFuel} 
-          maxFuel={maxFuel} 
-          status={status} 
-          onSkip={onComplete} 
-          phase={phase} 
-      />
-      
+      <SequenceStatusBar altitude={altitude} velocity={speed} fuel={visualFuel} maxFuel={maxFuel} status={status} onSkip={() => { audioService.stopReEntryWind(); audioService.stopLandingThruster(); audioService.stop(); onComplete(); }} phase={phase} />
       <div ref={shipDOMRef} className="absolute left-0 top-0 w-32 h-32 will-change-transform z-20">
         <div className="absolute inset-0 z-0 overflow-visible">
              <svg className="absolute w-full h-full" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
                 <g transform={`translate(50, 50)`}>
-                    {['left', 'right'].map((side) => (
-                        <LandingGear key={side} type={shipConfig.landingGearType} extension={legExtension} compression={suspension} side={side as any} />
-                    ))}
+                    {['left', 'right'].map((side) => ( <LandingGear key={side} type={shipConfig.landingGearType} extension={legExtension} compression={suspension} side={side as any} /> ))}
                 </g>
              </svg>
         </div>
-        <ShipIcon 
-            config={shipConfig} 
-            className="w-full h-full drop-shadow-2xl relative z-10" 
-            showJets={thrustActive} 
-            jetType="combustion" 
-            showGear={false} 
-            hullColor={shipConfig.defaultColor} 
-            weaponId={weaponId} 
-            equippedWeapons={equippedWeapons} 
-        />
+        <ShipIcon config={shipConfig} className="w-full h-full drop-shadow-2xl relative z-10" showJets={thrustActive} jetType="combustion" showGear={false} hullColor={shipConfig.defaultColor} weaponId={weaponId} equippedWeapons={equippedWeapons} />
       </div>
     </div>
   );

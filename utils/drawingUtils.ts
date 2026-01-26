@@ -105,61 +105,25 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     // Distinct palettes for depth perception (Back to Front: Layer 0 -> 5)
     if (isGreenish) {
-        // Lush: Misty Blue-Greens -> Deep Forest -> Vibrant Grass
-        hillColors = [
-            '#475569', // Slate-600 (Misty Mountain)
-            '#334155', // Slate-700 (Dark Mountain)
-            '#14532d', // Green-900 (Deep Forest)
-            '#15803d', // Green-700 (Mid Hills)
-            '#16a34a', // Green-600 (Near Hills)
-            '#22c55e'  // Green-500 (Vibrant Foreground)
-        ];
+        hillColors = ['#475569', '#334155', '#14532d', '#15803d', '#16a34a', '#22c55e'];
         groundColor = '#15803d';
     } else if (isReddish) {
-        // Desert: Dark Brown/Red -> Vibrant Orange
-        hillColors = [
-            '#450a0a', // Red-950
-            '#7f1d1d', // Red-900
-            '#991b1b', // Red-800
-            '#c2410c', // Orange-700
-            '#ea580c', // Orange-600
-            '#d97706'  // Amber-600
-        ];
+        hillColors = ['#450a0a', '#7f1d1d', '#991b1b', '#c2410c', '#ea580c', '#d97706'];
     } else if (isWhite) {
-        // Ice: Dark Grey -> White
-        hillColors = [
-            '#64748b', // Slate-500
-            '#94a3b8', // Slate-400
-            '#cbd5e1', // Slate-300
-            '#e2e8f0', // Slate-200
-            '#f1f5f9', // Slate-100
-            '#ffffff'  // White
-        ];
+        hillColors = ['#64748b', '#94a3b8', '#cbd5e1', '#e2e8f0', '#f1f5f9', '#ffffff'];
         groundColor = '#f8fafc';
     } else if (isPurple) {
-        // Alien: Dark Indigo -> Violet
-        hillColors = [
-            '#1e1b4b', // Indigo-950
-            '#312e81', // Indigo-900
-            '#4c1d95', // Violet-900
-            '#6d28d9', // Violet-700
-            '#7c3aed', // Violet-600
-            '#a855f7'  // Purple-500
-        ];
+        hillColors = ['#1e1b4b', '#312e81', '#4c1d95', '#6d28d9', '#7c3aed', '#a855f7'];
     } else if (isBluish) {
         if (isOcean) {
             hillColors = ['#020617', '#0f172a', '#172554', '#1e3a8a', '#1e40af', '#2563eb'];
         } else {
-            // Rocky Blue
             hillColors = ['#0f172a', '#1e293b', '#334155', '#475569', '#64748b', '#94a3b8'];
         }
     } else {
-        // Fallback / Dark
         hillColors = ['#000000', '#18181b', '#27272a', '#3f3f46', '#52525b', '#71717a'];
     }
 
-    // Apply atmospheric fading to distant layers (0, 1, 2)
-    // We mix a bit of atmosphereColor into the back layers to simulate distance fog
     if (!isOcean) {
         hillColors[0] = mixColor(hillColors[0], atmosphereColor, 0.6);
         hillColors[1] = mixColor(hillColors[1], atmosphereColor, 0.4);
@@ -172,16 +136,20 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         x: rng(), y: rng(), size: rng() * 0.8 + 0.2, alpha: isDay ? 0.4 : (rng() * 0.5 + 0.5) 
     }));
 
-    // 2b. WANDERERS
+    // 2b. WANDERERS (Small, White/Grey, No Rings, Diameter < 5px)
+    // Generated regardless of day/night so they appear in space transition
     const wanderers = [];
-    if (!isDay && rng() > 0.2) {
+    if (rng() > 0.2) {
         const numWanderers = 1 + Math.floor(rng() * 3);
         for(let i=0; i<numWanderers; i++) {
+            // Radius 1.0 to 2.2 => Diameter 2.0 to 4.4
+            const rad = 1.0 + rng() * 1.2;
+            const wColor = ['#ffffff', '#f3f4f6', '#e5e7eb', '#d1d5db'][Math.floor(rng() * 4)];
             wanderers.push({
                 x: rng(), y: rng() * 0.5, 
-                size: 4 + rng() * 8,
-                color: ['#ef4444', '#3b82f6', '#10b981', '#facc15'][Math.floor(rng() * 4)],
-                hasRings: rng() > 0.7
+                size: rad,
+                color: wColor,
+                hasRings: false
             });
         }
     }
@@ -190,46 +158,25 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const clouds: any[] = [];
     const waterFactor = (isBluish || isGreenish) ? 2.5 : 1.0;
     const quantityMod = isBarren ? 0.2 : 1.0; 
-
-    // Helper to generate cloud opacity
-    // 30% chance of being "heavy/opaque" (0.95+ alpha), otherwise transparent
     const getCloudAlpha = () => rng() > 0.7 ? 0.95 : (0.2 + rng() * 0.5);
 
-    // Background Layer
     const farCount = Math.floor((isDay ? 8 : 4) * quantityMod);
     for(let i=0; i<farCount; i++) {
-        clouds.push({
-            x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900,
-            w: 40 + rng() * 30, 
-            alpha: getCloudAlpha(), 
-            speed: 0.03 + rng() * 0.04, layer: 0, type: rng() > 0.5 ? 'fluffy' : 'streak', color: cloudColor
-        });
+        clouds.push({ x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 40 + rng() * 30, alpha: getCloudAlpha(), speed: 0.03 + rng() * 0.04, layer: 0, type: rng() > 0.5 ? 'fluffy' : 'streak', color: cloudColor });
     }
-    // Mid Layer
     const midCount = Math.floor((isDay ? 10 : 5) * waterFactor * quantityMod);
     for(let i=0; i<midCount; i++) {
-        clouds.push({
-            x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 60 + rng() * 40, 
-            alpha: getCloudAlpha(), 
-            speed: 0.08 + rng() * 0.08, layer: 1, type: 'fluffy', color: cloudColor
-        });
+        clouds.push({ x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 60 + rng() * 40, alpha: getCloudAlpha(), speed: 0.08 + rng() * 0.08, layer: 1, type: 'fluffy', color: cloudColor });
     }
-    // Close Layer
     const closeCount = Math.floor((isDay ? 5 : 2) * waterFactor * (isOcean ? 1.5 : 1.0) * quantityMod);
     for(let i=0; i<closeCount; i++) {
-        clouds.push({ 
-            x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 120 + rng() * 80, 
-            alpha: getCloudAlpha(), // Allow foreground clouds to be opaque too
-            speed: 0.2 + rng() * 0.15, layer: 2, type: 'fluffy', color: cloudColor 
-        });
+        clouds.push({ x: (rng() * 3000) - 1500, y: (rng() * 1200) - 900, w: 120 + rng() * 80, alpha: getCloudAlpha(), speed: 0.2 + rng() * 0.15, layer: 2, type: 'fluffy', color: cloudColor });
     }
 
     // 3. HILLS & VEGETATION
     const hills = [];
     const hillCount = isOcean ? 0 : 6; 
     const trains: any[] = [];
-    
-    // Vegetation Settings based on Biome
     const isLush = isGreenish || (isBluish && !isOcean && !isBarren);
     const hasAlienFlora = isPurple || (isReddish && !isBarren && rng() > 0.5);
     
@@ -237,7 +184,6 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         const points = [];
         const isMountain = i < 2; 
         const segments = isMountain ? 24 : 16; 
-        
         const hasRoad = i === 4 && !isOcean; 
         const hasTrainTrack = i === 3 && hasTrains && !isOcean;
 
@@ -246,8 +192,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
             let maxH = isMountain ? 0.8 : 0.45;
             if (!isMountain && i >= 3 && rng() > 0.6) minH = 0.02; 
             const yVar = rng();
-            const rawHeight = minH + (yVar * (maxH - minH));
-            points.push({ xRatio: j/segments, heightRatio: rawHeight });
+            points.push({ xRatio: j/segments, heightRatio: minH + (yVar * (maxH - minH)) });
         }
 
         if (!isMountain) {
@@ -265,57 +210,33 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         const cityLights: any[] = [];
         const windMills: any[] = [];
         
-        // --- VEGETATION GENERATION ---
         let hasTrees = false;
         let treeDensity = 0;
         let treeColors = ['#166534'];
         let treeType = 'round';
         let trunkColor = '#78350f';
-        const treeLine = 0.6 + (rng() * 0.1); // Tree line for mountains
+        const treeLine = 0.6 + (rng() * 0.1); 
 
         if (isLush) {
             hasTrees = true;
             treeColors = ['#14532d', '#166534', '#15803d', '#16a34a'];
-            if (isMountain) {
-                treeDensity = 0.3; // Sparse on mountains
-                treeType = 'pine';
-                treeColors = ['#064e3b', '#065f46']; // Darker pines
-            } else {
-                // Dense forests on hills
-                treeDensity = i === 2 || i === 3 ? 0.8 : 0.4;
-                treeType = rng() > 0.4 ? 'pine' : 'round';
-            }
+            if (isMountain) { treeDensity = 0.3; treeType = 'pine'; treeColors = ['#064e3b', '#065f46']; } 
+            else { treeDensity = i === 2 || i === 3 ? 0.8 : 0.4; treeType = rng() > 0.4 ? 'pine' : 'round'; }
         } else if (hasAlienFlora) {
-            hasTrees = true;
-            treeDensity = 0.3;
-            if (isPurple) {
-                treeColors = ['#581c87', '#6b21a8', '#7e22ce'];
-                trunkColor = '#3b0764';
-            } else { // Reddish
-                treeColors = ['#7f1d1d', '#991b1b', '#b91c1c'];
-                trunkColor = '#450a0a';
-            }
-            treeType = rng() > 0.5 ? 'pine' : 'palm'; // Alien looking shapes
+            hasTrees = true; treeDensity = 0.3;
+            if (isPurple) { treeColors = ['#581c87', '#6b21a8', '#7e22ce']; trunkColor = '#3b0764'; } 
+            else { treeColors = ['#7f1d1d', '#991b1b', '#b91c1c']; trunkColor = '#450a0a'; }
+            treeType = rng() > 0.5 ? 'pine' : 'palm';
         }
 
         if (hasTrees && !isOcean && !isWhite) {
             for(let j=0; j<segments; j++) {
-                const p = points[j];
-                // Check Tree Line for Mountains (High elevation = no trees)
-                if (isMountain && p.heightRatio > treeLine) continue;
-
+                if (isMountain && points[j].heightRatio > treeLine) continue;
                 if (rng() < treeDensity) {
                     const clusterSize = isMountain ? 1 : (2 + Math.floor(rng() * 3));
                     for(let k=0; k<clusterSize; k++) {
                         const scale = isMountain ? 0.6 : 1.0;
-                        trees.push({
-                            segIdx: j, offset: rng(), 
-                            w: (4 + rng() * 4) * scale, 
-                            h: (10 + rng() * 20) * scale,
-                            color: treeColors[Math.floor(rng() * treeColors.length)],
-                            trunkColor: trunkColor,
-                            type: treeType
-                        });
+                        trees.push({ segIdx: j, offset: rng(), w: (4 + rng() * 4) * scale, h: (10 + rng() * 20) * scale, color: treeColors[Math.floor(rng() * treeColors.length)], trunkColor: trunkColor, type: treeType });
                     }
                 }
             }
@@ -326,8 +247,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
                 const num = 1 + Math.floor(rng() * 2);
                 for(let w=0; w<num; w++) {
                     const idx = Math.floor(rng() * (segments - 2)) + 1;
-                    const pt = points[idx];
-                    windMills.push({ xRatio: pt.xRatio, yBase: pt.heightRatio, scale: 0.6 + rng()*0.4 });
+                    windMills.push({ xRatio: points[idx].xRatio, yBase: points[idx].heightRatio, scale: 0.6 + rng()*0.4 });
                 }
             }
         }
@@ -337,11 +257,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
                 const numPyramids = 1 + Math.floor(rng() * 2);
                 for(let p=0; p<numPyramids; p++) {
                     const idx = Math.floor(rng() * (segments - 2)) + 1;
-                    const pt = points[idx];
-                    pyramids.push({
-                        xRatio: pt.xRatio, yBase: pt.heightRatio, scale: 0.5 + rng() * 0.5,
-                        color: i % 2 === 0 ? '#d97706' : '#b45309' 
-                    });
+                    pyramids.push({ xRatio: points[idx].xRatio, yBase: points[idx].heightRatio, scale: 0.5 + rng() * 0.5, color: i % 2 === 0 ? '#d97706' : '#b45309' });
                 }
             }
         }
@@ -351,9 +267,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
                 const prev = points[idx-1];
                 const next = points[idx+1];
                 if (prev && next && p.heightRatio > prev.heightRatio && p.heightRatio > next.heightRatio) {
-                    if (p.heightRatio > 0.55) { 
-                        snowCaps.push({ idx, h: p.heightRatio });
-                    }
+                    if (p.heightRatio > 0.55) { snowCaps.push({ idx, h: p.heightRatio }); }
                 }
             });
         }
@@ -368,20 +282,14 @@ export const generatePlanetEnvironment = (planet: Planet) => {
                         cityBuildings.push({ xRatio: p.xRatio, yBase: p.heightRatio, w: 8+rng()*12, h: 10+rng()*30, color: '#1f2937' });
                         if (!isDay) {
                             const numLights = 1 + Math.floor(rng() * 3);
-                            for(let l=0; l<numLights; l++) {
-                                cityLights.push({ xRatio: p.xRatio + (rng()-0.5)*0.01, yBase: p.heightRatio, yOff: 5+rng()*25, color: rng()>0.7?'#fff':'#facc15', size: 1+rng() });
-                            }
+                            for(let l=0; l<numLights; l++) { cityLights.push({ xRatio: p.xRatio + (rng()-0.5)*0.01, yBase: p.heightRatio, yOff: 5+rng()*25, color: rng()>0.7?'#fff':'#facc15', size: 1+rng() }); }
                         }
                     }
                 }
             }
         }
 
-        if (hasTrainTrack) {
-            trains.push({
-                layer: i, progress: rng(), speed: 0.0005 + (rng() * 0.0005), cars: 4 + Math.floor(rng() * 3), color: '#ef4444', dir: rng() > 0.5 ? 1 : -1
-            });
-        }
+        if (hasTrainTrack) { trains.push({ layer: i, progress: rng(), speed: 0.0005 + (rng() * 0.0005), cars: 4 + Math.floor(rng() * 3), color: '#ef4444', dir: rng() > 0.5 ? 1 : -1 }); }
 
         let roadLevel = 0.3;
         if (hasRoad) {
@@ -389,10 +297,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
             roadLevel = Math.max(0.25, avg + 0.1); 
         }
 
-        hills.push({ 
-            layer: i, type: isMountain ? 'mountain' : 'hill', color: hillColors[i], points, trees, snowCaps, pyramids, cityBuildings, cityLights, windMills,
-            speedFactor: 0.05 * (i + 1), parallaxFactor: 0.1 + (i * 0.15), hasRoad, hasTrainTrack, roadLevel
-        });
+        hills.push({ layer: i, type: isMountain ? 'mountain' : 'hill', color: hillColors[i], points, trees, snowCaps, pyramids, cityBuildings, cityLights, windMills, speedFactor: 0.05 * (i + 1), parallaxFactor: 0.1 + (i * 0.15), hasRoad, hasTrainTrack, roadLevel });
     }
 
     const features: any[] = [];
@@ -404,7 +309,6 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const isTooClose = (x: number, minDist: number = 80) => occupiedX.some(ox => Math.abs(ox - x) < minDist);
     const registerX = (x: number) => occupiedX.push(x);
 
-    // Register Landing Pad Center (Range +/- 100)
     if (!isOcean) registerX(0);
 
     const towerSide = rng() > 0.5 ? 1 : -1; 
@@ -421,9 +325,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
             if (!isTooClose(bx, 120)) {
                 const contents = [];
                 const numItems = 2 + Math.floor(rng() * 3);
-                for(let k=0; k<numItems; k++) {
-                    contents.push({ x: (rng() - 0.5) * 60, w: 10 + rng() * 10, h: 20 + rng() * 30, type: rng() > 0.5 ? 'tree' : 'home' });
-                }
+                for(let k=0; k<numItems; k++) { contents.push({ x: (rng() - 0.5) * 60, w: 10 + rng() * 10, h: 20 + rng() * 30, type: rng() > 0.5 ? 'tree' : 'home' }); }
                 features.push({ x: bx, type: 'dome_std', variant: 'bio', scale: 1.3 + rng() * 0.8, isOcto: false, contents }); 
                 registerX(bx);
             }
@@ -451,12 +353,12 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     
     if (!isOcean) {
         const settlementSide = -towerSide; 
-        const clusterCenter = settlementSide * (350 + rng() * 100); // Pushed further out
+        const clusterCenter = settlementSide * (350 + rng() * 100); 
         const numBuildings = 3 + Math.floor(rng() * 3); 
         for(let i=0; i<numBuildings; i++) {
             const offset = (i - numBuildings/2) * (70 + rng()*30);
             const bx = clusterCenter + offset;
-            if (!isTooClose(bx, 100)) { // Increased safe distance
+            if (!isTooClose(bx, 100)) {
                 if (isBarren || (!isGreenish && rng() > 0.3)) {
                     const scale = 1.3 + rng() * 1.0; 
                     const domeR = 80 * scale; const safeWidth = domeR * 1.5; const contents = []; const n = 5 + Math.floor(rng() * 5); 
@@ -876,25 +778,14 @@ export const drawBuilding = (ctx: CanvasRenderingContext2D, f: any, isDay: boole
                 ctx.beginPath(); const angle = (Math.PI + (i/4)*Math.PI); const lx = Math.cos(angle) * leafLen; const ly = Math.sin(angle) * leafLen; ctx.moveTo(0, -f.h); ctx.quadraticCurveTo(lx * 0.5, -f.h - 10, lx, -f.h + 5); ctx.stroke();
             }
         } else if (f.type === 'pine') {
-             // Conical Pine Tree
              ctx.fillStyle = f.trunkColor || '#451a03';
              ctx.fillRect(-2, 0, 4, -f.h*0.2); 
-             
              ctx.fillStyle = f.color;
              ctx.beginPath();
-             // Bottom Tier
-             ctx.moveTo(-f.w, -f.h*0.2);
-             ctx.lineTo(f.w, -f.h*0.2);
-             ctx.lineTo(0, -f.h*0.6);
-             ctx.fill();
-             // Top Tier
+             ctx.moveTo(-f.w, -f.h*0.2); ctx.lineTo(f.w, -f.h*0.2); ctx.lineTo(0, -f.h*0.6); ctx.fill();
              ctx.beginPath();
-             ctx.moveTo(-f.w*0.8, -f.h*0.5);
-             ctx.lineTo(f.w*0.8, -f.h*0.5);
-             ctx.lineTo(0, -f.h);
-             ctx.fill();
+             ctx.moveTo(-f.w*0.8, -f.h*0.5); ctx.lineTo(f.w*0.8, -f.h*0.5); ctx.lineTo(0, -f.h); ctx.fill();
         } else {
-            // Round tree
             ctx.fillStyle = f.trunkColor || '#78350f'; ctx.beginPath(); ctx.moveTo(-3, 0); ctx.lineTo(-1.5, -f.h); ctx.lineTo(1.5, -f.h); ctx.lineTo(3, 0); ctx.fill();
             ctx.strokeStyle = f.trunkColor || '#78350f'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -f.h * 0.6); ctx.quadraticCurveTo(-5, -f.h * 0.7, -8, -f.h * 0.8); ctx.moveTo(0, -f.h * 0.7); ctx.quadraticCurveTo(5, -f.h * 0.8, 8, -f.h * 0.9); ctx.stroke();
             ctx.fillStyle = f.color; const clusterSize = f.w;
@@ -905,7 +796,6 @@ export const drawBuilding = (ctx: CanvasRenderingContext2D, f: any, isDay: boole
         }
     }
     else {
-        // STANDARD BUILDINGS (building_std)
         if (isOcean) { ctx.fillStyle = '#1e293b'; ctx.fillRect(-f.w/2 + 2, 0, 4, 30); ctx.fillRect(f.w/2 - 6, 0, 4, 30); ctx.fillStyle = '#334155'; ctx.fillRect(-f.w/2 - 5, 0, f.w + 10, 5); }
         ctx.fillStyle = f.color; ctx.fillRect(-f.w/2, -f.h, f.w, f.h);
         if (f.hasRedRoof) { ctx.fillStyle = '#991b1b'; ctx.beginPath(); ctx.moveTo(-f.w/2 - 2, -f.h); ctx.lineTo(f.w/2 + 2, -f.h); ctx.lineTo(0, -f.h - 10); ctx.fill(); }
