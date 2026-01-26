@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Planet, QuadrantType, MissionType, PlanetStatusData } from '../types.ts';
 import { PLANETS } from '../constants.ts';
 import { getMissionBriefing } from '../services/geminiService.ts';
+import { audioService } from '../services/audioService.ts';
 
 interface SectorMapProps {
   currentQuadrant: QuadrantType;
@@ -697,7 +698,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
                     return (
                         <button 
-                            onClick={() => onLaunch(selectedPlanet)} 
+                            onClick={() => { audioService.stop(); onLaunch(selectedPlanet); }} 
                             className={`w-full py-2 lg:py-4 font-black uppercase tracking-[0.1em] text-[9px] lg:text-xs rounded shadow-lg transition-all ${btnClass}`}
                         >
                            {label}
@@ -706,7 +707,7 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
                 })()}
                 
                 {testMode && onTestLanding && (
-                    <button onClick={() => onTestLanding(selectedPlanet)} className="w-full py-1.5 lg:py-3 bg-orange-600/20 border border-orange-500 text-orange-500 font-black uppercase tracking-widest text-[8px] lg:text-[10px] rounded hover:bg-orange-600 hover:text-white transition-colors">
+                    <button onClick={() => { audioService.stop(); onTestLanding(selectedPlanet); }} className="w-full py-1.5 lg:py-3 bg-orange-600/20 border border-orange-500 text-orange-500 font-black uppercase tracking-widest text-[8px] lg:text-[10px] rounded hover:bg-orange-600 hover:text-white transition-colors">
                         TEST LANDING SEQUENCE
                     </button>
                 )}

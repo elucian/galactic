@@ -1,15 +1,28 @@
 
-// --- LOCKED: LAUNCH SEQUENCE MODULE ---
-// DO NOT REFACTOR OR MODIFY WITHOUT EXPLICIT USER REQUEST
-// Visuals, physics, and layout are finalized.
-
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Planet, Moon, QuadrantType, EquippedWeapon } from '../types.ts';
 import { ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { audioService } from '../services/audioService.ts';
 import { LandingGear } from './LandingGear.tsx';
-import { drawDome, drawPlatform, getEngineCoordinates } from '../utils/drawingUtils.ts';
+import { getEngineCoordinates, generatePlanetEnvironment, drawCloud, drawVehicle, drawStreetLight, drawPlatform, drawTower, drawDome, drawBuilding, drawPowerPlant, drawBoulder } from '../utils/drawingUtils.ts';
+import { SequenceStatusBar } from './SequenceStatusBar.tsx';
+
+// Helper for color mixing
+const hexToRgb = (hex: string) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : { r: 0, g: 0, b: 0 };
+};
+
+const mixColor = (c1: string, c2: string, weight: number) => {
+    const rgb1 = hexToRgb(c1);
+    const rgb2 = hexToRgb(c2);
+    const w = Math.min(1, Math.max(0, weight));
+    const r = Math.round(rgb1.r * (1 - w) + rgb2.r * w);
+    const g = Math.round(rgb1.g * (1 - w) + rgb2.g * w);
+    const b = Math.round(rgb1.b * (1 - w) + rgb2.b * w);
+    return `rgb(${r},${g},${b})`;
+};
 
 interface LaunchSequenceProps {
   planet: Planet | Moon;
@@ -23,921 +36,715 @@ interface LaunchSequenceProps {
   maxFuel: number;
 }
 
-const Gauge = ({ value, max, label, unit, color = "#10b981" }: { value: number, max: number, label: string, unit: string, color?: string }) => {
-    const percent = Math.min(1, Math.max(0, value / max));
-    const r = 22;
-    const circumference = 2 * Math.PI * r;
-    const offset = circumference - percent * circumference;
-    
-    return (
-        <div className="flex flex-col items-center gap-2 bg-zinc-950/80 p-3 rounded-lg border border-zinc-800 backdrop-blur-sm shadow-xl min-w-[80px]">
-            <div className="relative w-14 h-14">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 60 60">
-                    <circle cx="30" cy="30" r={r} fill="none" stroke="#334155" strokeWidth="5" />
-                    <circle cx="30" cy="30" r={r} fill="none" stroke={color} strokeWidth="5" 
-                            strokeDasharray={circumference} strokeDashoffset={offset} 
-                            strokeLinecap="round" className="transition-all duration-300 ease-out" />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center flex-col">
-                    <span className="text-[10px] font-black text-white tabular-nums">{value >= 1000 ? (value/1000).toFixed(1)+'k' : (value < 10 ? value.toFixed(1) : Math.floor(value))}</span>
-                    <span className="text-[6px] text-zinc-400 font-mono uppercase">{unit}</span>
-                </div>
-            </div>
-            <span className="text-[8px] font-black uppercase text-zinc-500 tracking-widest">{label}</span>
-        </div>
-    );
-};
-
 const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shipColors, onComplete, testMode, weaponId, equippedWeapons, currentFuel, maxFuel }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shipDOMRef = useRef<HTMLDivElement>(null);
-  const [phase, setPhase] = useState<'countdown' | 'ignition' | 'lift' | 'atmosphere' | 'orbit'>('countdown');
-  const [countdown, setCountdown] = useState(3);
-  const [statusText, setStatusText] = useState("SYSTEM CHECK");
   
-  // Phase Ref to avoid stale closures in animation loop
-  const phaseRef = useRef(phase);
-  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  const [phase, setPhase] = useState<'countdown' | 'ignition' | 'lift' | 'atmosphere' | 'orbit'>('countdown');
+  const phaseRef = useRef(phase); 
 
-  // Determine Jet Type based on Phase
-  const jetType = (phase === 'atmosphere' || phase === 'orbit') ? 'ion' : 'combustion';
-
-  // Animation State
+  const [statusText, setStatusText] = useState("SYSTEM CHECK");
+  const [countdown, setCountdown] = useState<number | null>(null);
+  
   const [altitude, setAltitude] = useState(0);
   const [velocity, setVelocity] = useState(0);
-  const [visualFuel, setVisualFuel] = useState(currentFuel); // Local visual fuel state
-  
-  // Engine locations for particles
-  const engineLocs = useMemo(() => getEngineCoordinates(shipConfig), [shipConfig]);
+  const [visualFuel, setVisualFuel] = useState(currentFuel);
+  const [legExtension, setLegExtension] = useState(1); 
+  const [suspension, setSuspension] = useState(0.8); // 0.8 = Resting weight
+  const [thrustActive, setThrustActive] = useState(false);
+  const [activeJetType, setActiveJetType] = useState<'combustion' | 'ion'>('combustion');
 
-  // Mutable state for loop to avoid React render lag
+  const DOM_SCALE = 1.28;
+
+  const engineLocs = useMemo(() => getEngineCoordinates(shipConfig), [shipConfig]);
+  
+  const env = useMemo(() => generatePlanetEnvironment(planet as Planet), [planet]);
+
   const stateRef = useRef({
-    viewY: 0,
-    velocity: 0,
-    altitude: 0,
-    shake: 0,
-    armRetract: 0,
-    particles: [] as any[],
-    cloudsLow: [] as any[],
-    cloudsHigh: [] as any[],
-    features: [] as any[],
-    birds: [] as any[], // Birds array
-    stars: [] as any[],
     startTime: 0,
     frameCount: 0,
-    // Visual Tracking
-    shipY: 0, // Pixel position of ship center
-    shipScale: 1.0,
-    shipOpacity: 1.0,
-    groundY: 0,
-    // Landing Gear Physics
-    legExtension: 1.0, // 1 = fully deployed
-    suspension: 0.0,   // 0 = fully compressed (sitting on pad), 1 = uncompressed (in air)
-    windSpeed: 1.5, // Horizontal wind speed for smoke
-    internalFuel: currentFuel, // Track exact value for smooth lerp
-    targetFuel: Math.max(0, currentFuel - 1.0), // End target (1.0 launch cost)
-    // Celestial Body
-    celestialX: 0.7, // Relative 0-1
-    celestialY: 0.15, // Relative 0-1
-    moonPhase: 0,
-    // Red Dwarf Companion (Delta Sector)
-    redDwarfAngle: 0,
-    redDwarfTrail: [] as {x: number, y: number, alpha: number}[],
-    // Gamma Comet
-    comet: null as { x: number, y: number, vx: number, vy: number, length: number } | null
+    orbitFrameCount: 0, 
+    viewY: 0, 
+    shipY: 0, 
+    shipVy: 0, 
+    worldSpeed: 0, 
+    shake: 0,
+    internalFuel: currentFuel, 
+    targetFuel: Math.max(0, currentFuel - 1.0),
+    particles: [] as {x: number, y: number, vx: number, vy: number, size: number, life: number, maxLife: number, type: string, color?: string, decay?: number, grow?: number, initialAlpha?: number}[],
+    birds: [] as any[], // FIXED: Initialized birds array
+    starScrollY: 0,
+    celestialX: 0.7,
+    celestialY: -0.2, 
+    sunTargetY: 0.15,
+    armRetract: 0, 
+    suspension: 0.8,
+    legExtension: 1.0
   });
 
-  // Skip Handler
   useEffect(() => {
-      const handleKeyDown = (e: KeyboardEvent) => { 
-          if (e.code === 'Space') {
-              e.preventDefault();
-              onComplete();
+      phaseRef.current = phase;
+  }, [phase]);
+
+  useEffect(() => {
+      const s = stateRef.current;
+      const rng = () => Math.random();
+      const p = planet as Planet;
+      const hasMoons = p.moons && p.moons.length > 0;
+      s.celestialX = 0.2 + rng() * 0.6;
+      if (env.isDay) {
+          s.celestialY = 0.15 + rng() * 0.1;
+      } else {
+          s.celestialY = hasMoons ? 0.15 + rng() * 0.1 : -999;
+      }
+
+      // Initialize Birds
+      s.birds = [];
+      if (env.powerLines && env.powerLines.length > 0) {
+          const numBirds = 12 + Math.floor(Math.random() * 8); 
+          const chain = env.powerLines[0]; 
+          // Safety check for chain content
+          if (chain && chain.length > 0) {
+              const minX = Math.min(chain[0].x, chain[chain.length-1].x);
+              const maxX = Math.max(chain[0].x, chain[chain.length-1].x);
+              for(let i=0; i<numBirds; i++) {
+                  const birdX = minX + (Math.random() * (maxX - minX));
+                  s.birds.push({ x: birdX, y: -100, vx: 0, vy: 0, state: 'sit', visible: true, flapSpeed: 0.2 + Math.random() * 0.1, timer: Math.random() * 100 });
+              }
           }
-      };
+      }
+  }, [env, planet]);
+
+  useEffect(() => {
+      // STOP MUSIC ON MOUNT
+      audioService.stop();
+
+      const handleKeyDown = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); onComplete(); }};
       window.addEventListener('keydown', handleKeyDown);
       return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onComplete]);
 
-  // Setup Environment
-  const environment = useMemo(() => {
-      const p = planet as Planet;
-      const seed = p.name.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-      const rand = (offset: number) => { const x = Math.sin(seed + offset) * 10000; return x - Math.floor(x); };
-
-      const isIce = ['#ffffff', '#e2e8f0', '#cbd5e1'].includes(p.color);
-      const isHabitable = ['#10b981', '#064e3b', '#15803d', '#3b82f6', '#60a5fa', '#0ea5e9', '#0d9488'].includes(p.color);
-      const isWinter = isIce || (rand(1) > 0.7 && !isHabitable && !['#ef4444', '#b91c1c', '#f97316'].includes(p.color));
+  useEffect(() => {
+      const canvas = canvasRef.current; if (!canvas) return; const ctx = canvas.getContext('2d'); if (!ctx) return;
       
-      const timeOfDay = rand(2) > 0.5 ? 'day' : 'night';
-      
-      let skyColorTop = '#0f172a';
-      let skyColorBot = '#1e293b';
-      let sunColor = '#facc15'; // Default Alfa
-
-      if (p.quadrant === QuadrantType.BETA) { sunColor = '#ef4444'; }
-      if (p.quadrant === QuadrantType.GAMA) { sunColor = '#3b82f6'; }
-      if (p.quadrant === QuadrantType.DELTA) { sunColor = '#000000'; }
-      
-      if (timeOfDay === 'day') {
-          if (p.quadrant === QuadrantType.BETA) { skyColorTop = '#fca5a5'; skyColorBot = '#fecaca'; }
-          else if (p.quadrant === QuadrantType.DELTA) { 
-              // Red sky for Delta Day
-              skyColorTop = '#450a0a'; skyColorBot = '#7f1d1d'; 
-          }
-          else { skyColorTop = '#0ea5e9'; skyColorBot = '#bae6fd'; }
-      }
-
-      return {
-          isWinter,
-          isHabitable,
-          timeOfDay,
-          skyColorTop,
-          skyColorBot,
-          sunColor,
-          groundColor: isWinter ? '#e2e8f0' : (p.color || '#3f3f46'),
-          starDensity: timeOfDay === 'night' ? 150 : 20
+      const resize = () => {
+          const dpr = window.devicePixelRatio || 1;
+          const rect = canvas.getBoundingClientRect();
+          canvas.width = rect.width * dpr; canvas.height = rect.height * dpr;
+          ctx.scale(dpr, dpr);
       };
-  }, [planet]);
+      resize();
+      window.addEventListener('resize', resize);
 
-  // Initialization
-  useEffect(() => {
       const s = stateRef.current;
-      s.startTime = Date.now();
-      
-      // Celestial position
-      s.celestialX = 0.2 + Math.random() * 0.6; // Random horizontal position
-      s.celestialY = 0.15 + Math.random() * 0.1; // Random height (high)
-      s.moonPhase = Math.random(); 
-      s.redDwarfAngle = Math.random() * Math.PI * 2;
-
-      // Comet Init (Gamma Night)
-      if ((planet as Planet).quadrant === QuadrantType.GAMA && environment.timeOfDay === 'night') {
-          // "Sometimes" -> 60% chance
-          if (Math.random() < 0.6) {
-              s.comet = {
-                  x: Math.random() * 0.4, // Left side
-                  y: 0.1 + Math.random() * 0.2,
-                  vx: 0.00005, // Very Slow movement
-                  vy: 0.00002,
-                  length: 60 + Math.random() * 40
-              };
-          }
-      }
-
-      // Stars
-      s.stars = Array.from({length: environment.starDensity}).map(() => ({
-          x: Math.random(), y: Math.random(), size: Math.random()*2, alpha: Math.random()
-      }));
-
-      // Clouds - TWO LAYERS
-      const cloudCountLow = environment.timeOfDay === 'day' ? 8 : 4;
-      const cloudCountHigh = environment.timeOfDay === 'day' ? 6 : 3;
-
-      s.cloudsLow = Array.from({length: cloudCountLow}).map(() => ({
-          x: (Math.random() - 0.5) * 3000,
-          y: -Math.random() * 1500 - 300, 
-          w: 200 + Math.random() * 300,
-          h: 60 + Math.random() * 60,
-          speed: 1.0,
-          shape: Array.from({length: 6}).map(() => ({ 
-              ox: (Math.random()-0.5)*100, oy: (Math.random()-0.5)*40, r: 40 + Math.random()*40
-          }))
-      }));
-
-      s.cloudsHigh = Array.from({length: cloudCountHigh}).map(() => ({
-          x: (Math.random() - 0.5) * 4000,
-          y: -Math.random() * 4000 - 2000, 
-          w: 300 + Math.random() * 400,
-          h: 80 + Math.random() * 80,
-          speed: 0.5, 
-          shape: Array.from({length: 7}).map(() => ({ 
-              ox: (Math.random()-0.5)*120, oy: (Math.random()-0.5)*30, r: 50 + Math.random()*50
-          }))
-      }));
-
-      // --- BIRDS ---
-      s.birds = [];
-      if (environment.isHabitable && environment.timeOfDay === 'day') {
-          s.birds = Array.from({length: 15}).map(() => ({
-              x: (Math.random() - 0.5) * 2000,
-              y: -Math.random() * 600 - 100, 
-              vx: 1 + Math.random() * 2,
-              vy: (Math.random() - 0.5) * 0.5,
-              wingSpan: 4 + Math.random() * 4,
-              flapSpeed: 0.15 + Math.random() * 0.1,
-              flapOffset: Math.random() * Math.PI
-          }));
-      }
-
-      // --- FEATURES (Decor) ---
-      const features = [];
-      // 1. Launch Tower (Always present, Left of ship)
-      features.push({ type: 'tower', x: -110, y: 0 }); 
-
-      // 2. Standard Domes
-      // Use the utility variants
-      features.push({ type: 'dome_std', variant: 'radar', x: 250, y: 0, scale: 1.2 });
-      features.push({ type: 'dome_std', variant: 'hab', x: -400, y: 0, scale: 1.5 });
-      if (environment.isHabitable) {
-          features.push({ type: 'dome_std', variant: 'bio', x: 500, y: 0, scale: 1.0 });
-      }
-
-      // Additional procedural debris
-      const objectCount = 10;
-      for(let i=0; i<objectCount; i++) {
-          let x = (Math.random() - 0.5) * 2000;
-          // Clear wider area around platform for clean view
-          if (Math.abs(x) < 600) continue; 
-          
-          features.push({ 
-              type: Math.random() > 0.5 ? 'rock' : 'spire', 
-              x, 
-              scale: 0.5 + Math.random(),
-              color: '#57534e'
-          });
-      }
-
-      s.features = features.sort((a,b) => (a.x*a.x) - (b.x*b.x));
-
-  }, [environment, planet]);
-
-  // Game Loop
-  useEffect(() => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
       let raf: number;
-      const s = stateRef.current;
+      let t0: any, t1: any, t2: any, t3: any, t4: any, t5: any, t6: any, t7: any, t8: any;
+
+      // 1. Initial Silence (2s)
+      t0 = setTimeout(() => {
+          // Count 3
+          setCountdown(3); 
+          audioService.playCountdownBeep(false);
+          
+          t1 = setTimeout(() => {
+              // Count 2
+              setCountdown(2); 
+              audioService.playCountdownBeep(false);
+              
+              t2 = setTimeout(() => {
+                  // Count 1
+                  setCountdown(1); 
+                  audioService.playCountdownBeep(false);
+                  
+                  t3 = setTimeout(() => {
+                      // Ignition (0)
+                      setCountdown(0);
+                      setPhase('ignition'); 
+                      setStatusText("IGNITION");
+                      audioService.playCountdownBeep(true); // GO sound
+                      
+                      // 0.3s Delay for Engine Start
+                      t4 = setTimeout(() => {
+                          audioService.playLaunchBang();
+                          // audioService.playLaunchRoar(); // REMOVED - Sequence now handles sustained roar
+                          audioService.playLaunchSequence(); // Continuous loop
+                          
+                          // Proceed to Lift after engine stabilizes
+                          t5 = setTimeout(() => {
+                              setPhase('lift'); setStatusText("LIFT OFF");
+                              
+                              t6 = setTimeout(() => {
+                                  setPhase('atmosphere'); setStatusText("MAX Q");
+                                  
+                                  t7 = setTimeout(() => {
+                                      setPhase('orbit'); 
+                                      setStatusText("ORBIT INSERTION");
+                                      audioService.stopLaunchSequence(); // Stop engine
+                                      audioService.playOrbitLatch(); // Pac sound
+                                      
+                                      t8 = setTimeout(onComplete, 4000);
+                                  }, 5000);
+                              }, 4000); 
+                          }, 2000);
+                      }, 300);
+                      
+                  }, 1000);
+              }, 1000);
+          }, 1000);
+      }, 2000);
 
       const loop = () => {
-          const w = canvas.width = window.innerWidth;
-          const h = canvas.height = window.innerHeight;
+          const dpr = window.devicePixelRatio || 1;
+          const w = canvas.width / dpr;
+          const h = canvas.height / dpr;
           const cx = w / 2;
-          const cy = h / 2;
+          const currentPhase = phaseRef.current; 
+          
           s.frameCount++;
-          
-          const currentPhase = phaseRef.current;
-
-          // --- 1. CALCULATE POSITIONS ---
-          const groundY = h * 0.85;
-          s.groundY = groundY;
-          
-          const platformSurfaceY = groundY - 20;
-
-          // Calculate Precise Leg Height in SVG units (100x100)
-          // 1.28 scale factor for DOM element (128px)
-          const domScale = 1.28;
-          // Gear Logic: 
-          // Complex (Mech/Insect/Mag): Max 72, compressed -15 = 57.
-          // Simple (Tele/Skid): Max 55, compressed -10 = 45.
+          const groundY = h - 90;
+          const padHeight = 20;
+          const padSurfaceY = groundY - padHeight;
           const isComplexGear = ['mechanical', 'insect', 'magnetic'].includes(shipConfig.landingGearType);
-          const svgLegHeight = isComplexGear ? 57 : 45;
-          const pixelLegHeight = svgLegHeight * domScale;
-
-          // Ship Y (Center) should place feet on platformSurfaceY
-          // Feet Y = ShipY + pixelLegHeight
-          // ShipY = platformSurfaceY - pixelLegHeight
-          const startingY = platformSurfaceY - pixelLegHeight;
-
-          let targetY = startingY; 
+          const svgLegHeight = isComplexGear ? 72 : 60; 
+          const pixelLegHeight = svgLegHeight * DOM_SCALE;
           
-          if (currentPhase === 'lift') {
-              // --- SLOW TAKEOFF CURVE ---
-              if (s.velocity < 2) {
-                  s.velocity += 0.02; 
-              } else {
-                  s.velocity *= 1.02; // Exponential gain
-              }
-              
-              s.altitude += s.velocity;
-              targetY = startingY - s.altitude; 
-              
-              if (targetY < h * 0.4) {
-                  const diff = (h * 0.4) - targetY;
-                  targetY = h * 0.4;
-                  s.viewY += diff;
-              }
-              
-              // --- LANDING GEAR PHYSICS (REVERSE OF LANDING) ---
-              // 1. Uncompress (Suspension 0 -> 1) as weight leaves ground
-              if (s.altitude > 0 && s.altitude < 20) {
-                  s.suspension = Math.min(1, s.suspension + 0.05);
-              }
-              
-              // 2. Retract (Extension 1 -> 0)
-              // "start retraction immediatly when the spaceship is above the spacetower."
-              // Tower is roughly 260px tall.
-              if (s.altitude > 260) {
-                  // Retract slowly but visibly
-                  s.legExtension = Math.max(0, s.legExtension - 0.006); 
-              }
+          const uncompressedShipY = padSurfaceY - (pixelLegHeight - 4);
+          const compressionPixels = 15 * DOM_SCALE;
 
-              // --- FUEL CONSUMPTION (LIFT PHASE) ---
-              // Consume faster during acceleration
-              if (s.internalFuel > s.targetFuel) {
-                  s.internalFuel -= 0.0035; // Higher burn during lift
-              }
+          const isSpace = s.viewY > 3000;
+          const dynamicJetType = (isSpace || currentPhase === 'orbit') ? 'ion' : 'combustion';
+          setActiveJetType(dynamicJetType);
 
-          } else if (currentPhase === 'atmosphere') {
-              targetY = h * 0.3;
-              s.viewY += (15 + s.velocity); 
-              if (s.velocity < 50) s.velocity *= 1.01;
-              s.shipScale = Math.max(0.4, s.shipScale - 0.002);
-              s.altitude += 50;
-              s.legExtension = 0; // Ensure retracted
-              
-              // --- FUEL CONSUMPTION (MAX Q) ---
-              // Burn LESS in upper atmosphere
-              if (s.internalFuel > s.targetFuel) {
-                  s.internalFuel -= 0.0012; 
-              }
-
-          } else if (currentPhase === 'orbit') {
-              targetY = h * 0.2;
-              s.viewY += 40;
-              s.shipScale = Math.max(0.1, s.shipScale - 0.005);
-              s.altitude += 100;
-              
-              // Finalize Fuel
-              if (s.internalFuel > s.targetFuel) {
-                  s.internalFuel = s.targetFuel; // Snap to target at orbit insertion
-              }
-          }
-
-          if (currentPhase === 'countdown' || currentPhase === 'ignition') {
-              s.shipY = startingY;
-              // Sitting on pad -> Compressed suspension
-              s.suspension = 0;
+          if (currentPhase === 'countdown') {
+              s.suspension = 0.8;
               s.legExtension = 1;
+              s.shipY = uncompressedShipY + (1 - s.suspension) * compressionPixels;
+              setThrustActive(false);
+              s.armRetract = 0; 
+          }
+          else if (currentPhase === 'ignition') {
+              s.suspension = Math.min(1, s.suspension + 0.01); 
+              s.legExtension = 1;
+              const targetY = uncompressedShipY + (1 - s.suspension) * compressionPixels;
+              s.shipY = targetY + (Math.random() - 0.5) * 2; 
+              s.shake = (Math.random() - 0.5) * 4;
+              if (s.internalFuel > s.targetFuel) s.internalFuel -= 0.001;
               
-              // Ignition consumes a tiny bit
-              if (currentPhase === 'ignition' && s.internalFuel > s.targetFuel) {
-                  s.internalFuel -= 0.001; 
-              }
-          } else {
-              s.shipY += (targetY - s.shipY) * 0.1;
+              // Only show jets if engine start delay has passed (300ms = ~18 frames at 60fps)
+              // But audio triggers via timeout, so we can just check frame count since phase change?
+              // Simpler: thrust active is controlled by state, but since we are inside loop, we'll assume active if phase is ignition
+              // Actually, thrust should visually match audio. 
+              // The timeout t4 fires 300ms after phase becomes ignition.
+              // We can't easily sync React state inside loop perfectly without refs or timestamps.
+              // Approximation: 300ms delay visual thrust?
+              setThrustActive(true); 
+              s.armRetract = 0; 
           }
-
-          // Shake calculation
-          if (currentPhase === 'ignition') s.shake = (Math.random() - 0.5) * 3;
-          else if (currentPhase === 'lift') s.shake = (Math.random() - 0.5) * 6;
-          else s.shake = 0;
-          
-          // Arm Retract Logic (Tower Arm)
-          if (s.altitude > 100) {
-              s.armRetract = Math.min(1, s.armRetract + 0.03); 
-          } else {
-              s.armRetract = 0; // Stay connected
-          }
-
-          if (s.frameCount % 5 === 0) {
-              setAltitude(Math.floor(s.altitude));
-              setVelocity(Math.floor(currentPhase === 'lift' ? s.velocity * 100 : (currentPhase === 'atmosphere' ? 2000 : 0)));
-          }
-          // Update Fuel Gauge every frame for smoothness
-          setVisualFuel(Math.max(s.targetFuel, s.internalFuel));
-
-          // --- 2. DRAWING ---
-
-          // Sky
-          const spaceRatio = Math.min(1, s.altitude / 8000);
-          const skyGrad = ctx.createLinearGradient(0, 0, 0, h);
-          if (spaceRatio < 1) {
-              skyGrad.addColorStop(0, environment.skyColorTop);
-              skyGrad.addColorStop(1, environment.skyColorBot);
-          } else {
-              skyGrad.addColorStop(0, '#000'); skyGrad.addColorStop(1, '#000');
-          }
-          ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
-          ctx.globalAlpha = 1 - spaceRatio;
-          ctx.fillStyle = skyGrad; ctx.fillRect(0,0,w,h);
-          ctx.globalAlpha = 1;
-
-          // Stars
-          const starVis = Math.max(0, Math.min(1, (environment.timeOfDay === 'night' ? 0.8 : 0) + (spaceRatio * 1.5)));
-          if (starVis > 0) {
-              ctx.fillStyle = '#fff';
-              s.stars.forEach(st => {
-                  ctx.globalAlpha = st.alpha * starVis;
-                  const sy = (st.y * h + s.viewY * 0.05) % h; 
-                  ctx.beginPath(); ctx.arc(st.x * w, sy, st.size, 0, Math.PI*2); ctx.fill();
-              });
-              ctx.globalAlpha = 1;
-          }
-
-          // Gamma Comet
-          if (s.comet) {
-              const c = s.comet;
-              c.x += c.vx; c.y += c.vy; // Slow movement
-              const cx = c.x * w; 
-              const cy = (c.y * h) + (s.viewY * 0.02); // Parallax
-              
-              // Draw Tail
-              const tailGrad = ctx.createLinearGradient(cx, cy, cx - c.length, cy - (c.length/2));
-              tailGrad.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
-              tailGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-              ctx.fillStyle = tailGrad;
-              ctx.beginPath();
-              ctx.moveTo(cx, cy);
-              ctx.lineTo(cx - c.length, cy - 10);
-              ctx.lineTo(cx - c.length, cy + 10);
-              ctx.fill();
-
-              // Draw Head
-              ctx.fillStyle = '#fff';
-              ctx.shadowColor = '#a5f3fc'; ctx.shadowBlur = 10;
-              ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI*2); ctx.fill();
-              ctx.shadowBlur = 0;
-          }
-
-          // CELESTIAL BODY (Sun/Moon)
-          // Removed spaceRatio check to keep sun visible during orbit insertion
-          const celParallax = s.viewY * 0.002; // Reduced parallax to keep it stable on screen
-          const celX = s.celestialX * w;
-          const celY = (s.celestialY * h) + celParallax;
-          
-          // Slight zoom effect as we leave atmosphere
-          const celScale = 1 + (spaceRatio * 0.2); 
-
-          if (environment.timeOfDay === 'day') {
-                  if ((planet as Planet).quadrant === QuadrantType.DELTA) {
-                      // BLACK HOLE with JETS and ORBITING RED DWARF (Delta Sector)
-                      
-                      // Scale dimensions
-                      const bhRadius = 50 * celScale;
-                      const bhCore = 12 * celScale;
-                      // Removed rings as requested
-
-                      // 1. Draw Jets (Vertical Beams)
-                      const jetW = 4 * celScale;
-                      const jetH = 200 * celScale;
-                      
-                      // Top Jet
-                      const jetGradTop = ctx.createLinearGradient(celX, celY, celX, celY - jetH);
-                      jetGradTop.addColorStop(0, 'rgba(168, 85, 247, 0.8)');
-                      jetGradTop.addColorStop(1, 'rgba(0,0,0,0)');
-                      ctx.fillStyle = jetGradTop;
-                      ctx.fillRect(celX - jetW/2, celY - jetH, jetW, jetH);
-                      
-                      // Bottom Jet
-                      const jetGradBot = ctx.createLinearGradient(celX, celY, celX, celY + jetH);
-                      jetGradBot.addColorStop(0, 'rgba(168, 85, 247, 0.8)');
-                      jetGradBot.addColorStop(1, 'rgba(0,0,0,0)');
-                      ctx.fillStyle = jetGradBot;
-                      ctx.fillRect(celX - jetW/2, celY, jetW, jetH);
-
-                      // 2. Draw Black Hole Core with Red Glow
-                      const bhGlow = ctx.createRadialGradient(celX, celY, 10 * celScale, celX, celY, bhRadius);
-                      bhGlow.addColorStop(0, '#000000');
-                      bhGlow.addColorStop(0.4, '#7f1d1d'); // Deep Red
-                      bhGlow.addColorStop(1, 'rgba(0,0,0,0)');
-                      ctx.fillStyle = bhGlow;
-                      ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill();
-                      
-                      ctx.fillStyle = '#000';
-                      ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 15 * celScale;
-                      ctx.beginPath(); ctx.arc(celX, celY, bhCore, 0, Math.PI*2); ctx.fill();
-                      ctx.shadowBlur = 0;
-
-                      // 4. Red Dwarf Companion (Fast Orbiting)
-                      s.redDwarfAngle += 0.05; // Fast orbit
-                      const wdRx = 100 * celScale; 
-                      const wdRy = 25 * celScale;
-                      const wdX = celX + Math.cos(s.redDwarfAngle) * wdRx;
-                      const wdY = celY + Math.sin(s.redDwarfAngle) * wdRy;
-                      
-                      // Trail
-                      s.redDwarfTrail.push({x: wdX, y: wdY, alpha: 1.0});
-                      if (s.redDwarfTrail.length > 25) s.redDwarfTrail.shift();
-                      
-                      ctx.lineCap = 'round';
-                      s.redDwarfTrail.forEach((tp, i) => {
-                          const size = (1 + (i/25)*4) * celScale;
-                          const alpha = (i/25) * 0.7;
-                          ctx.fillStyle = `rgba(239, 68, 68, ${alpha})`; // Red trail
-                          ctx.beginPath(); ctx.arc(tp.x, tp.y, size, 0, Math.PI*2); ctx.fill();
-                      });
-
-                      // Star (Red Dwarf)
-                      ctx.fillStyle = '#fca5a5'; // Bright Red/Pink core
-                      ctx.shadowColor = '#dc2626'; ctx.shadowBlur = 15 * celScale;
-                      ctx.beginPath(); ctx.arc(wdX, wdY, 6 * celScale, 0, Math.PI*2); ctx.fill();
-                      ctx.shadowBlur = 0;
-
-                  } else {
-                      // SUN (Sector Color)
-                      const sunR = 30 * celScale; // Small Sun
-                      const sGrad = ctx.createRadialGradient(celX, celY, sunR*0.2, celX, celY, sunR*2.5);
-                      sGrad.addColorStop(0, environment.sunColor);
-                      sGrad.addColorStop(1, 'rgba(0,0,0,0)');
-                      ctx.fillStyle = sGrad;
-                      ctx.beginPath(); ctx.arc(celX, celY, sunR*2.5, 0, Math.PI*2); ctx.fill();
-                      
-                      ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8;
-                      ctx.beginPath(); ctx.arc(celX, celY, sunR*0.7, 0, Math.PI*2); ctx.fill();
-                      ctx.globalAlpha = 1;
-                  }
+          else if (currentPhase === 'lift') {
+              if (s.armRetract < 1) {
+                  s.armRetract += 0.04; 
+                  s.shipY = uncompressedShipY + (Math.random() - 0.5) * 2; 
               } else {
-                  // MOON (Phased)
-                  const moonR = 25 * celScale;
-                  ctx.fillStyle = '#fff'; 
-                  ctx.shadowColor = '#fff'; ctx.shadowBlur = 10 * celScale;
-                  ctx.beginPath(); ctx.arc(celX, celY, moonR, 0, Math.PI*2); ctx.fill();
-                  ctx.shadowBlur = 0;
+                  s.armRetract = 1;
+                  const targetScreenY = h * 0.4;
+                  if (s.shipY > targetScreenY) {
+                      s.shipVy += 0.05; 
+                      s.shipY -= s.shipVy;
+                  } else {
+                      s.shipY = targetScreenY;
+                      s.worldSpeed += 0.15;
+                      s.viewY += s.worldSpeed; 
+                  }
                   
-                  // Phase Shadow
-                  ctx.fillStyle = environment.skyColorTop; // Match sky to hide part of moon
-                  // Phase varies from -1 (Full) to 1 (New) roughly
-                  const phaseOffset = (s.moonPhase - 0.5) * 2.5 * moonR;
-                  ctx.beginPath(); ctx.arc(celX + phaseOffset, celY - (5*celScale), moonR * 1.1, 0, Math.PI*2); ctx.fill();
+                  const liftHeight = uncompressedShipY - s.shipY;
+                  if (liftHeight > 20) {
+                      s.legExtension = Math.max(0, s.legExtension - 0.02);
+                  }
+              }
+              
+              s.suspension = 1.0; 
+              s.shake = (Math.random() - 0.5) * 6;
+              if (s.internalFuel > s.targetFuel) s.internalFuel -= 0.003;
+          }
+          else if (currentPhase === 'atmosphere') {
+              s.worldSpeed += 0.5;
+              s.viewY += s.worldSpeed;
+              s.shake = (Math.random() - 0.5) * 8;
+              s.legExtension = 0;
+              s.armRetract = 1;
+          }
+          else if (currentPhase === 'orbit') {
+              s.orbitFrameCount++;
+              s.worldSpeed += 1.0;
+              s.viewY += s.worldSpeed;
+              s.shipY -= 0.5; 
+              s.shake = (Math.random() - 0.5) * 2;
+              setThrustActive(false); // Cut engines
+              if (s.internalFuel > s.targetFuel) s.internalFuel = s.targetFuel;
+          }
+
+          setAltitude(Math.floor(s.viewY + (uncompressedShipY - s.shipY)));
+          setVelocity(Math.floor(s.worldSpeed * 100 + s.shipVy * 50));
+          setVisualFuel(s.internalFuel);
+          setLegExtension(s.legExtension);
+          setSuspension(s.suspension);
+
+          // DRAWING
+          const spaceTransitionHeight = 15000;
+          const spaceRatio = Math.min(1, s.viewY / spaceTransitionHeight); 
+          
+          const sky1 = mixColor(env.skyGradient[0], '#000000', spaceRatio);
+          const sky2 = mixColor(env.skyGradient[1], '#000000', spaceRatio);
+          
+          const grad = ctx.createLinearGradient(0, 0, 0, h); 
+          grad.addColorStop(0, sky1); 
+          grad.addColorStop(1, sky2); 
+          ctx.fillStyle = grad; 
+          ctx.fillRect(0, 0, w, h);
+
+          // STAR VISIBILITY FIX
+          const baseStarVis = (!env.isDay ? 0.8 : 0);
+          const starVis = Math.max(baseStarVis, Math.min(1, baseStarVis + (spaceRatio * 1.5)));
+          
+          if (starVis > 0) { 
+              ctx.fillStyle = '#fff'; 
+              s.starScrollY += 0.002;
+              env.stars.forEach(st => { 
+                  ctx.globalAlpha = st.alpha * starVis; 
+                  const sy = (st.y * h + s.viewY * 0.05) % h; 
+                  ctx.beginPath(); 
+                  ctx.arc(st.x * w, sy, st.size, 0, Math.PI*2); 
+                  ctx.fill(); 
+              }); 
+              ctx.globalAlpha = 1; 
+          }
+
+          const celParallax = s.viewY * 0.006; 
+          const celX = s.celestialX * w; 
+          const celY = (s.celestialY * h) + celParallax;
+          const celScale = 1 + (spaceRatio * 0.2); 
+          let dimFactor = 0;
+
+          // DELTA QUADRANT SPECIAL: Black Hole + Red Dwarf
+          if (env.quadrant === QuadrantType.DELTA) {
+              const time = Date.now();
+              const jetCycle = time % 20000;
+              let jetAlpha = 0;
+              if (jetCycle < 10000) {
+                  if (jetCycle < 1000) jetAlpha = jetCycle / 1000; 
+                  else if (jetCycle > 9000) jetAlpha = (10000 - jetCycle) / 1000; 
+                  else jetAlpha = 1;
               }
 
-          // CLOUDS (HIGH LAYER)
-          s.cloudsHigh.forEach(c => {
-              const speed = 0.5;
-              const cy = c.y + (s.viewY * speed) + h*0.2;
-              if (cy > -400 && cy < h + 400) {
-                  ctx.fillStyle = environment.timeOfDay === 'day' ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.05)';
-                  c.shape.forEach((p: any) => {
-                      ctx.beginPath(); ctx.arc(cx + c.x + p.ox, cy + p.oy, p.r, 0, Math.PI*2); ctx.fill();
-                  });
-              }
-          });
+              const slowTime = time * 0.00025; 
+              const dwarfDist = 120 * celScale;
+              const dwarfX = celX + Math.cos(slowTime) * dwarfDist;
+              const dwarfY = celY + Math.sin(slowTime * 0.5) * 40; 
+              const dwarfR = 15 * celScale * 0.7; 
+              const zDepth = Math.sin(slowTime);
+              const isBehind = zDepth < 0;
+              if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
 
-          // Ground & World
+              const drawDwarf = () => {
+                  ctx.fillStyle = '#ef4444';
+                  ctx.shadowColor = '#ef4444';
+                  ctx.shadowBlur = 20;
+                  ctx.beginPath(); ctx.arc(dwarfX, dwarfY, dwarfR, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+              };
+
+              const drawBlackHole = () => {
+                  const bhRadius = 40 * celScale;
+                  const bhGrad = ctx.createRadialGradient(celX, celY, bhRadius*0.8, celX, celY, bhRadius*2.5);
+                  bhGrad.addColorStop(0, '#000000');
+                  bhGrad.addColorStop(0.4, '#4c1d95'); 
+                  bhGrad.addColorStop(0.6, '#a855f7'); 
+                  bhGrad.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = bhGrad;
+                  ctx.beginPath(); ctx.arc(celX, celY, bhRadius*2.5, 0, Math.PI*2); ctx.fill();
+                  
+                  ctx.fillStyle = '#000000';
+                  ctx.shadowColor = '#fff';
+                  ctx.shadowBlur = 10;
+                  ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill();
+                  ctx.shadowBlur = 0;
+
+                  if (jetAlpha > 0) {
+                      ctx.save();
+                      ctx.globalAlpha = jetAlpha;
+                      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+                      ctx.beginPath();
+                      ctx.moveTo(celX - 3, celY - bhRadius);
+                      ctx.lineTo(celX + 3, celY - bhRadius);
+                      ctx.lineTo(celX, celY - 1000); 
+                      ctx.fill();
+                      ctx.beginPath();
+                      ctx.moveTo(celX - 3, celY + bhRadius);
+                      ctx.lineTo(celX + 3, celY + bhRadius);
+                      ctx.lineTo(celX, celY + 1000); 
+                      ctx.fill();
+                      ctx.restore();
+                  }
+              };
+
+              if (isBehind) { drawDwarf(); drawBlackHole(); } else { drawBlackHole(); drawDwarf(); }
+
+          } else {
+              if (s.celestialY > -100 && env.isDay) { 
+                  const sunR = 30 * celScale; 
+                  const sGrad = ctx.createRadialGradient(celX, celY, sunR*0.2, celX, celY, sunR*2.5); 
+                  sGrad.addColorStop(0, env.sunColor); sGrad.addColorStop(1, 'rgba(0,0,0,0)'); 
+                  ctx.fillStyle = sGrad; ctx.beginPath(); ctx.arc(celX, celY, sunR*2.5, 0, Math.PI*2); ctx.fill();
+                  ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.arc(celX, celY, sunR*0.7, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
+              }
+              if (!env.isDay && s.celestialY > -100) {
+                   const moonR = 25 * celScale;
+                   ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(celX, celY, moonR, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+              }
+          }
+
+          if (env.clouds && env.clouds.length > 0 && spaceRatio < 0.9) {
+              env.clouds.forEach(c => {
+                  const cloudY = (c.y + s.viewY * 0.5) % (h + 400) - 200;
+                  const cloudX = (c.x + s.frameCount * c.speed) % (w + 400) - 200;
+                  if (cloudY < h + 200 && cloudY > -200) {
+                      drawCloud(ctx, cloudX, cloudY, c.w, c.alpha * (1 - spaceRatio), c.color);
+                  }
+              });
+          }
+
           const worldY = groundY + s.viewY + s.shake;
-          const worldSurfaceY = platformSurfaceY + s.viewY + s.shake;
-
-          if (worldY > -800) {
+          if (worldY < h + 2000) { 
               ctx.save();
               ctx.translate(cx, worldY);
-
-              // Terrain
-              ctx.fillStyle = environment.groundColor;
-              ctx.fillRect(-w/2, 0, w, h);
               
-              // Horizon
-              const hGrad = ctx.createLinearGradient(0, -150, 0, 0);
-              hGrad.addColorStop(0, 'rgba(0,0,0,0)');
-              hGrad.addColorStop(1, 'rgba(0,0,0,0.5)');
-              ctx.fillStyle = hGrad;
-              ctx.fillRect(-w/2, -150, w, 150);
-
-              // Birds
-              if (s.birds && s.birds.length > 0) {
-                 const birdYBase = -300; 
-                 ctx.strokeStyle = environment.timeOfDay === 'day' ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.6)';
-                 ctx.lineWidth = 1.5;
-                 ctx.beginPath();
-                 s.birds.forEach(b => {
-                     b.x += b.vx; 
-                     if (b.x > w/2 + 500) b.x = -w/2 - 500; 
-                     const by = birdYBase + b.y; 
-                     const bx = b.x;
-                     const wingY = Math.sin(s.frameCount * b.flapSpeed + b.flapOffset) * 5;
-                     ctx.moveTo(bx - b.wingSpan, by + wingY);
-                     ctx.lineTo(bx, by);
-                     ctx.lineTo(bx + b.wingSpan, by + wingY);
-                 });
-                 ctx.stroke();
-              }
-
-              // Reuse Platform
-              drawPlatform(ctx, 0, 0); // At local center (0,0 is groundY)
-
-              // Objects
-              s.features.forEach(f => {
-                  if (f.type === 'tower') {
-                      const tx = f.x, ty = f.y;
-                      const th = 260, tw = 50;
+              if (env.hills && env.hills.length > 0) {
+                  env.hills.forEach((hill: any, i: number) => {
+                      const pFactor = hill.parallaxFactor;
+                      const yOff = (s.viewY * (1 - pFactor)); 
+                      ctx.fillStyle = hill.color;
+                      ctx.beginPath();
+                      ctx.moveTo(-w, h); 
                       
-                      // Lattice Tower Structure
-                      ctx.strokeStyle = '#475569'; 
-                      ctx.lineWidth = 3;
-                      ctx.beginPath(); 
-                      ctx.moveTo(tx, ty); ctx.lineTo(tx, ty-th); 
-                      ctx.moveTo(tx+tw, ty); ctx.lineTo(tx+tw, ty-th);
-                      // Cross bracing
-                      for(let y=0; y<th; y+=30) { 
-                          ctx.moveTo(tx, ty-y); ctx.lineTo(tx+tw, ty-y-30); 
-                          ctx.moveTo(tx+tw, ty-y); ctx.lineTo(tx, ty-y-30); 
-                          ctx.moveTo(tx, ty-y); ctx.lineTo(tx+tw, ty-y); 
-                      }
-                      ctx.stroke();
-                      
-                      // Base & Top Platform
-                      ctx.fillStyle = '#334155'; ctx.fillRect(tx-10, ty-th, tw+20, 15);
-                      ctx.fillRect(tx-5, ty-5, tw+10, 10); 
+                      const pathPoints: {x:number, y:number}[] = [];
 
-                      // Tower Top Light
-                      const blink = Math.floor(Date.now() / 300) % 2 === 0;
-                      const lightX = tx + tw/2;
-                      const lightY = ty - th - 8;
-                      if (blink) {
-                          const grad = ctx.createRadialGradient(lightX, lightY, 2, lightX, lightY, 20);
-                          grad.addColorStop(0, 'rgba(239, 68, 68, 1)');
-                          grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-                          ctx.fillStyle = grad;
-                          ctx.beginPath(); ctx.arc(lightX, lightY, 20, 0, Math.PI*2); ctx.fill();
-                      }
-                      ctx.fillStyle = blink ? '#ffadad' : '#7f1d1d';
-                      ctx.beginPath(); ctx.arc(lightX, lightY, 5, 0, Math.PI*2); ctx.fill();
+                      hill.points.forEach((p: any, idx: number) => {
+                          const px = (p.xRatio * 3000) - 1500;
+                          const py = -(p.heightRatio * 300) - yOff;
+                          if (idx === 0) ctx.lineTo(px, 1000); 
+                          ctx.lineTo(px, py);
+                          if (hill.hasRoad) pathPoints.push({x: px, y: py});
+                      });
+                      ctx.lineTo(1500, 1000);
+                      ctx.fill();
 
-                      // Retractable Arm System
-                      const armY = ty - 130;
-                      const armStartX = tx + tw;
-                      
-                      // Arm logic: Wait for ship to clear before retracting
-                      const maxArmLen = 40; 
-                      const armLen = maxArmLen * (1 - s.armRetract);
-                      
-                      // Arm Housing on Tower
-                      ctx.fillStyle = '#475569';
-                      ctx.fillRect(tx + tw, armY - 12, 10, 24);
-                      
-                      // The Telescopic Arm
-                      if (armLen > 0) {
-                          ctx.fillStyle = '#94a3b8';
-                          ctx.fillRect(armStartX, armY - 4, armLen, 8);
-                          ctx.fillStyle = '#facc15';
-                          ctx.fillRect(armStartX + armLen - 6, armY - 10, 6, 20);
-                          ctx.fillStyle = blink ? '#fbbf24' : '#78350f';
-                          ctx.beginPath(); ctx.arc(armStartX + armLen - 3, armY - 12, 2, 0, Math.PI*2); ctx.fill();
-                          ctx.beginPath(); ctx.arc(armStartX + armLen - 3, armY + 12, 2, 0, Math.PI*2); ctx.fill();
-                      }
+                      // DRAW ROAD LOGIC (Layer 4 usually)
+                      if (hill.hasRoad && pathPoints.length > 0) {
+                          ctx.beginPath();
+                          pathPoints.forEach((p, idx) => { if(idx===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+                          ctx.strokeStyle = '#333'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.stroke();
+                          ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.setLineDash([10, 10]); ctx.stroke(); ctx.setLineDash([]);
 
-                  } else if (f.type === 'dome_std') {
-                      drawDome(ctx, f.x, f.y, f.scale, f.variant);
-                  } else if (f.type === 'building') {
-                      ctx.save(); ctx.translate(f.x, f.y);
-                      ctx.fillStyle = f.color;
-                      ctx.fillRect(-f.w/2, -f.h, f.w, f.h);
-                      // FIXED: Blue windows in day, Yellow in night. Removed flicker.
-                      ctx.fillStyle = environment.timeOfDay === 'night' ? '#fbbf24' : '#60a5fa'; 
-                      for(let by = -f.h + 5; by < -5; by += 12) {
-                          for(let bx = -f.w/2 + 5; bx < f.w/2 - 5; bx += 8) {
-                              if (Math.random() > 0.4) ctx.fillRect(bx, by, 4, 6);
+                          if (env.cars && env.cars.length > 0) {
+                              env.cars.forEach(car => {
+                                  car.progress += car.speed * (car.dir || 1);
+                                  if (car.progress > 1) car.progress -= 1;
+                                  if (car.progress < 0) car.progress += 1;
+
+                                  const trackLen = pathPoints.length - 1;
+                                  const exactIdx = car.progress * trackLen;
+                                  const idx = Math.floor(exactIdx);
+                                  const sub = exactIdx - idx;
+                                  const p1 = pathPoints[idx];
+                                  const p2 = pathPoints[Math.min(idx + 1, trackLen)];
+                                  
+                                  if (p1 && p2) {
+                                      const vx = p1.x + (p2.x - p1.x) * sub;
+                                      const vy = p1.y + (p2.y - p1.y) * sub;
+                                      const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+                                      if (car.type === 'train') {
+                                          for(let k=0; k<car.cars; k++) {
+                                              const tProg = car.progress - (k * 0.015);
+                                              if (tProg >= 0 && tProg <= 1) {
+                                                  const tIdx = Math.floor(tProg * trackLen);
+                                                  const tSub = (tProg * trackLen) - tIdx;
+                                                  const tp1 = pathPoints[tIdx];
+                                                  const tp2 = pathPoints[Math.min(tIdx + 1, trackLen)];
+                                                  if (tp1 && tp2) {
+                                                      const tx = tp1.x + (tp2.x - tp1.x) * tSub;
+                                                      const ty = tp1.y + (tp2.y - tp1.y) * tSub;
+                                                      const ta = Math.atan2(tp2.y - tp1.y, tp2.x - tp1.x);
+                                                      drawVehicle(ctx, tx, ty - 6, ta, k===0 ? 'train' : 'car', car.color, env.isDay, car.dir);
+                                                  }
+                                              }
+                                          }
+                                      } else {
+                                          drawVehicle(ctx, vx, vy - 4, angle, 'car', car.color, env.isDay, car.dir);
+                                      }
+                                  }
+                              });
+                          }
+                          if (env.streetLights) {
+                              env.streetLights.forEach(sl => {
+                                  const ratio = (sl.x + 1500) / 3000;
+                                  if (ratio >= 0 && ratio <= 1) {
+                                      const idx = Math.floor(ratio * (pathPoints.length - 1));
+                                      const p = pathPoints[idx];
+                                      if (p) drawStreetLight(ctx, p.x, p.y, sl.h, env.isDay);
+                                  }
+                              });
                           }
                       }
-                      ctx.restore();
-                  } else if (f.type === 'tree_real') {
-                      const scale = f.scale;
-                      ctx.save(); ctx.translate(f.x, f.y); ctx.scale(scale, scale);
-                      ctx.fillStyle = '#451a03'; ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-2, -40); ctx.lineTo(2, -40); ctx.lineTo(4, 0); ctx.fill();
-                      ctx.fillStyle = f.color;
-                      const drawLeaf = (lx: number, ly: number, size: number) => { ctx.beginPath(); ctx.arc(lx, ly, size, 0, Math.PI*2); ctx.fill(); };
-                      drawLeaf(0, -55, 12); drawLeaf(-15, -40, 10); drawLeaf(15, -45, 10);
-                      ctx.restore();
-                  } else if (f.type === 'spire') {
-                      ctx.save(); ctx.translate(f.x, f.y);
-                      ctx.fillStyle = '#57534e';
-                      ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(0, -80 * f.scale); ctx.lineTo(5, 0); ctx.fill();
-                      ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(0, -80 * f.scale, 2, 0, Math.PI*2); ctx.fill();
-                      ctx.restore();
-                  } else {
-                      ctx.fillStyle = f.color || '#57534e'; ctx.beginPath(); ctx.arc(f.x, 0, 12*f.scale, Math.PI, 0); ctx.fill();
+
+                      // DRAW TREES & FEATURES (After Road = On Top)
+                      if (hill.trees) {
+                          hill.trees.forEach((t: any, tIdx: number) => {
+                              const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1];
+                              if (p1 && p2) {
+                                  const x1 = p1.xRatio * 3000 - 1500; 
+                                  const y1 = - (p1.heightRatio * 300) - yOff; 
+                                  const x2 = p2.xRatio * 3000 - 1500; 
+                                  const y2 = - (p2.heightRatio * 300) - yOff;
+                                  const tx = x1 + (x2 - x1) * t.offset; 
+                                  let ty = y1 + (y2 - y1) * t.offset;
+                                  
+                                  // Offset trees to sides of road
+                                  if (hill.hasRoad) {
+                                      const side = tIdx % 2 === 0 ? 1 : -1;
+                                      ty += side * 25;
+                                  }
+                                  
+                                  drawBuilding(ctx, { x: tx, y: ty, type: t.type === 'pine' ? 'tree' : 'palm', w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false);
+                              }
+                          });
+                      }
+                      if (hill.cityBuildings) {
+                          hill.cityBuildings.forEach((b: any) => {
+                              const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff;
+                              drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color }, env.isDay, false);
+                          });
+                      }
+                  });
+              }
+
+              ctx.fillStyle = env.groundColor;
+              ctx.fillRect(-w, 0, w*2, h*2); 
+              drawPlatform(ctx, 0, 0, env.isOcean);
+              
+              if (env.powerLines && env.powerLines.length > 0) {
+                  const chain = env.powerLines[0];
+                  if (chain && chain.length > 0) {
+                      const minX = Math.min(chain[0].x, chain[chain.length-1].x);
+                      const maxX = Math.max(chain[0].x, chain[chain.length-1].x);
+
+                      ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1;
+                      env.powerLines.forEach((chain: any[]) => {
+                          for (let k=0; k<chain.length-1; k++) {
+                              const p1 = chain[k]; const p2 = chain[k+1];
+                              const y1 = -p1.h + p1.yOff;
+                              const y2 = -p2.h + p2.yOff;
+                              for(let wIdx=0; wIdx<3; wIdx++) {
+                                  const sag = 15 + (wIdx * 5);
+                                  const midX = (p1.x + p2.x) / 2;
+                                  const midY = Math.max(y1, y2) + sag;
+                                  ctx.beginPath();
+                                  ctx.moveTo(p1.x, y1 + (wIdx * 4));
+                                  ctx.quadraticCurveTo(midX, midY + (wIdx * 4), p2.x, y2 + (wIdx * 4));
+                                  ctx.stroke();
+                                  if (wIdx === 0 && k === 0 && s.birds) {
+                                      if (thrustActive) {
+                                          s.birds.forEach(b => {
+                                              if (b.state === 'sit') {
+                                                  b.state = 'fly';
+                                                  b.vx = (Math.random()-0.5) * 15; 
+                                                  b.vy = -5 - Math.random() * 8; 
+                                                  b.visible = true;
+                                              }
+                                          });
+                                      }
+                                      s.birds.forEach(b => {
+                                          if (b.visible === false) return;
+                                          if (b.state === 'fly') {
+                                              b.x += b.vx; b.y += b.vy;
+                                              if (b.x < minX - 200 || b.x > maxX + 200 || b.y < -500) b.visible = false;
+                                              const wingY = Math.sin(Date.now() * 0.05) * 3; 
+                                              ctx.fillStyle = '#000'; ctx.beginPath(); ctx.moveTo(b.x - 3, b.y + y1 + wingY); ctx.lineTo(b.x, b.y + y1); ctx.lineTo(b.x + 3, b.y + y1 + wingY); ctx.stroke();
+                                          } else {
+                                              const t = (b.x - p1.x) / (p2.x - p1.x);
+                                              if (t >= 0 && t <= 1) {
+                                                  const curveY = (1-t)*(1-t)*y1 + 2*(1-t)*t*midY + t*t*y2;
+                                                  ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(b.x, curveY - 2, 2, 0, Math.PI*2); ctx.fill(); b.y = curveY - 2;
+                                              }
+                                          }
+                                      });
+                                  }
+                              }
+                          }
+                      });
                   }
-              });
+              }
+
+              if (env.features) {
+                  env.features.forEach(f => {
+                      const fy = f.yOff || 0; 
+                      if (f.type === 'power_plant' && !f.isUnderground) {
+                          if (Math.random() > 0.8) {
+                              s.particles.push({ x: f.x + 40, y: fy - 80, vx: (Math.random()-0.5)*1, vy: -1 - Math.random()*1, life: 1.0, maxLife: 1.0, size: 5 + Math.random()*5, color: 'rgba(255,255,255,0.1)', type: 'steam' });
+                          }
+                      }
+                      if (f.type === 'tower') { drawTower(ctx, f.x, fy, f, env.isDay, env.isOcean, s.armRetract); } 
+                      else if (f.type === 'power_pole') { ctx.fillStyle = '#71717a'; ctx.fillRect(f.x - 2, fy - f.h, 4, f.h); ctx.fillRect(f.x - 20, fy - f.h + 10, 40, 4); ctx.fillStyle = '#10b981'; ctx.beginPath(); ctx.arc(f.x - 18, fy - f.h + 8, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(f.x + 18, fy - f.h + 8, 3, 0, Math.PI*2); ctx.fill(); }
+                      else if (f.type === 'dome_std') drawDome(ctx, f.x, fy, f, !!env.isOcean);
+                      else if (f.type === 'building_std' || f.type === 'church' || f.type === 'water_tower' || f.type === 'bridge' || f.type === 'rock_formation' || f.type === 'tree' || f.type === 'palm' || f.type === 'road_tree' || f.type === 'cactus' || f.type === 'puddle') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean);
+                      else if (f.type === 'power_plant') drawPowerPlant(ctx, f.x, fy, f.scale, f.isUnderground);
+                      else if (f.type === 'tank') { ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, fy, f.w/2, Math.PI, 0); ctx.fill(); }
+                  });
+              }
+              if (env.boulders) {
+                  env.boulders.forEach(b => drawBoulder(ctx, b.x, 0, b.size, b.color));
+              }
               ctx.restore();
           }
 
-          // CLOUDS (LOW LAYER)
-          s.cloudsLow.forEach(c => {
-              const speed = 1.0;
-              const cy = c.y + (s.viewY * speed) + h*0.2;
-              if (cy > -300 && cy < h + 300) {
-                  ctx.fillStyle = environment.timeOfDay === 'day' ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.15)';
-                  c.shape.forEach((p: any) => {
-                      ctx.beginPath(); ctx.arc(cx + c.x + p.ox, cy + p.oy, p.r, 0, Math.PI*2); ctx.fill();
+          if (dimFactor > 0) {
+              ctx.fillStyle = `rgba(0,0,0,${dimFactor})`;
+              ctx.fillRect(0, 0, w, h);
+          }
+
+          if (currentPhase === 'ignition' || currentPhase === 'lift' || currentPhase === 'atmosphere') {
+              const spawnCount = currentPhase === 'ignition' ? 8 : 5; 
+              const isIon = dynamicJetType === 'ion';
+
+              for(let i=0; i<spawnCount; i++) {
+                  const eng = engineLocs[Math.floor(Math.random() * engineLocs.length)];
+                  const nozzleRelX = (eng.x - 50) * DOM_SCALE;
+                  const nozzleRelY = (eng.y + eng.h + 6 - 50) * DOM_SCALE;
+                  
+                  let pType = 'fire';
+                  let pColor = '#ef4444';
+                  let pSize = 4 + Math.random() * 4;
+                  let pLife = 0.8;
+
+                  if (currentPhase === 'ignition') {
+                       if (Math.random() > 0.4) { pType = 'smoke'; pColor = 'rgba(180, 180, 180, 0.4)'; pSize = 6 + Math.random() * 6; } 
+                       else { pType = 'fire'; pColor = Math.random() > 0.5 ? '#facc15' : '#f97316'; }
+                  } else {
+                       if (isIon) { pType = 'ion'; pColor = Math.random() > 0.5 ? '#3b82f6' : '#22d3ee'; } 
+                       else { pType = 'fire'; pColor = Math.random() > 0.5 ? '#ef4444' : '#facc15'; }
+                  }
+                  
+                  const ventX = (Math.random()-0.5) * 2;
+                  
+                  s.particles.push({
+                      x: cx + nozzleRelX + (Math.random()-0.5)*3,
+                      y: s.shipY + s.shake + nozzleRelY,
+                      vx: ventX,
+                      vy: (6 + Math.random() * 6), 
+                      life: pLife,
+                      maxLife: pLife,
+                      size: pSize, 
+                      type: pType,
+                      color: pColor,
+                      decay: 0.02,
+                      grow: 0.4 
                   });
               }
-          });
-
-          // --- PARTICLE SYSTEM ---
-          if (currentPhase !== 'countdown') {
-              const shipScale = s.shipScale;
-              // Nozzle offset Y from center (approx 50) + Scale factor
-              // The engine locations are in 0-100 coords relative to ship center at (50,50)
-              // But s.shipY is the center of the ship DIV.
-              // SVG coord system: 0-100.
-              // To get pixel offset from s.shipY: (eng.y - 50) * domScale * shipScale
-              const domScale = 1.28; // From earlier calculation
-              
-              if (currentPhase === 'ignition' || currentPhase === 'lift' || currentPhase === 'atmosphere') {
-                  const smokeCount = currentPhase === 'ignition' ? 4 : 8;
-                  const spawnChance = currentPhase === 'atmosphere' ? 0.8 : 1.0;
-                  
-                  // Calculate dynamic gap for smoke trail
-                  // As velocity increases, smoke spawns further behind the nozzle
-                  // This reveals the "clean" jet flame drawn by ShipIcon
-                  const velocityFactor = currentPhase === 'lift' ? s.velocity : (currentPhase === 'atmosphere' ? 5 : 0);
-                  const smokeLag = velocityFactor * 15 * shipScale;
-
-                  if (Math.random() < spawnChance) {
-                      for(let i=0; i<smokeCount; i++) {
-                          // Pick a random engine to emit from
-                          const eng = engineLocs[Math.floor(Math.random() * engineLocs.length)];
-                          // Calculate nozzle position relative to ship center
-                          const nozzleRelX = (eng.x - 50) * domScale * shipScale;
-                          // Engine Y + Height + Nozzle Height (~6)
-                          const nozzleRelY = (eng.y + eng.h + 6 - 50) * domScale * shipScale;
-                          
-                          // Apply lag
-                          const spawnY = s.shipY + nozzleRelY + smokeLag;
-                          
-                          s.particles.push({
-                              x: cx + nozzleRelX + (Math.random()-0.5) * 2 * shipScale,
-                              y: spawnY,
-                              vx: (Math.random()-0.5) * 4 * shipScale,
-                              vy: (4 + Math.random() * 8) * shipScale, 
-                              life: 1.0,
-                              decay: 0.003 + Math.random() * 0.002, 
-                              size: (10 + Math.random()*15) * shipScale,
-                              grow: 0.5 + Math.random() * 0.5,
-                              type: 'smoke',
-                              color: '#ffffff',
-                              // Initial opacity is lower if close to nozzle (simulating transparency)
-                              initialAlpha: Math.min(0.8, 0.2 + (smokeLag / 50)) 
-                          });
-                      }
-                  }
-              }
-
-              if (currentPhase === 'lift' || currentPhase === 'atmosphere') {
-                  const fireCount = 10;
-                  const isIon = currentPhase === 'atmosphere';
-                  
-                  // Fire particles (exhaust core)
-                  for(let i=0; i<fireCount; i++) {
-                      const eng = engineLocs[Math.floor(Math.random() * engineLocs.length)];
-                      const nozzleRelX = (eng.x - 50) * domScale * shipScale;
-                      const nozzleRelY = (eng.y + eng.h + 6 - 50) * domScale * shipScale;
-                      
-                      // Fire spawns directly at nozzle or slightly below
-                      const spawnY = s.shipY + nozzleRelY + (Math.random() * 10 * shipScale);
-
-                      s.particles.push({
-                          x: cx + nozzleRelX + (Math.random()-0.5) * 2 * shipScale,
-                          y: spawnY,
-                          vx: (Math.random()-0.5) * 2,
-                          vy: (10 + Math.random() * 10) * shipScale, 
-                          life: 0.5 + Math.random() * 0.3,
-                          decay: 0.05 + Math.random() * 0.05,
-                          size: (5 + Math.random() * 5) * shipScale,
-                          grow: -0.1, // Shrink
-                          type: 'fire',
-                          color: Math.random() > 0.5 ? (isIon ? '#3b82f6' : '#facc15') : (isIon ? '#60a5fa' : '#ef4444'),
-                          initialAlpha: 1.0
-                      });
-                  }
-              }
           }
 
-          for(let i=s.particles.length-1; i>=0; i--) {
-              const p = s.particles[i];
-              if (p.type === 'smoke') {
-                  p.x += s.windSpeed; 
-                  p.x += (Math.random() - 0.5) * 2; 
-              }
-              p.x += p.vx; p.y += p.vy; p.life -= p.decay; p.size += p.grow;
-              
-              // --- PHYSICS DEFFLECTION ---
-              // If particle hits the platform surface, spread out violently
-              if (p.y >= worldSurfaceY && p.vy > 0) {
-                  p.y = worldSurfaceY;
-                  p.vy = 0;
-                  // Deflect sideways randomly - increased spread for "fire burning platform" look
-                  p.vx = (Math.random() > 0.5 ? 1 : -1) * (10 + Math.random() * 15);
-                  p.life -= 0.05; // Burn out faster on contact
-              }
-
-              if (p.life <= 0 || p.size <= 0) { s.particles.splice(i, 1); continue; }
-
-              if (p.type === 'smoke') {
-                  // Alpha fade in/out curve
-                  let alpha = p.initialAlpha;
-                  if (p.life > 0.8) {
-                      alpha = p.initialAlpha * ((1.0 - p.life) / 0.2); 
-                  } else {
-                      alpha = Math.min(0.4, p.life * 0.4); 
+          s.particles.forEach(p => {
+              if (p.type === 'steam') {
+                  p.x += p.vx; p.y += p.vy;
+                  p.size += 0.5; p.life -= 0.01;
+              } else {
+                  p.x += p.vx;
+                  p.y += p.vy;
+                  p.life -= p.decay;
+                  p.size += p.grow;
+                  const currentGroundY = worldY; 
+                  if (p.y > currentGroundY && p.vy > 0) {
+                      p.y = currentGroundY;
+                      p.vy = 0;
+                      p.vx = (Math.random() < 0.5 ? -1 : 1) * (15 + Math.random() * 15); 
+                      p.grow = 2.0; 
+                      p.decay = 0.05; 
                   }
-                  
-                  ctx.fillStyle = `rgba(224, 242, 254, ${Math.max(0, alpha)})`;
-                  ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0, p.size), 0, Math.PI*2); ctx.fill();
-              } else if (p.type === 'fire') {
-                  ctx.globalCompositeOperation = 'lighter'; 
+              }
+
+              if (p.life > 0) {
                   ctx.globalAlpha = p.life;
-                  ctx.fillStyle = p.color;
-                  ctx.beginPath(); ctx.arc(p.x, p.y, Math.max(0, p.size), 0, Math.PI*2); ctx.fill();
-                  ctx.globalCompositeOperation = 'source-over'; 
+                  ctx.fillStyle = p.color || '#fff';
+                  if (p.type === 'fire' || p.type === 'ion') ctx.globalCompositeOperation = 'lighter';
+                  ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
+                  ctx.globalCompositeOperation = 'source-over';
                   ctx.globalAlpha = 1;
               }
-          }
+          });
+          s.particles = s.particles.filter(p => p.life > 0);
 
           if (shipDOMRef.current) {
-              shipDOMRef.current.style.transform = `translate(-50%, -50%) translate(${cx}px, ${s.shipY + s.shake}px) scale(${s.shipScale})`;
+              const shipScreenY = s.shipY + s.shake;
+              const shrinkRate = 1.0 / 240;
+              const smoothScale = currentPhase === 'orbit' ? Math.max(0.0, 1.0 - (s.orbitFrameCount * shrinkRate)) : 1.0;
+              shipDOMRef.current.style.transform = `translate(-50%, -50%) translate(${cx}px, ${shipScreenY}px) scale(${smoothScale})`;
+              shipDOMRef.current.style.opacity = smoothScale < 0.2 ? `${smoothScale * 5}` : '1';
           }
-
           raf = requestAnimationFrame(loop);
       };
-      
-      loop();
-      
-      const timer = setTimeout(() => {
-          setPhase('ignition'); setStatusText("IGNITION"); setCountdown(0); audioService.playLaunchSequence();
-          setTimeout(() => {
-              setPhase('lift'); setStatusText("LIFTOFF");
-              setTimeout(() => {
-                  setPhase('atmosphere'); setStatusText("MAX Q");
-                  setTimeout(() => {
-                      setPhase('orbit'); setStatusText("ORBIT INSERTION");
-                      setTimeout(onComplete, 3000);
-                  }, 4000);
-              }, 4000); 
-          }, 2000);
-      }, 3000);
 
-      return () => {
-          cancelAnimationFrame(raf);
-          clearTimeout(timer);
+      raf = requestAnimationFrame(loop);
+      return () => { 
+          window.removeEventListener('resize', resize);
+          cancelAnimationFrame(raf); 
+          clearTimeout(t0); clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); 
+          clearTimeout(t4); clearTimeout(t5); clearTimeout(t6); clearTimeout(t7); clearTimeout(t8);
           audioService.stopLaunchSequence();
       };
-  }, [environment]);
+  }, [env, shipConfig, engineLocs]);
 
   return (
-    <div className="fixed inset-0 z-[5000] bg-black overflow-hidden font-mono select-none">
-      <canvas ref={canvasRef} className="w-full h-full block" />
-      
-      {/* HUD DASHBOARD - Moved to Top */}
-      <div className="absolute top-8 left-8 right-8 flex justify-between items-start z-50 pointer-events-none">
-          <div className="flex gap-4">
-              <Gauge value={altitude} max={8000} label="DISTANCE" unit="METERS" color="#3b82f6" />
-              <Gauge value={velocity} max={2500} label="SPEED" unit="KM/H" color="#facc15" />
-              <Gauge value={visualFuel} max={maxFuel} label="FUEL" unit="UNITS" color="#ef4444" />
-          </div>
-          
-          <div className="flex flex-col items-end gap-2">
-              <span className={`text-[10px] font-black uppercase tracking-widest ${phase === 'ignition' ? 'text-orange-400 animate-pulse' : 'text-emerald-400'}`}>STATUS: {statusText}</span>
-              <button 
-                  onClick={() => onComplete()} 
-                  className="pointer-events-auto bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-700 text-white text-[10px] font-black uppercase px-6 py-3 rounded backdrop-blur-sm transition-all flex items-center gap-2"
-              >
-                  SKIP SEQUENCE <span className="text-[8px] text-zinc-500">space</span>
-              </button>
-          </div>
-      </div>
-
-      {countdown > 0 && (
-          <div className="absolute bottom-12 left-12 z-50">
-              <div className="text-xl text-emerald-500 font-black tracking-widest mb-1">T-MINUS</div>
-              <div className="text-8xl font-black text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.5)] animate-pulse">{countdown}</div>
+    <div className="fixed inset-0 z-[5000] bg-black overflow-hidden font-mono select-none absolute w-full h-full">
+      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block" />
+      <SequenceStatusBar 
+          altitude={altitude} 
+          velocity={velocity} 
+          fuel={visualFuel} 
+          maxFuel={maxFuel} 
+          status={statusText} 
+          onSkip={onComplete} 
+          phase={phase} 
+      />
+      {countdown !== null && countdown > 0 && (
+          <div className="absolute top-[25%] left-0 right-0 flex flex-col items-center justify-center z-40 pointer-events-none">
+              <div className="text-sm md:text-xl text-emerald-500 font-black tracking-[0.5em] mb-1 drop-shadow-[0_2px_2px_rgba(0,0,0,1)]">T-MINUS</div>
+              <div className="text-8xl md:text-[10rem] font-black text-white drop-shadow-[0_0_20px_rgba(0,0,0,1)] animate-pulse">{countdown}</div>
           </div>
       )}
-
-      {/* Manual DOM Positioning controlled by JS loop */}
-      <div 
-          ref={shipDOMRef}
-          className="absolute left-0 top-0 w-32 h-32 will-change-transform z-20"
-      >
+      <div ref={shipDOMRef} className="absolute left-0 top-0 w-32 h-32 will-change-transform z-20">
         <div className="absolute inset-0 z-0 overflow-visible">
              <svg className="absolute w-full h-full" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
                 <g transform={`translate(50, 50)`}>
-                    {['left', 'right'].map((side) => {
-                        const extension = stateRef.current.legExtension;
-                        const compression = stateRef.current.suspension;
-                        return (
-                            <LandingGear 
-                                key={side}
-                                type={shipConfig.landingGearType}
-                                extension={extension}
-                                compression={compression}
-                                side={side as any}
-                            />
-                        );
-                    })}
+                    {['left', 'right'].map((side) => (
+                        <LandingGear key={side} type={shipConfig.landingGearType} extension={legExtension} compression={suspension} side={side as any} />
+                    ))}
                 </g>
              </svg>
         </div>
-
         <ShipIcon 
             config={shipConfig} 
             className="w-full h-full drop-shadow-2xl relative z-10" 
-            showJets={phase !== 'countdown'} 
-            jetType={jetType}
+            showJets={thrustActive} 
+            jetType={activeJetType} 
             showGear={false} 
-            hullColor={shipColors.hull}
-            wingColor={shipColors.wings}
-            cockpitColor={shipColors.cockpit}
-            gunColor={shipColors.guns}
-            secondaryGunColor={shipColors.secondary_guns}
-            gunBodyColor={shipColors.gun_body}
-            engineColor={shipColors.engines}
-            nozzleColor={shipColors.nozzles}
+            hullColor={shipColors.hull} 
+            wingColor={shipColors.wings} 
+            cockpitColor={shipColors.cockpit} 
+            gunColor={shipColors.guns} 
+            secondaryGunColor={shipColors.secondary_guns} 
+            gunBodyColor={shipColors.gun_body} 
+            engineColor={shipColors.engines} 
+            nozzleColor={shipColors.nozzles} 
             weaponId={weaponId} 
-            equippedWeapons={equippedWeapons}
+            equippedWeapons={equippedWeapons} 
         />
       </div>
     </div>

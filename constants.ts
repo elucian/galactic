@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 31
-// VERSION: Beta 31 - Restored Baseline
+// CHECKPOINT: Beta 32
+// VERSION: Beta 32 - Restored Baseline
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -421,7 +421,7 @@ export const PLANETS: Planet[] = [
     orbitRadius: 300, 
     orbitSpeed: 0.25, 
     size: 30, 
-    color: '#78350f', 
+    color: '#3b82f6', // Changed from #78350f
     quadrant: QuadrantType.BETA, 
     moons: [] 
   },
@@ -499,7 +499,7 @@ export const PLANETS: Planet[] = [
     orbitRadius: 340, 
     orbitSpeed: 0.18, 
     size: 40, 
-    color: '#18181b', 
+    color: '#064e3b', // Changed from #18181b
     quadrant: QuadrantType.DELTA, 
     moons: [] 
   },

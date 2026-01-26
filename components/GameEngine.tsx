@@ -876,21 +876,26 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               type = 'octo_shell';
               w = 12; h = 12; grow = 0; speed = 12; 
               color = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
-              // Octo Power Shot: Explode randomly starting at 2/3 of screen height up to top
+              // Octo Power Shot: Explode randomly starting at least 1/2 screen height away
+              // Probabilistic distribution peaking at 3/4 screen height distance
               const hCanvas = canvasRef.current?.height || window.innerHeight;
-              const maxDet = hCanvas * 0.66;
-              const minDet = 50; 
-              detY = minDet + Math.random() * (maxDet - minDet);
+              const distRatio = 0.5 + ((Math.random() + Math.random()) / 2) * 0.5; // range 0.5 to 1.0, center 0.75
+              const dist = hCanvas * distRatio;
+              detY = s.py - dist;
               isMulti = Math.random() > 0.7; // Some shots are multicolor
           }
           else if (isPhaser) { 
               type = 'laser';
-              w = 5; h = 240; speed = 32; // 3x length of normal (80*3), 1.4x width (3.5*1.4)
+              w = 5; h = 120; speed = 32; // 3x length of normal (40*3)
               color = '#d946ef'; // Pink Power Shot
           }
 
+          // FIX: Start at nose of spaceship (s.py - 30 - h/2)
+          // Since bullets are drawn centered, y must be offset by half height so bottom matches nose
+          const spawnY = s.py - 30 - (h / 2);
+
           s.bullets.push({
-              x: s.px, y: s.py - 30,
+              x: s.px, y: spawnY,
               vx: 0, vy: -speed, 
               damage: dmg,
               color: color,
@@ -923,8 +928,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           const height = baseH * 3; 
           const color = beamState.color;
 
+          // FIX: Start at nose of spaceship
+          const spawnY = s.py - 30 - (height / 2);
+
           s.bullets.push({ 
-              x: s.px, y: s.py - 24, vx: 0, vy: -35, damage: dmg, color: color, type: 'laser', life: 50, isEnemy: false, width: width, height: height, glow: true, glowIntensity: 20, isMain: true, weaponId: mainWeapon?.id || 'gun_pulse', isOvercharge: true,
+              x: s.px, y: spawnY, vx: 0, vy: -35, damage: dmg, color: color, type: 'laser', life: 50, isEnemy: false, width: width, height: height, glow: true, glowIntensity: 20, isMain: true, weaponId: mainWeapon?.id || 'gun_pulse', isOvercharge: true,
               growthRate: EXP_GROWTH_RATE, initialWidth: width, initialHeight: height
           }); 
           audioService.playWeaponFire('mega', 0, activeShip.config.id);
@@ -941,7 +949,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       }
       
       s.weaponFireTimes[0] = Date.now(); 
-      s.shakeX = 3; s.shakeY = 3; 
+      s.weaponHeat[0] = Math.min(100, (s.weaponHeat[0] || 0) + 1.0); 
+      s.lastRapidFire = Date.now(); 
   };
 
   const fireRapidShot = () => { 
@@ -965,11 +974,17 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               gun.mag--; 
           } else { 
               // ENERGY CONSUMPTION LOGIC (Standard Fire)
-              // Exotic: ~1% per second drain
-              // Standard: ~8% per second drain (High consumption)
+              // Cost per shot scales with Damage (Power).
+              // Factor: 0.5 for Standard, 0.2 for Exotic (Significant efficiency bonus).
+              // Example: 
+              // - Pulse Laser (38 dmg): 38 * 0.5 = 19 energy/shot. @ 4/sec = 76/sec. Sustainable on Vanguard.
+              // - Photon Emitter (90 dmg): 90 * 0.5 = 45 energy/shot. @ 8/sec = 360/sec. Drains Vanguard fast.
+              
               const isExotic = mainDef?.id.includes('exotic');
-              const drainRatePerSec = isExotic ? 0.01 : 0.08; 
-              const energyCostPerShot = (maxEnergy * drainRatePerSec) / fireRate;
+              const baseDamage = mainDef ? mainDef.damage : 45;
+              const efficiencyFactor = isExotic ? 0.2 : 0.5;
+              
+              const energyCostPerShot = baseDamage * efficiencyFactor;
 
               if (s.energy < energyCostPerShot) {
                   // EMPTY: Check Reserves
@@ -1023,7 +1038,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               
               // --- PHASER OVERRIDE ---
               if (mainDef.id === 'exotic_phaser_sweep') {
-                  h = 80; // "Double longer" (was 45 -> 80ish)
+                  h = 40; // Reduced from 80
                   w = 3.5;
               }
 
@@ -1049,8 +1064,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   audioService.playWeaponFire('missile', 0);
               } else if (mainDef.id === 'exotic_phaser_sweep') {
                   // PHASER SWEEP SPECIFIC LOGIC
+                  // Apply nose origin fix here too for consistency
+                  const spawnY = s.py - 30 - (h / 2);
                    s.bullets.push({ 
-                      x: s.px, y: s.py - 24, 
+                      x: s.px, y: spawnY, 
                       vx: Math.sin(sprayRad) * speed, 
                       vy: -Math.cos(sprayRad) * speed, 
                       damage, 

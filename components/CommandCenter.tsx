@@ -3,6 +3,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { GameState, ShipFitting, Shield } from '../types.ts';
 import { SHIPS, SHIELDS, EXOTIC_SHIELDS, MAX_FLEET_SIZE } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
+import { audioService } from '../services/audioService.ts';
 
 interface CommandCenterProps {
   gameState: GameState;
@@ -364,14 +365,14 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
             {allShipsCompromised ? (
                 <button onClick={() => setScreen('intro')} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-red-600 border-2 border-red-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(220,38,38,0.4)] hover:bg-red-500 transition-all hover:scale-105 active:scale-95 animate-pulse`}>ABORT</button>
             ) : (
-                <button onClick={onLaunch} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-emerald-600 border-2 border-emerald-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95`}>LAUNCH</button>
+                <button onClick={() => { audioService.stop(); onLaunch(); }} className={`hidden md:block landscape:block ${btnPad} md:py-3 bg-emerald-600 border-2 border-emerald-500 text-white ${btnSize} font-black uppercase rounded shadow-[0_0_15px_rgba(16,185,129,0.4)] hover:bg-emerald-500 transition-all hover:scale-105 active:scale-95`}>LAUNCH</button>
             )}
           </div>
         </footer>
         {allShipsCompromised ? (
             <button onClick={() => setScreen('intro')} className="md:hidden landscape:hidden w-full py-4 bg-red-600 border-b-4 border-red-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(220,38,38,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-red-500 flex items-center justify-center gap-4 animate-pulse">⚠️ ABORT MISSION ⚠️</button>
         ) : (
-            <button onClick={onLaunch} className="md:hidden landscape:hidden w-full py-4 bg-emerald-600 border-b-4 border-emerald-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-emerald-500 flex items-center justify-center gap-4"><span className="animate-pulse">▶</span> LAUNCH TO ORBIT <span className="animate-pulse">◀</span></button>
+            <button onClick={() => { audioService.stop(); onLaunch(); }} className="md:hidden landscape:hidden w-full py-4 bg-emerald-600 border-b-4 border-emerald-800 text-white text-xs md:text-sm font-black uppercase tracking-[0.4em] rounded-xl shadow-[0_10px_30px_rgba(16,185,129,0.3)] transition-all hover:scale-[1.01] active:scale-95 active:border-b-0 hover:bg-emerald-500 flex items-center justify-center gap-4"><span className="animate-pulse">▶</span> LAUNCH TO ORBIT <span className="animate-pulse">◀</span></button>
         )}
       </div>
     </div>
