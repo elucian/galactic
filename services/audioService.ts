@@ -26,7 +26,8 @@ class AudioService {
   private reactorGain: GainNode | null = null;
   
   // Landing Thruster Nodes
-  private landingOsc: AudioBufferSourceNode | null = null;
+  private landingOsc: AudioBufferSourceNode | null = null; // Rumble
+  private landingTurbine: OscillatorNode | null = null;    // Whine (New)
   private landingGain: GainNode | null = null;
   private landingFilter: BiquadFilterNode | null = null;
 
@@ -556,54 +557,95 @@ class AudioService {
   playLandingIgnition() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const now = this.ctx.currentTime;
-      // Short loud bang/pop
+      
+      // REPLACED SAWTOOTH BUZZ WITH NOISE BURST + SINE THUMP
+      // 1. Noise Burst (Ignition "Chhhhh")
+      if (this.noiseBuffer) {
+          const src = this.ctx.createBufferSource();
+          src.buffer = this.noiseBuffer;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(1000, now);
+          filter.frequency.exponentialRampToValueAtTime(100, now + 0.3);
+          const gain = this.ctx.createGain();
+          gain.gain.setValueAtTime(0.8, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+          
+          src.connect(filter); filter.connect(gain); gain.connect(this.sfxGain);
+          src.start(now); src.stop(now + 0.3);
+      }
+
+      // 2. Low Frequency Punch (Sine wave - Thump)
       const osc = this.ctx.createOscillator();
-      osc.type = 'sawtooth'; // Sharper sound than sine
-      osc.frequency.setValueAtTime(80, now);
-      osc.frequency.exponentialRampToValueAtTime(20, now + 0.1);
+      osc.type = 'sine'; 
+      osc.frequency.setValueAtTime(150, now);
+      osc.frequency.exponentialRampToValueAtTime(30, now + 0.3);
       const g = this.ctx.createGain();
-      g.gain.setValueAtTime(0.6, now);
-      g.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+      g.gain.setValueAtTime(0.8, now);
+      g.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
       osc.connect(g); g.connect(this.sfxGain);
-      osc.start(now); osc.stop(now + 0.15);
+      osc.start(now); osc.stop(now + 0.3);
   }
 
   startLandingThruster() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.noiseBuffer) return;
       if (this.landingOsc) return;
 
+      const now = this.ctx.currentTime;
+
+      // 1. RUMBLE (Soft Noise)
       this.landingOsc = this.ctx.createBufferSource();
       this.landingOsc.buffer = this.noiseBuffer;
       this.landingOsc.loop = true;
 
-      // Rocket Rumble: Dynamic LowPass
+      // Higher frequency base (400Hz) and lower Q (0.5) eliminates the "idling car" effect
       this.landingFilter = this.ctx.createBiquadFilter();
       this.landingFilter.type = 'lowpass';
-      this.landingFilter.frequency.setValueAtTime(100, this.ctx.currentTime); 
-      this.landingFilter.Q.value = 0.5; // Smooth roll-off, no resonance (prevents "whistling")
+      this.landingFilter.frequency.setValueAtTime(400, now); 
+      this.landingFilter.Q.value = 0.5; // Soften edges
 
+      // 2. TURBINE (Whine) - The "Vjjj"
+      this.landingTurbine = this.ctx.createOscillator();
+      this.landingTurbine.type = 'triangle'; // Soft tone
+      this.landingTurbine.frequency.setValueAtTime(1000, now); // Start high
+
+      // Master Landing Gain
       this.landingGain = this.ctx.createGain();
-      this.landingGain.gain.setValueAtTime(0, this.ctx.currentTime); 
+      this.landingGain.gain.setValueAtTime(0, now); 
 
+      // Connect Rumble
       this.landingOsc.connect(this.landingFilter);
       this.landingFilter.connect(this.landingGain);
+      
+      // Connect Turbine (lower relative mix)
+      const turbineGain = this.ctx.createGain();
+      turbineGain.gain.value = 0.15; 
+      this.landingTurbine.connect(turbineGain);
+      turbineGain.connect(this.landingGain);
+
       this.landingGain.connect(this.sfxGain);
 
       this.landingOsc.start();
+      this.landingTurbine.start();
   }
 
   updateLandingThruster(intensity: number) {
-      if (!this.ctx || !this.landingGain || !this.landingFilter) return;
+      if (!this.ctx || !this.landingGain || !this.landingFilter || !this.landingTurbine) return;
       const now = this.ctx.currentTime;
       // Normalize Intensity 0-1
       const safeIntensity = Math.max(0, Math.min(1, intensity));
       
-      const targetGain = safeIntensity * 0.7; 
-      // Frequency Sweep: 80Hz (Idle) to 500Hz (Full Thrust)
-      const targetFreq = 80 + (safeIntensity * 420);
+      const targetGain = safeIntensity * 0.8; 
+      
+      // Ramp Frequencies Up
+      // Rumble: 400 -> 1200
+      const targetRumbleFreq = 400 + (safeIntensity * 800);
+      // Turbine: 1000 -> 3000
+      const targetTurbineFreq = 1000 + (safeIntensity * 2000);
 
       this.landingGain.gain.setTargetAtTime(targetGain, now, 0.1);
-      this.landingFilter.frequency.setTargetAtTime(targetFreq, now, 0.1);
+      this.landingFilter.frequency.setTargetAtTime(targetRumbleFreq, now, 0.1);
+      this.landingTurbine.frequency.setTargetAtTime(targetTurbineFreq, now, 0.1);
   }
 
   stopLandingThruster() {
@@ -619,6 +661,11 @@ class AudioService {
           try { this.landingOsc.stop(this.ctx!.currentTime + 0.1); } catch(e) {}
           try { this.landingOsc.disconnect(); } catch(e) {}
           this.landingOsc = null;
+      }
+      if (this.landingTurbine) {
+          try { this.landingTurbine.stop(this.ctx!.currentTime + 0.1); } catch(e) {}
+          try { this.landingTurbine.disconnect(); } catch(e) {}
+          this.landingTurbine = null;
       }
       this.landingGain = null;
   }

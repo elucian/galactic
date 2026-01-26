@@ -99,9 +99,12 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
   });
 
   useEffect(() => {
-      // Start Re-Entry Wind immediately
+      // Initialize Audio
+      audioService.stop(); // Clear any existing
       audioService.startReEntryWind();
-      audioService.startLandingThruster(); // Initialize silent
+      // Initialize landing thruster node but silent
+      if (audioService.startLandingThruster) audioService.startLandingThruster();
+      if (audioService.updateLandingThruster) audioService.updateLandingThruster(0);
       
       const handleKeyDown = (e: KeyboardEvent) => { if (e.code === 'Space') { e.preventDefault(); onComplete(); }};
       window.addEventListener('keydown', handleKeyDown);
@@ -193,8 +196,9 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           if (s.viewY > 1000) {
               if (phase !== 'reentry') {
                   setPhase('reentry');
+                  // Re-entry Phase: Only Wind
                   audioService.startReEntryWind();
-                  audioService.updateLandingThruster(0); // Ensure engine silent
+                  audioService.stopLandingThruster();
               }
               s.velocity = 20; 
               s.viewY -= s.velocity;
@@ -212,9 +216,10 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           else if (s.viewY > 200) {
               if (phase !== 'braking') {
                   setPhase('braking');
-                  // IGNITION SOUNDS
-                  audioService.stopReEntryWind(); // Fade out wind
-                  audioService.playLandingIgnition(); // BANG
+                  // Braking Phase: Cut wind, Start engine
+                  // Stop wind BEFORE engine to avoid clash
+                  audioService.stopReEntryWind(); 
+                  audioService.playLandingIgnition(); // Start with a bang
                   audioService.startLandingThruster(); // Start rumble
               }
               
@@ -228,23 +233,23 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               
               // Engine rumble shake
               s.shake = (Math.random() - 0.5) * 3; 
-              s.reEntryHeat = Math.max(0, s.reEntryHeat - 0.02); 
+              s.reEntryHeat = Math.max(0, s.reEntryHeat - 0.05); 
               
-              if (s.reEntryHeat < 0.2) {
-                  s.isThrusting = true;
-                  s.thrustIntensity = Math.min(1.0, s.thrustIntensity + 0.05);
-                  setStatus("MAIN THRUSTERS ENGAGED");
-                  audioService.updateLandingThruster(0.8 * s.thrustIntensity);
-              } else {
-                  s.isThrusting = false;
-                  // Still wind noise if heat high?
-              }
+              // Always thrusting in this phase to slow down
+              s.isThrusting = true;
+              s.thrustIntensity = Math.min(1.0, s.thrustIntensity + 0.05);
+              setStatus("MAIN THRUSTERS ENGAGED");
+              
+              // Volume ramp up
+              audioService.updateLandingThruster(0.8 * s.thrustIntensity);
+
               if (s.viewY < 600) {
                   s.legExtVal = Math.min(1, s.legExtVal + 0.02);
               }
           }
           else if (!s.hasThudded) {
               setPhase('approach');
+              // Final Descent
               s.viewY = Math.max(0, s.viewY - s.velocity);
               s.velocity = Math.max(0.5, s.velocity * 0.9); 
               const dist = touchY - s.shipY;
@@ -265,11 +270,11 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   s.thrustIntensity = 0;
                   s.suspensionVel = 3.0; 
                   
-                  // SOUNDS: Cut Engine (Latch) + Touchdown (Thud) + Steam
-                  audioService.playOrbitLatch(); // Tank sound for engine off
-                  audioService.playLandThud();
-                  audioService.playSteamRelease(); 
+                  // LANDING SEQUENCE AUDIO: Cut Engine -> Clank -> Hiss
                   audioService.stopLandingThruster();
+                  audioService.playOrbitLatch(); // Tank/Clank
+                  audioService.playLandThud();   // Thud
+                  audioService.playSteamRelease(); // Steam
                   
                   s.steamTimer = 120; 
                   for(let k=0; k<30; k++) { 
@@ -354,6 +359,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           const sunX = w * 0.7;
           let dimFactor = 0;
 
+          // ... (Space Object Drawing Logic Same as Before) ...
           // DELTA QUADRANT SPECIAL: Black Hole + Red Dwarf
           if (env.quadrant === QuadrantType.DELTA) {
               const time = Date.now();
@@ -514,6 +520,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           ctx.save();
           ctx.translate(cx, worldY); 
 
+          // ... (Environment Rendering) ...
           // HILLS RENDER - Back to Front
           env.hills.forEach((hill: any, i: number) => {
               const pFactor = hill.parallaxFactor;
@@ -750,78 +757,60 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               ctx.fillRect(0, 0, w, h);
           }
 
-          // RE-ENTRY SHIELD VISUAL (Improved Fractal Plasma)
+          // RE-ENTRY VISUALS (Updated Soft Plasma)
           if ((s.viewY > 200 && s.viewY < 3000) && !s.isThrusting) {
-              const shieldY = s.shipY + 15;
-              const shieldScale = currentScale * 1.6;
+              const shieldY = s.shipY + 20;
+              const shieldScale = currentScale * 1.5;
               
               ctx.save();
               ctx.translate(cx, shieldY);
               ctx.scale(shieldScale, shieldScale);
               
-              const time = Date.now() * 0.02;
+              // 1. Plasma Shield (Rainbow Gradient Arc)
+              const grad = ctx.createRadialGradient(0, -20, 30, 0, -10, 60);
+              // Spectrum: White -> Cyan -> Green -> Yellow -> Red -> Purple
+              grad.addColorStop(0, 'rgba(255, 255, 255, 0.9)'); 
+              grad.addColorStop(0.2, 'rgba(34, 211, 238, 0.6)'); // Cyan
+              grad.addColorStop(0.4, 'rgba(34, 197, 94, 0.5)'); // Green
+              grad.addColorStop(0.6, 'rgba(250, 204, 21, 0.4)'); // Yellow
+              grad.addColorStop(0.8, 'rgba(239, 68, 68, 0.3)'); // Red
+              grad.addColorStop(1, 'rgba(168, 85, 247, 0)'); // Purple Fade
               
-              // 1. Plasma Trails (Diffuse glow behind)
-              for(let i=0; i<3; i++) {
-                  const offset = Math.sin(time + i) * 10;
-                  ctx.beginPath();
-                  ctx.moveTo(-30 + offset, -10);
-                  ctx.lineTo(-40 + offset, -80 - (Math.random()*40)); // Trail up
-                  ctx.lineTo(-20 + offset, -80 - (Math.random()*40));
-                  ctx.fillStyle = `rgba(255, 100, 0, ${0.1 + Math.random()*0.2})`;
-                  ctx.fill();
-                  
-                  ctx.beginPath();
-                  ctx.moveTo(30 - offset, -10);
-                  ctx.lineTo(40 - offset, -80 - (Math.random()*40));
-                  ctx.lineTo(20 - offset, -80 - (Math.random()*40));
-                  ctx.fillStyle = `rgba(255, 100, 0, ${0.1 + Math.random()*0.2})`;
-                  ctx.fill();
-              }
-
-              // 2. Fractal Arc (Layered)
-              // Outer Red/Orange
+              ctx.fillStyle = grad;
+              ctx.globalCompositeOperation = 'screen';
               ctx.beginPath();
-              for(let a = 0; a <= Math.PI; a += 0.2) {
-                  const r = 55 + (Math.random() * 5);
-                  const x = Math.cos(a) * r;
-                  const y = Math.sin(a) * r * 0.6; // Flattened
-                  if (a===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-              }
-              ctx.strokeStyle = '#ef4444';
-              ctx.lineWidth = 4;
-              ctx.shadowColor = '#f97316';
-              ctx.shadowBlur = 15;
-              ctx.globalAlpha = 0.6;
-              ctx.stroke();
+              // Semi-circle arc
+              ctx.arc(0, -20, 60, 0, Math.PI, false);
+              ctx.fill();
 
-              // Mid Yellow/White
-              ctx.beginPath();
-              for(let a = 0; a <= Math.PI; a += 0.3) {
-                  const r = 50 + (Math.random() * 3);
-                  const x = Math.cos(a) * r;
-                  const y = Math.sin(a) * r * 0.6; 
-                  if (a===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+              // 2. Plasma Trails (Diffuse Particles)
+              if (s.frame % 2 === 0) {
+                  for(let t=0; t<3; t++) {
+                      const xOff = (Math.random() - 0.5) * 80;
+                      const size = 10 + Math.random() * 15;
+                      const speed = 8 + Math.random() * 8;
+                      // Randomize colors for rainbow effect
+                      const colors = ['#22d3ee', '#facc15', '#ef4444', '#a855f7'];
+                      const pColor = colors[Math.floor(Math.random() * colors.length)];
+                      
+                      s.particles.push({
+                          x: cx + xOff * shieldScale, 
+                          y: shieldY - 10, 
+                          vx: (Math.random()-0.5) * 3, 
+                          vy: -speed * 2, // Upwards relative to ship falling
+                          life: 0.5 + Math.random() * 0.5, 
+                          maxLife: 1.0, 
+                          size: size * shieldScale,
+                          type: 'plasma', 
+                          color: pColor,
+                          decay: 0.04
+                      });
+                  }
               }
-              ctx.strokeStyle = '#facc15';
-              ctx.lineWidth = 3;
-              ctx.shadowBlur = 10;
-              ctx.globalAlpha = 0.8;
-              ctx.stroke();
-              
-              // Inner White Core
-              ctx.beginPath();
-              ctx.arc(0, 0, 48, 0, Math.PI);
-              ctx.strokeStyle = '#ffffff';
-              ctx.lineWidth = 2;
-              ctx.shadowBlur = 5;
-              ctx.globalAlpha = 0.9;
-              ctx.stroke();
-
               ctx.restore();
           }
 
-          // PARTICLES
+          // PARTICLES RENDER
           if (s.isThrusting) {
               const spawnCount = 5; 
               for(let i=0; i<spawnCount; i++) {
@@ -848,27 +837,40 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           }
 
           s.particles.forEach(p => {
-              p.x += p.vx;
-              p.y += p.vy;
-              p.life -= p.decay || 0.01;
-              if (p.grow) p.size += p.grow;
-              
-              const currentGroundY = worldY;
-              if (p.y > currentGroundY && p.vy > 0 && p.type !== 'steam') {
-                  p.y = currentGroundY;
-                  p.vy = 0;
-                  p.vx = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 10); // Spread
-                  p.grow = 2.0;
-                  p.decay = 0.1; 
+              if (p.type === 'plasma') {
+                  p.x += p.vx;
+                  p.y += p.vy; // Moves UP
+                  p.life -= p.decay || 0.02;
+                  p.size *= 0.96; // Shrink
+              } else {
+                  p.x += p.vx;
+                  p.y += p.vy;
+                  p.life -= p.decay || 0.01;
+                  if (p.grow) p.size += p.grow;
+                  
+                  const currentGroundY = worldY;
+                  if (p.y > currentGroundY && p.vy > 0 && p.type !== 'steam') {
+                      p.y = currentGroundY;
+                      p.vy = 0;
+                      p.vx = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 10); // Spread
+                      p.grow = 2.0;
+                      p.decay = 0.1; 
+                  }
               }
 
               if (p.life > 0) {
+                  ctx.save();
                   ctx.globalAlpha = p.life;
                   ctx.fillStyle = p.color || '#fff';
-                  if (p.type === 'fire') ctx.globalCompositeOperation = 'lighter';
+                  
+                  if (p.type === 'fire' || p.type === 'plasma') {
+                      ctx.globalCompositeOperation = 'screen';
+                      ctx.shadowColor = p.color || '#f00';
+                      ctx.shadowBlur = p.type === 'plasma' ? 20 : 10;
+                  }
+                  
                   ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill();
-                  ctx.globalCompositeOperation = 'source-over';
-                  ctx.globalAlpha = 1;
+                  ctx.restore();
               }
           });
           s.particles = s.particles.filter(p => p.life > 0);
