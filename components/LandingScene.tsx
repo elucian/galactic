@@ -264,9 +264,13 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   s.viewY = 0; 
                   s.thrustIntensity = 0;
                   s.suspensionVel = 3.0; 
+                  
+                  // SOUNDS: Cut Engine (Latch) + Touchdown (Thud) + Steam
+                  audioService.playOrbitLatch(); // Tank sound for engine off
                   audioService.playLandThud();
-                  audioService.playSteamRelease(); // STEAM SOUND ON LANDING
+                  audioService.playSteamRelease(); 
                   audioService.stopLandingThruster();
+                  
                   s.steamTimer = 120; 
                   for(let k=0; k<30; k++) { 
                       const dir = Math.random() > 0.5 ? 1 : -1; 
@@ -721,12 +725,19 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1;
                   for (let k=0; k<chain.length-1; k++) {
                       const p1 = chain[k]; const p2 = chain[k+1];
-                      const midX = (p1.x + p2.x) / 2;
-                      const midY = Math.max(-p1.h, -p2.h) + 20; 
-                      ctx.beginPath();
-                      ctx.moveTo(p1.x, -p1.h);
-                      ctx.quadraticCurveTo(midX, midY, p2.x, -p2.h);
-                      ctx.stroke();
+                      const y1 = -p1.h + (p1.yOff || 0);
+                      const y2 = -p2.h + (p2.yOff || 0);
+                      
+                      // Draw 3 wires
+                      for(let wIdx=0; wIdx<3; wIdx++) {
+                          const sag = 15 + (wIdx * 5);
+                          const midX = (p1.x + p2.x) / 2;
+                          const midY = Math.max(y1, y2) + sag;
+                          ctx.beginPath();
+                          ctx.moveTo(p1.x, y1 + (wIdx * 4));
+                          ctx.quadraticCurveTo(midX, midY + (wIdx * 4), p2.x, y2 + (wIdx * 4));
+                          ctx.stroke();
+                      }
                   }
               });
           }

@@ -392,6 +392,9 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const isTooClose = (x: number, minDist: number = 80) => occupiedX.some(ox => Math.abs(ox - x) < minDist);
     const registerX = (x: number) => occupiedX.push(x);
 
+    // Register Landing Pad Center (Range +/- 100)
+    if (!isOcean) registerX(0);
+
     const towerSide = rng() > 0.5 ? 1 : -1; 
     const towerX = 140 * towerSide; 
     features.push({ x: towerX, type: 'tower', h: 160, w: 42, color: '#e2e8f0', yOff: 0, arms: [-130, -50] });
@@ -403,7 +406,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
             const side = i % 2 === 0 ? 1 : -1;
             const dist = 300 + (i * 250) + (rng() * 100);
             const bx = side * dist;
-            if (!isTooClose(bx, 100)) {
+            if (!isTooClose(bx, 120)) {
                 const contents = [];
                 const numItems = 2 + Math.floor(rng() * 3);
                 for(let k=0; k<numItems; k++) {
@@ -436,12 +439,12 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     
     if (!isOcean) {
         const settlementSide = -towerSide; 
-        const clusterCenter = settlementSide * (280 + rng() * 100);
+        const clusterCenter = settlementSide * (350 + rng() * 100); // Pushed further out
         const numBuildings = 3 + Math.floor(rng() * 3); 
         for(let i=0; i<numBuildings; i++) {
-            const offset = (i - numBuildings/2) * (60 + rng()*30);
+            const offset = (i - numBuildings/2) * (70 + rng()*30);
             const bx = clusterCenter + offset;
-            if (!isTooClose(bx, 60)) {
+            if (!isTooClose(bx, 100)) { // Increased safe distance
                 if (isBarren || (!isGreenish && rng() > 0.3)) {
                     const scale = 1.3 + rng() * 1.0; 
                     const domeR = 80 * scale; const safeWidth = domeR * 1.5; const contents = []; const n = 5 + Math.floor(rng() * 5); 
@@ -462,7 +465,7 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         const numRocks = 15; 
         for(let i=0; i<numRocks; i++) { 
             const rx = (rng() - 0.5) * 2200; 
-            if (Math.abs(rx) < 200 || isTooClose(rx, 20)) continue; 
+            if (Math.abs(rx) < 200 || isTooClose(rx, 30)) continue; 
             boulders.push({ x: rx, size: 5 + rng()*15, color: '#57534e' }); 
         }
     }
@@ -791,6 +794,22 @@ export const drawHangar = (ctx: CanvasRenderingContext2D, x: number, y: number, 
 export const drawBuilding = (ctx: CanvasRenderingContext2D, f: any, isDay: boolean, isOcean: boolean) => {
     if (f.type === 'hangar') { drawHangar(ctx, f.x, f.y, f.w, f.h, f.color); return; }
     if (f.type === 'windmill') { drawWindmill(ctx, f.x, f.y, f.scale); return; }
+    if (f.type === 'power_pole') {
+        ctx.save();
+        ctx.translate(f.x, f.y);
+        ctx.fillStyle = '#71717a'; 
+        ctx.fillRect(-2, -f.h, 4, f.h);
+        ctx.fillRect(-20, -f.h + 10, 40, 4);
+        ctx.fillStyle = '#10b981'; 
+        ctx.beginPath(); ctx.arc(-18, -f.h + 8, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(18, -f.h + 8, 3, 0, Math.PI*2); ctx.fill();
+        if (f.isHighVoltage) {
+             ctx.fillStyle = '#ef4444';
+             ctx.beginPath(); ctx.arc(0, -f.h, 2, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
+        return;
+    }
 
     ctx.save();
     ctx.translate(f.x, f.y); 
