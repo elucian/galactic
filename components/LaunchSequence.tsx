@@ -1,11 +1,10 @@
-
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Planet, Moon, QuadrantType, EquippedWeapon } from '../types.ts';
 import { ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { audioService } from '../services/audioService.ts';
 import { LandingGear } from './LandingGear.tsx';
-import { getEngineCoordinates, generatePlanetEnvironment, drawCloud, drawVehicle, drawStreetLight, drawPlatform, drawTower, drawDome, drawBuilding, drawPowerPlant, drawBoulder, drawResort, getShipHullWidths, drawBird, drawLightning, drawSkyMoon, drawWindmill } from '../utils/drawingUtils.ts';
+import { getEngineCoordinates, generatePlanetEnvironment, drawCloud, drawVehicle, drawStreetLight, drawPlatform, drawTower, drawDome, drawBuilding, drawPowerPlant, drawBoulder, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning } from '../utils/drawingUtils.ts';
 import { SequenceStatusBar } from './SequenceStatusBar.tsx';
 
 interface LaunchSequenceProps {
@@ -35,27 +34,9 @@ const mixColor = (c1: string, c2: string, weight: number) => {
     return `rgb(${r},${g},${b})`;
 };
 
-const drawMining = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number) => {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.scale(scale, scale);
-    ctx.fillStyle = '#1e293b'; 
-    ctx.fillRect(-10, -5, 20, 5);
-    ctx.strokeStyle = '#475569';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-6, -5); ctx.lineTo(0, -25); ctx.lineTo(6, -5);
-    ctx.stroke();
-    const t = Date.now() * 0.02;
-    const dy = Math.sin(t) * 2;
-    ctx.fillStyle = '#64748b';
-    ctx.fillRect(-2, -25 + dy, 4, 20);
-    ctx.restore();
-};
-
 const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shipColors, onComplete, testMode, weaponId, equippedWeapons, currentFuel, maxFuel }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const fgCanvasRef = useRef<HTMLCanvasElement>(null); 
+  const fgCanvasRef = useRef<HTMLCanvasElement>(null); // Foreground Canvas for overlaying ship
   const shipDOMRef = useRef<HTMLDivElement>(null);
   
   const [phase, setPhase] = useState<'countdown' | 'ignition' | 'lift' | 'atmosphere' | 'orbit'>('countdown');
@@ -78,8 +59,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
   const DOM_SCALE = 1.28;
   const engineLocs = useMemo(() => getEngineCoordinates(shipConfig), [shipConfig]);
   const hullWidths = useMemo(() => getShipHullWidths(shipConfig), [shipConfig]);
-  
-  const env = useMemo(() => generatePlanetEnvironment(planet as Planet, Date.now()), [planet]);
+  const env = useMemo(() => generatePlanetEnvironment(planet as Planet), [planet]);
   const envRef = useRef(env);
   useEffect(() => { envRef.current = env; }, [env]);
 
@@ -105,6 +85,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
     suspension: 0.8,
     legExtension: 1.0,
     countdownFrame: -1,
+    // Weather States
     rain: [] as {x: number, y: number, len: number, speed: number}[],
     lightning: { active: false, x: 0, timer: 0 },
     birdFlock: [] as {x: number, y: number, vx: number, vy: number, flap: number}[]
@@ -137,6 +118,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           }
       }
       
+      // Init Birds Flock
       if (env.hasBirds) {
           const count = 5 + Math.floor(Math.random() * 5);
           for(let i=0; i<count; i++) {
@@ -150,6 +132,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           }
       }
       
+      // Init Rain
       if (env.weather?.isRainy) {
           const count = 200;
           for(let i=0; i<count; i++) {
@@ -180,14 +163,19 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
 
   useEffect(() => {
       let timeouts: any[] = [];
+      
+      // Delay initial countdown to let scene settle
       timeouts.push(setTimeout(() => {
           setCountdown(8); audioService.playCountdownBeep(false);
+          // MARK THE START FRAME FOR ANIMATION SYNC
           stateRef.current.countdownFrame = stateRef.current.frameCount; 
+          
           for(let i=7; i>=0; i--) {
                timeouts.push(setTimeout(() => {
                    setCountdown(i); 
                    if (i === 0) {
                        setPhase('ignition'); setStatusText("IGNITION"); audioService.playCountdownBeep(true);
+                       
                        timeouts.push(setTimeout(() => {
                           audioService.playLaunchBang(); audioService.playLaunchSequence(); 
                           timeouts.push(setTimeout(() => {
@@ -201,12 +189,15 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                               }, 4000)); 
                           }, 2000));
                       }, 300));
+
                    } else {
                        audioService.playCountdownBeep(false);
                    }
                }, (8-i) * 1000));
           }
+
       }, 2000));
+
       return () => { 
           timeouts.forEach(t => clearTimeout(t));
           audioService.stopLaunchSequence();
@@ -220,6 +211,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       const resize = () => {
           const dpr = window.devicePixelRatio || 1;
           const rect = canvas.getBoundingClientRect();
+          
           canvas.width = rect.width * dpr; canvas.height = rect.height * dpr; ctx.scale(dpr, dpr);
           if (fgCanvas) { 
               fgCanvas.width = rect.width * dpr; 
@@ -258,6 +250,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
 
           if (currentPhase === 'countdown') { 
               s.suspension = 0.8; s.legExtension = 1; s.shipY = uncompressedShipY + (1 - s.suspension) * compressionPixels; setThrustActive(false); 
+              
               if (s.countdownFrame > 0) {
                   const elapsed = s.frameCount - s.countdownFrame;
                   if (elapsed < 120) { s.accPos = Math.max(0, 1.0 - (elapsed / 120)); s.armPos = 1.0; } 
@@ -284,314 +277,336 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
 
           if (fgCtx) fgCtx.clearRect(0, 0, w, h);
 
+          // DRAWING BACKGROUND LAYERS
           const spaceTransitionHeight = 15000;
           const spaceRatio = Math.min(1, s.viewY / spaceTransitionHeight); 
-          
-          // DELTA LIGHTING LOGIC (Pulsar Jets + Red Dwarf)
-          let deltaLightingFactor = 0; 
-          let whiteShift = 0;
-          let jetActive = false;
-          let moonVis = 0;
-          let sunY = h * 0.2 + (s.viewY * 0.02); 
-          let sunX = w * 0.7;
-          let jetAngle = 0;
-
-          if (env.quadrant === QuadrantType.DELTA) {
-              const time = Date.now();
-              const jetCycle = Math.sin(time * 0.0005);
-              const jetsOn = jetCycle > 0.2; 
-              jetAngle = Math.sin(time * 0.002) * (10 * Math.PI / 180);
-              const dwarfCycle = Math.sin(time * 0.00015);
-              const dwarfVisible = dwarfCycle > -0.2; 
-
-              if (jetsOn) {
-                  // Bright Day / Pulsar Active
-                  deltaLightingFactor = 0; // No dimming
-                  whiteShift = 0.3 + (Math.sin(time * 0.05) * 0.05); // White glare
-                  jetActive = true;
-                  moonVis = 0; // Invisible
-              } else if (dwarfVisible) {
-                  // Twilight
-                  deltaLightingFactor = 0.3; 
-                  whiteShift = 0;
-                  moonVis = 0.4; // Faint
-              } else {
-                  // Dark Night (Eclipse) - Cap at 0.7
-                  deltaLightingFactor = 0.7; 
-                  whiteShift = 0;
-                  moonVis = 1.0; // Visible
-              }
-          } else {
-              // Standard Logic
-              deltaLightingFactor = env.isDay ? 0 : 0.7;
-          }
-
           const sky1 = mixColor(env.skyGradient[0], '#000000', spaceRatio);
           const sky2 = mixColor(env.skyGradient[1], '#000000', spaceRatio);
           const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, sky1); grad.addColorStop(1, sky2); ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 
-          // Stars (Draw Early - Bright)
-          let starVis = 0; 
-          if (env.quadrant === QuadrantType.DELTA) {
-              if (jetActive) starVis = 0; // Hidden by glare
-              else starVis = 1.0; // Bright at night
-          } else {
-              const baseStarVis = (!env.isDay ? 0.8 : 0); 
-              starVis = Math.max(baseStarVis, Math.min(1, baseStarVis + (spaceRatio * 1.5)));
-          }
-          
+          const baseStarVis = (!env.isDay ? 0.8 : 0); const starVis = Math.max(baseStarVis, Math.min(1, baseStarVis + (spaceRatio * 1.5)));
           if (starVis > 0) { ctx.fillStyle = '#fff'; s.starScrollY += 0.002; env.stars.forEach(st => { ctx.globalAlpha = st.alpha * starVis; const sy = (st.y * h + s.viewY * 0.05) % h; ctx.beginPath(); ctx.arc(st.x * w, sy, st.size, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1; }
 
-          // SKY OBJECTS: Wanderers -> Moon -> Celestial
-          // Wanderers: Very Low Parallax (Distant) - 0.005
-          if (starVis > 0.5) {
-              if (env.skyWanderers && env.skyWanderers.length > 0) {
-                  env.skyWanderers.forEach(wnd => {
-                      // Slow drift + tiny parallax
-                      const drift = s.frameCount * 0.02;
-                      const wy = (wnd.y * h + s.viewY * 0.005) % (h + 100) - 50; 
-                      ctx.fillStyle = wnd.color;
-                      ctx.beginPath();
-                      ctx.arc((wnd.x * w + drift) % w, wy, wnd.size, 0, Math.PI*2);
-                      ctx.fill();
-                  });
-              }
-          }
-
-          const celParallax = s.viewY * 0.02; // Celestial Parallax: 0.02
-          const celX = s.celestialX * w; const celY = (s.celestialY * h) + celParallax; const celScale = 1 + (spaceRatio * 0.2); 
-          
+          const celParallax = s.viewY * 0.006; const celX = s.celestialX * w; const celY = (s.celestialY * h) + celParallax; const celScale = 1 + (spaceRatio * 0.2); let dimFactor = 0;
           if (env.quadrant === QuadrantType.DELTA) {
-              const time = Date.now();
-              const slowTime = time * 0.000125; 
-              
-              const bhRadius = 40 * celScale;
-              
-              if (jetActive) {
-                  // Jets
-                  ctx.save();
-                  ctx.translate(celX, celY);
-                  ctx.rotate(15 * Math.PI / 180 + jetAngle); // Tilt + Oscillation
-                  
-                  const jetLen = 300 * celScale;
-                  const jetW = 10 * celScale;
-                  
-                  const jg = ctx.createLinearGradient(0, 0, 0, -jetLen);
-                  jg.addColorStop(0, 'rgba(168, 85, 247, 0.9)');
-                  jg.addColorStop(0.5, 'rgba(216, 180, 254, 0.6)');
-                  jg.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                  ctx.fillStyle = jg;
-                  ctx.beginPath(); ctx.moveTo(-jetW/2, -bhRadius); ctx.lineTo(jetW/2, -bhRadius); ctx.lineTo(0, -jetLen); ctx.fill();
-                  
-                  const jg2 = ctx.createLinearGradient(0, 0, 0, jetLen);
-                  jg2.addColorStop(0, 'rgba(168, 85, 247, 0.9)');
-                  jg2.addColorStop(0.5, 'rgba(216, 180, 254, 0.6)');
-                  jg2.addColorStop(1, 'rgba(255, 255, 255, 0)');
-                  ctx.fillStyle = jg2; 
-                  ctx.beginPath(); ctx.moveTo(-jetW/2, bhRadius); ctx.lineTo(jetW/2, bhRadius); ctx.lineTo(0, jetLen); ctx.fill();
-                  
-                  ctx.restore();
-              }
-
-              // Black Hole Core
-              const bhGrad = ctx.createRadialGradient(celX, celY, bhRadius*0.8, celX, celY, bhRadius*2.5); 
-              bhGrad.addColorStop(0, '#000000'); 
-              bhGrad.addColorStop(0.4, '#4c1d95'); 
-              bhGrad.addColorStop(0.6, '#a855f7'); 
-              bhGrad.addColorStop(1, 'rgba(0,0,0,0)'); 
-              ctx.fillStyle = bhGrad; ctx.beginPath(); ctx.arc(celX, celY, bhRadius*2.5, 0, Math.PI*2); ctx.fill(); 
-              ctx.fillStyle = '#000000'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; 
-
-              // Red Dwarf (25% of Black Hole)
-              const dwarfDist = 120 * celScale; 
-              const dwarfX = celX + Math.cos(slowTime) * dwarfDist; 
-              const dwarfY = celY + Math.sin(slowTime * 0.5) * 40; 
-              const dwarfR = 10 * celScale; // Reduced size
-              
-              // Render Dwarf (Z-index handled by draw order roughly here, simplified)
-              const zDepth = Math.sin(slowTime);
-              if (zDepth > 0 || !jetActive) { 
-                  ctx.fillStyle = '#ef4444'; 
-                  ctx.shadowColor = '#ef4444'; 
-                  ctx.shadowBlur = 15; 
-                  ctx.beginPath(); 
-                  ctx.arc(dwarfX, dwarfY, dwarfR, 0, Math.PI*2); 
-                  ctx.fill(); 
-                  ctx.shadowBlur = 0; 
-              }
-
-              // Moons
-              if (moonVis > 0 && env.skyMoon) {
-                  const m1 = env.skyMoon;
-                  const m2 = (m1 as any).secondary;
-                  
-                  // Moon 1 (50% smaller than Dwarf)
-                  const m1Size = 5 * celScale; 
-                  const m1Phase = (s.frameCount * 0.005) % 1.0;
-                  const m1Y = (m1.y * h + s.viewY * 0.01) % (h + 200) - 100;
-                  ctx.globalAlpha = moonVis;
-                  drawSkyMoon(ctx, m1.x * w, m1Y, m1Size, m1Phase, m1.color || '#cbd5e1');
-                  
-                  // Moon 2 (89% smaller than Dwarf -> ~2px)
-                  if (m2) {
-                      const m2Size = 2 * celScale;
-                      const m2Phase = (s.frameCount * 0.008) % 1.0;
-                      const m2Y = (m2.y * h + s.viewY * 0.01) % (h + 200) - 100;
-                      drawSkyMoon(ctx, m2.x * w, m2Y, m2Size, m2Phase, m2.color || '#fca5a5');
-                  }
-                  ctx.globalAlpha = 1.0;
-              }
-
+              const time = Date.now(); const slowTime = time * 0.00025; const dwarfDist = 120 * celScale; const dwarfX = celX + Math.cos(slowTime) * dwarfDist; const dwarfY = celY + Math.sin(slowTime * 0.5) * 40; const dwarfR = 15 * celScale * 0.7; const zDepth = Math.sin(slowTime); const isBehind = zDepth < 0; if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
+              const drawDwarf = () => { ctx.fillStyle = '#ef4444'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(dwarfX, dwarfY, dwarfR, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; };
+              const drawBlackHole = () => { const bhRadius = 40 * celScale; const bhGrad = ctx.createRadialGradient(celX, celY, bhRadius*0.8, celX, celY, bhRadius*2.5); bhGrad.addColorStop(0, '#000000'); bhGrad.addColorStop(0.4, '#4c1d95'); bhGrad.addColorStop(0.6, '#a855f7'); bhGrad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = bhGrad; ctx.beginPath(); ctx.arc(celX, celY, bhRadius*2.5, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#000000'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; };
+              if (isBehind) { drawDwarf(); drawBlackHole(); } else { drawBlackHole(); drawDwarf(); }
           } else {
               if (s.celestialY > -100 && env.isDay) { const sunR = 30 * celScale; const sGrad = ctx.createRadialGradient(celX, celY, sunR*0.2, celX, celY, sunR*2.5); sGrad.addColorStop(0, env.sunColor); sGrad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = sGrad; ctx.beginPath(); ctx.arc(celX, celY, sunR*2.5, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.arc(celX, celY, sunR*0.7, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1; }
-              // This secondary moon is procedural for non-moon planets or just extra decoration, keep it low prob
               if (!env.isDay && s.celestialY > -100) { const moonR = 25 * celScale; ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(celX, celY, moonR, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.beginPath(); ctx.arc(celX - (Math.cos(moonPhaseShift)*12*celScale), celY, moonR, 0, Math.PI*2); ctx.fill(); }
+          }
+
+          if (env.wanderers && env.wanderers.length > 0 && starVis > 0.3) { 
+              env.wanderers.forEach(wd => { const wx = (wd.x * w + s.startTime * 0.005) % (w + 100) - 50; const wy = (wd.y * h + s.viewY * 0.1) % (h + 100) - 50; ctx.fillStyle = wd.color || '#e5e7eb'; ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 2; ctx.globalAlpha = starVis; ctx.beginPath(); ctx.arc(wx, wy, Math.min(2.5, wd.size), 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; });
           }
 
           const drawCloudsByLayer = (targetLayer: number, targetCtx: CanvasRenderingContext2D) => { 
               if (env.clouds && env.clouds.length > 0 && spaceRatio < 0.9) { 
-                  if (s.viewY > 2500) return; 
+                  // Only draw if we are close enough to ground (clouds shouldn't exist in space)
+                  if (s.viewY > 2500) return; // Cut off at 2500 units altitude
+
+                  // Fade out clouds as we go higher
                   const altitudeFade = Math.min(1, Math.max(0, 1 - (s.viewY / 2000)));
+
                   env.clouds.forEach((c: any) => { 
                       if (c.layer !== targetLayer) return; 
+                      
+                      // PARALLAX FIX:
+                      // Use very low values (0.0 to 0.1) to keep clouds moving roughly with the ground (quasi constant distance)
+                      // but slightly slower to indicate they are above the surface (background relative to surface).
+                      // 0.0 = Moves exactly with ground.
+                      // 0.1 = Moves 90% of ground speed (falls behind slightly).
                       const parallaxMult = c.layer * 0.05; 
+
+                      // NO WRAP - STRICT POSITIONING
+                      // Cloud world Y is fixed. As viewY increases (we go up), cloud relative Y must decrease.
+                      // We subtract (viewY * speed) from cloudY.
                       const relativeY = c.y - (s.viewY * parallaxMult);
                       const cloudY = relativeY; 
                       const cloudX = (c.x + (s.frameCount * c.speed * c.direction)) % (w + 800) - 400; 
+                      
+                      // Calculate opacity pulse
                       const pulse = Math.sin((s.frameCount * 0.01) + (c.id || 0));
                       const opacity = Math.max(0, Math.min(1, c.baseAlpha * (0.8 + 0.2 * pulse))) * altitudeFade;
-                      if (cloudY > -1000 && cloudY < 1000) { drawCloud(ctx, cloudX, cloudY, c.w, opacity, c.color); }
+
+                      // Only draw if within visible range
+                      if (cloudY > -1000 && cloudY < 1000) {
+                          drawCloud(ctx, cloudX, cloudY, c.w, opacity, c.color); 
+                      }
                   }); 
               } 
           };
 
           const worldY = groundY + s.viewY + s.shake;
           if (worldY < h + 2000) { 
-              // BASE PASS - STRUCTURES ONLY
-              const drawHillItem = (hill: any, i: number, pass: 'base' | 'lights' = 'base') => {
-                  const pFactor = hill.parallaxFactor; const yOff = (s.viewY * (1 - pFactor)); 
-                  
-                  if (pass === 'base') {
-                      ctx.fillStyle = hill.color; ctx.beginPath(); ctx.moveTo(-w, h); 
-                      const pathPoints: {x:number, y:number}[] = [];
-                      hill.points.forEach((p: any, idx: number) => { const px = (p.xRatio * 3000) - 1500; const py = -(p.heightRatio * 300) - yOff; if (idx === 0) ctx.lineTo(px, 1000); ctx.lineTo(px, py); if (hill.hasRoad || hill.hasTrainTrack) pathPoints.push({x: px, y: py}); });
-                      ctx.lineTo(1500, 1000); ctx.fill();
-                      if (hill.snowCaps && hill.snowCaps.length > 0) { ctx.fillStyle = '#ffffff'; hill.snowCaps.forEach((cap: any) => { const idx = cap.idx; if (idx > 0 && idx < hill.points.length - 1) { const pPrev = hill.points[idx - 1]; const pCurr = hill.points[idx]; const pNext = hill.points[idx + 1]; const x1 = (pPrev.xRatio * 3000) - 1500; const y1 = -(pPrev.heightRatio * 300) - yOff; const x2 = (pCurr.xRatio * 3000) - 1500; const y2 = -(pCurr.heightRatio * 300) - yOff; const x3 = (pNext.xRatio * 3000) - 1500; const y3 = -(pNext.heightRatio * 300) - yOff; ctx.beginPath(); ctx.moveTo(x1 + (x2 - x1) * 0.7, y1 + (y2 - y1) * 0.7); ctx.lineTo(x2, y2); ctx.lineTo(x2 + (x3 - x2) * 0.3, y2 + (y3 - y2) * 0.3); ctx.fill(); } }); }
-                      if (hill.hasRoad && pathPoints.length > 0) { ctx.beginPath(); pathPoints.forEach((p, idx) => { if(idx===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.strokeStyle = '#333'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.stroke(); ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.setLineDash([10, 10]); ctx.stroke(); ctx.setLineDash([]); }
+              
+              // Draw Function for Terrain & Features
+              const drawHillItem = (hill: any, i: number) => {
+                  const pFactor = hill.parallaxFactor; const yOff = (s.viewY * (1 - pFactor)); ctx.fillStyle = hill.color; ctx.beginPath(); ctx.moveTo(-w, h); 
+                  const pathPoints: {x:number, y:number}[] = [];
+                  hill.points.forEach((p: any, idx: number) => { const px = (p.xRatio * 3000) - 1500; const py = -(p.heightRatio * 300) - yOff; if (idx === 0) ctx.lineTo(px, 1000); ctx.lineTo(px, py); if (hill.hasRoad || hill.hasTrainTrack) pathPoints.push({x: px, y: py}); });
+                  ctx.lineTo(1500, 1000); ctx.fill();
+
+                  // SNOW CAPS
+                  if (hill.snowCaps && hill.snowCaps.length > 0) {
+                      ctx.fillStyle = '#ffffff';
+                      hill.snowCaps.forEach((cap: any) => {
+                          const idx = cap.idx;
+                          if (idx > 0 && idx < hill.points.length - 1) {
+                              const pPrev = hill.points[idx - 1]; const pCurr = hill.points[idx]; const pNext = hill.points[idx + 1];
+                              const x1 = (pPrev.xRatio * 3000) - 1500; const y1 = -(pPrev.heightRatio * 300) - yOff;
+                              const x2 = (pCurr.xRatio * 3000) - 1500; const y2 = -(pCurr.heightRatio * 300) - yOff;
+                              const x3 = (pNext.xRatio * 3000) - 1500; const y3 = -(pNext.heightRatio * 300) - yOff;
+                              ctx.beginPath(); ctx.moveTo(x1 + (x2 - x1) * 0.7, y1 + (y2 - y1) * 0.7); ctx.lineTo(x2, y2); ctx.lineTo(x2 + (x3 - x2) * 0.3, y2 + (y3 - y2) * 0.3); ctx.fill();
+                          }
+                      });
                   }
 
-                  if (pass === 'base') {
-                      if (hill.roadBuildingsBack) { hill.roadBuildingsBack.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, env.isDay, !!env.isOcean, 'base'); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false, 'base'); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, drawFoundation: b.drawFoundation }, env.isDay, false, 'base'); } }); }
-                      if (hill.hasRoad) { 
-                          if (env.cars && env.cars.length > 0) { const pathPoints: {x:number, y:number}[] = []; hill.points.forEach((p: any) => { pathPoints.push({x: (p.xRatio * 3000) - 1500, y: -(p.heightRatio * 300) - yOff}); }); env.cars.forEach(car => { car.progress += car.speed * (car.dir || 1); if (car.progress > 1) car.progress -= 1; if (car.progress < 0) car.progress += 1; const trackLen = pathPoints.length - 1; const exactIdx = car.progress * trackLen; const idx = Math.floor(exactIdx); const sub = exactIdx - idx; const p1 = pathPoints[idx]; const p2 = pathPoints[Math.min(idx + 1, trackLen)]; if (p1 && p2) { const vx = p1.x + (p2.x - p1.x) * sub; const vy = p1.y + (p2.y - p1.y) * sub; const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x); drawVehicle(ctx, vx, vy - 4, angle, 'car', car.color, env.isDay, car.dir); } }); } 
-                          if (env.streetLights) { const pathPoints: {x:number, y:number}[] = []; hill.points.forEach((p: any) => { pathPoints.push({x: (p.xRatio * 3000) - 1500, y: -(p.heightRatio * 300) - yOff}); }); env.streetLights.forEach(sl => { const ratio = (sl.x + 1500) / 3000; if (ratio >= 0 && ratio <= 1) { const idx = Math.floor(ratio * (pathPoints.length - 1)); const p = pathPoints[idx]; if (p) drawStreetLight(ctx, p.x, p.y, sl.h, env.isDay, 'base'); } }); } 
+                  if (hill.roadBuildingsBack) { hill.roadBuildingsBack.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, drawFoundation: b.drawFoundation }, env.isDay, false); } }); }
+
+                  if (hill.hasRoad && pathPoints.length > 0) {
+                      ctx.beginPath(); pathPoints.forEach((p, idx) => { if(idx===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.strokeStyle = '#333'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.stroke(); ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.setLineDash([10, 10]); ctx.stroke(); ctx.setLineDash([]);
+                      if (env.cars && env.cars.length > 0) {
+                          env.cars.forEach(car => {
+                              car.progress += car.speed * (car.dir || 1); if (car.progress > 1) car.progress -= 1; if (car.progress < 0) car.progress += 1;
+                              const trackLen = pathPoints.length - 1; const exactIdx = car.progress * trackLen; const idx = Math.floor(exactIdx); const sub = exactIdx - idx; const p1 = pathPoints[idx]; const p2 = pathPoints[Math.min(idx + 1, trackLen)];
+                              if (p1 && p2) {
+                                  const vx = p1.x + (p2.x - p1.x) * sub; const vy = p1.y + (p2.y - p1.y) * sub; const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+                                  drawVehicle(ctx, vx, vy - 4, angle, 'car', car.color, env.isDay, car.dir);
+                              }
+                          });
                       }
-                      if (hill.hasTrainTrack) { const pathPoints: {x:number, y:number}[] = []; hill.points.forEach((p: any) => { pathPoints.push({x: (p.xRatio * 3000) - 1500, y: -(p.heightRatio * 300) - yOff}); }); const trainsOnLayer = env.trains.filter((t: any) => t.layer === i); if (trainsOnLayer.length > 0) { trainsOnLayer.forEach((train: any) => { train.progress += train.speed * (train.dir || 1); if (train.progress > 1) train.progress -= 1; if (train.progress < 0) train.progress += 1; const trackLen = pathPoints.length - 1; for(let k=0; k<train.cars; k++) { const tProg = train.progress - (k * 0.015); if (tProg >= 0 && tProg <= 1) { const tIdx = Math.floor(tProg * trackLen); const tSub = (tProg * trackLen) - tIdx; const tp1 = pathPoints[tIdx]; const tp2 = pathPoints[Math.min(tIdx + 1, trackLen)]; if (tp1 && tp2) { const tx = tp1.x + (tp2.x - tp1.x) * tSub; const ty = tp1.y + (tp2.y - tp1.y) * tSub; const ta = Math.atan2(tp2.y - tp1.y, tp2.x - tp1.x); drawVehicle(ctx, tx, ty - 6, ta, k===0 ? 'train_engine' : 'train_carriage', train.color, env.isDay, train.dir); } } } }); } }
-                      if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, env.isDay, !!env.isOcean, 'base'); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false, 'base'); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits }, env.isDay, false, 'base'); } }); }
-                      if (hill.nearbyBuildings) { hill.nearbyBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, env.isDay, !!env.isOcean, 'base'); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, hasBalcony: b.hasBalcony }, env.isDay, false, 'base'); } }); }
-                      if (hill.trees) { hill.trees.forEach((t: any, tIdx: number) => { const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1]; if (p1 && p2) { const x1 = p1.xRatio * 3000 - 1500; const y1 = - (p1.heightRatio * 300) - yOff; const x2 = p2.xRatio * 3000 - 1500; const y2 = - (p2.heightRatio * 300) - yOff; const tx = x1 + (x2 - x1) * t.offset; let ty = y1 + (y2 - y1) * t.offset; if (hill.hasRoad) { const side = tIdx % 2 === 0 ? 1 : -1; ty += side * 25; } if (t.type === 'resort') { const halfWidth = 30 * t.scale * 0.8; const slope = (y2 - y1) / (x2 - x1); const drop = Math.abs(slope * halfWidth); let drawY = ty; let foundationH = 0; if (drop > 8) { const adjustment = drop - 8; drawY = ty + adjustment; foundationH = 8; } else { foundationH = drop; } drawResort(ctx, tx, drawY, t.scale, env.isDay, foundationH, 'base'); } else if (t.type === 'windmill') { drawBuilding(ctx, { x: tx, y: ty, type: 'windmill', scale: t.scale, windmillType: t.windmillType }, env.isDay, false, 'base'); } else if (t.type === 'mining') { drawMining(ctx, tx, ty, t.scale); } else { drawBuilding(ctx, { x: tx, y: ty, type: t.type, w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false, 'base'); } } }); }
-                      if (hill.cityBuildings) { hill.cityBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff; drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h }, env.isDay, false, 'base'); }); }
+                      if (env.streetLights) { env.streetLights.forEach(sl => { const ratio = (sl.x + 1500) / 3000; if (ratio >= 0 && ratio <= 1) { const idx = Math.floor(ratio * (pathPoints.length - 1)); const p = pathPoints[idx]; if (p) drawStreetLight(ctx, p.x, p.y, sl.h, env.isDay); } }); }
                   }
 
-                  if (pass === 'lights') {
-                      if (hill.roadBuildingsBack) { hill.roadBuildingsBack.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, env.isDay, !!env.isOcean, 'lights'); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false, 'lights'); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, drawFoundation: b.drawFoundation }, env.isDay, false, 'lights'); } }); }
-                      if (hill.hasRoad && env.streetLights) { const pathPoints: {x:number, y:number}[] = []; hill.points.forEach((p: any) => { pathPoints.push({x: (p.xRatio * 3000) - 1500, y: -(p.heightRatio * 300) - yOff}); }); env.streetLights.forEach(sl => { const ratio = (sl.x + 1500) / 3000; if (ratio >= 0 && ratio <= 1) { const idx = Math.floor(ratio * (pathPoints.length - 1)); const p = pathPoints[idx]; if (p) drawStreetLight(ctx, p.x, p.y, sl.h, env.isDay, 'lights'); } }); }
-                      if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, env.isDay, !!env.isOcean, 'lights'); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false, 'lights'); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits }, env.isDay, false, 'lights'); } }); }
-                      if (hill.nearbyBuildings) { hill.nearbyBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, env.isDay, !!env.isOcean, 'lights'); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, hasBalcony: b.hasBalcony }, env.isDay, false, 'lights'); } }); }
-                      if (hill.trees) { hill.trees.forEach((t: any, tIdx: number) => { const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1]; if (p1 && p2) { const x1 = p1.xRatio * 3000 - 1500; const y1 = - (p1.heightRatio * 300) - yOff; const x2 = p2.xRatio * 3000 - 1500; const y2 = - (p2.heightRatio * 300) - yOff; const tx = x1 + (x2 - x1) * t.offset; let ty = y1 + (y2 - y1) * t.offset; if (hill.hasRoad) { const side = tIdx % 2 === 0 ? 1 : -1; ty += side * 25; } if (t.type === 'resort') { const halfWidth = 30 * t.scale * 0.8; const slope = (y2 - y1) / (x2 - x1); const drop = Math.abs(slope * halfWidth); let drawY = ty; let foundationH = 0; if (drop > 8) { const adjustment = drop - 8; drawY = ty + adjustment; foundationH = 8; } else { foundationH = drop; } drawResort(ctx, tx, drawY, t.scale, env.isDay, foundationH, 'lights'); } else if (t.type === 'windmill') { drawBuilding(ctx, { x: tx, y: ty, type: 'windmill', scale: t.scale, windmillType: t.windmillType }, env.isDay, false, 'lights'); } else if (t.type === 'mining') { } else { drawBuilding(ctx, { x: tx, y: ty, type: t.type, w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false, 'lights'); } } }); }
-                      if (hill.cityBuildings) { hill.cityBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff; drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h }, env.isDay, false, 'lights'); }); }
+                  if (hill.hasTrainTrack && pathPoints.length > 0) {
+                      const trainsOnLayer = env.trains.filter((t: any) => t.layer === i);
+                      if (trainsOnLayer.length > 0) {
+                          trainsOnLayer.forEach((train: any) => {
+                              train.progress += train.speed * (train.dir || 1); if (train.progress > 1) train.progress -= 1; if (train.progress < 0) train.progress += 1;
+                              const trackLen = pathPoints.length - 1;
+                              for(let k=0; k<train.cars; k++) {
+                                  const tProg = train.progress - (k * 0.015);
+                                  if (tProg >= 0 && tProg <= 1) {
+                                      const tIdx = Math.floor(tProg * trackLen); const tSub = (tProg * trackLen) - tIdx; 
+                                      const tp1 = pathPoints[tIdx]; const tp2 = pathPoints[Math.min(tIdx + 1, trackLen)];
+                                      if (tp1 && tp2) {
+                                          const tx = tp1.x + (tp2.x - tp1.x) * tSub; const ty = tp1.y + (tp2.y - tp1.y) * tSub; const ta = Math.atan2(tp2.y - tp1.y, tp2.x - tp1.x);
+                                          drawVehicle(ctx, tx, ty - 6, ta, k===0 ? 'train_engine' : 'train_carriage', train.color, env.isDay, train.dir);
+                                      }
+                                  }
+                              }
+                          });
+                      }
+                  }
+
+                  if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits }, env.isDay, false); } }); }
+
+                  if (hill.trees) {
+                      hill.trees.forEach((t: any, tIdx: number) => {
+                          const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1];
+                          if (p1 && p2) {
+                              const x1 = p1.xRatio * 3000 - 1500; const y1 = - (p1.heightRatio * 300) - yOff; const x2 = p2.xRatio * 3000 - 1500; const y2 = - (p2.heightRatio * 300) - yOff; const tx = x1 + (x2 - x1) * t.offset; let ty = y1 + (y2 - y1) * t.offset;
+                              
+                              // Slope calculation for resort foundation
+                              // dx is segment width in pixels (x2 - x1)
+                              // dy is segment height in pixels (y2 - y1)
+                              // Resort logic: If slope causes > 8px drop from center, lower building and add foundation
+                              if (t.type === 'resort') {
+                                  // Estimated building half-width (scale * 30 base width)
+                                  const halfWidth = 30 * t.scale * 0.8; // 0.8 is distScale inside drawResort
+                                  const slope = (y2 - y1) / (x2 - x1);
+                                  const drop = Math.abs(slope * halfWidth);
+                                  
+                                  let drawY = ty;
+                                  let foundationH = 0;
+                                  
+                                  if (drop > 8) {
+                                      // Lower the building so the gap is exactly 8px on the floating side
+                                      // We need to shift Y down by (drop - 8)
+                                      const adjustment = drop - 8;
+                                      drawY = ty + adjustment;
+                                      foundationH = 8; // Max visual foundation per requirement
+                                  } else {
+                                      // Small slope, just fill gap
+                                      foundationH = drop;
+                                  }
+                                  
+                                  drawResort(ctx, tx, drawY, t.scale, env.isDay, foundationH); 
+                              }
+                              else if (t.type === 'windmill') { drawBuilding(ctx, { x: tx, y: ty, type: 'windmill', scale: t.scale, windmillType: t.windmillType }, env.isDay, false); }
+                              else if (t.type === 'mining') { drawMining(ctx, tx, ty, t.scale); }
+                              else { drawBuilding(ctx, { x: tx, y: ty, type: t.type, w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false); }
+                          }
+                      });
                   }
               };
 
+              // PREPARE CONTEXTS
+              // Background context is 'ctx'
+              // Foreground context is 'fgCtx'
+              
+              // --- RENDER BACKGROUND PASS ---
               ctx.save(); ctx.translate(cx, worldY);
               
-              if (s.lightning.active) { const opacity = Math.min(1, s.lightning.timer / 10); ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.3})`; ctx.fillRect(-w, -h*2, w*2, h*4); }
-              
+              // LIGHTNING FLASH - Global flash
+              if (s.lightning.active) {
+                  const opacity = Math.min(1, s.lightning.timer / 10);
+                  ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.3})`;
+                  ctx.fillRect(-w, -h*2, w*2, h*4);
+              }
+
+              // LAYER 0 (DISTANT) - BEHIND HILLS
               drawCloudsByLayer(0, ctx);
               
-              if (s.lightning.active && s.lightning.timer > 5 && s.lightning.x) { const ly = -1200; drawLightning(ctx, s.lightning.x, ly, 600); }
-              if (env.hills[0]) drawHillItem(env.hills[0], 0, 'base'); if (env.hills[1]) drawHillItem(env.hills[1], 1, 'base');
+              // Distant Lightning Bolt
+              if (s.lightning.active && s.lightning.timer > 5 && s.lightning.x) {
+                  const ly = -1200; // Sky height
+                  drawLightning(ctx, s.lightning.x, ly, 600);
+              }
+
+              if (env.hills[0]) drawHillItem(env.hills[0], 0); if (env.hills[1]) drawHillItem(env.hills[1], 1);
               
+              // LAYER 1 (MID) - BETWEEN HILLS
               drawCloudsByLayer(1, ctx);
               
-              for (let i = 2; i < env.hills.length; i++) { drawHillItem(env.hills[i], i, 'base'); }
+              for (let i = 2; i < env.hills.length; i++) { drawHillItem(env.hills[i], i); }
+
               ctx.fillStyle = env.groundColor; ctx.fillRect(-w, 0, w*2, h*2); drawPlatform(ctx, 0, 0, env.isOcean);
-              env.features.forEach(f => { if (f.isForeground) return; const fy = f.yOff || 0; if (f.type === 'tower') { drawTower(ctx, f.x, fy, f, env.isDay, env.isOcean, s.armPos, s.accPos, [hullWidths.top, hullWidths.bottom], 'base'); } else if (f.type === 'dome_std') drawDome(ctx, f.x, fy, f, env.isDay, !!env.isOcean, 'base'); else if (f.type === 'building_std') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean, 'base'); else if (f.type === 'power_pole' || f.type === 'hangar') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean, 'base'); else if (f.type === 'power_plant') drawPowerPlant(ctx, f.x, fy, f.scale, f.isUnderground, 'base'); else if (f.type === 'windmill') drawWindmill(ctx, f.x, fy, f.scale, env.isDay, f.windmillType, 'base'); });
-              if (env.powerLines) { env.powerLines.forEach((chain: any[]) => { ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1; for (let k=0; k<chain.length-1; k++) { const p1 = chain[k]; const p2 = chain[k+1]; const y1 = -p1.h + (p1.yOff || 0); const y2 = -p2.h + (p2.yOff || 0); for(let wIdx=0; wIdx<3; wIdx++) { const sag = 15 + (wIdx * 5); const midX = (p1.x + p2.x) / 2; const midY = Math.max(y1, y2) + sag; ctx.beginPath(); ctx.moveTo(p1.x, y1 + (wIdx * 4)); ctx.quadraticCurveTo(midX, midY + (wIdx * 4), p2.x, y2 + (wIdx * 4)); ctx.stroke(); } } }); }
-
-              // DARKNESS OVERLAY - Applied over base structures, BEFORE lights
-              if (deltaLightingFactor > 0) { ctx.fillStyle = `rgba(0,0,0,${deltaLightingFactor})`; ctx.fillRect(-w, -h*2, w*2, h*4); }
               
-              // FEATURES LIGHTS PASS
-              if (env.hills[0]) drawHillItem(env.hills[0], 0, 'lights'); if (env.hills[1]) drawHillItem(env.hills[1], 1, 'lights');
-              for (let i = 2; i < env.hills.length; i++) { drawHillItem(env.hills[i], i, 'lights'); }
-              env.features.forEach(f => { if (f.isForeground) return; const fy = f.yOff || 0; if (f.type === 'tower') { drawTower(ctx, f.x, fy, f, env.isDay, env.isOcean, s.armPos, s.accPos, [hullWidths.top, hullWidths.bottom], 'lights'); } else if (f.type === 'dome_std') drawDome(ctx, f.x, fy, f, env.isDay, !!env.isOcean, 'lights'); else if (f.type === 'building_std') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean, 'lights'); else if (f.type === 'power_pole' || f.type === 'hangar') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean, 'lights'); else if (f.type === 'power_plant') drawPowerPlant(ctx, f.x, fy, f.scale, f.isUnderground, 'lights'); else if (f.type === 'windmill') drawWindmill(ctx, f.x, fy, f.scale, env.isDay, f.windmillType, 'lights'); });
-
+              // DRAW FEATURES (Not Foreground)
+              env.features.forEach(f => {
+                  if (f.isForeground) return; // Skip foreground items for now
+                  const fy = f.yOff || 0; 
+                  if (f.type === 'tower') {
+                      drawTower(ctx, f.x, fy, f, env.isDay, env.isOcean, s.armPos, s.accPos, [hullWidths.top, hullWidths.bottom]); 
+                  }
+                  else if (f.type === 'dome_std') drawDome(ctx, f.x, fy, f, !!env.isOcean);
+                  else if (f.type === 'building_std') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean);
+                  else if (f.type === 'power_pole' || f.type === 'hangar') drawBuilding(ctx, { ...f, y: fy }, env.isDay, env.isOcean);
+                  else if (f.type === 'power_plant') drawPowerPlant(ctx, f.x, fy, f.scale, f.isUnderground);
+              });
               ctx.restore();
 
+              // --- RENDER FOREGROUND PASS (If Foreground Context Exists) ---
               if (fgCtx) {
                   fgCtx.save(); fgCtx.translate(cx, worldY);
-                  env.features.forEach(f => { 
-                      if (f.isForeground) { 
-                          const fy = f.yOff || 0; 
-                          if (f.type === 'dome_std') {
-                              drawDome(fgCtx, f.x, fy, f, env.isDay, !!env.isOcean, 'base'); 
-                              drawDome(fgCtx, f.x, fy, f, env.isDay, !!env.isOcean, 'lights'); 
-                          } else if (f.type === 'building_std') { 
-                              drawBuilding(fgCtx, { ...f, y: fy }, env.isDay, env.isOcean, 'base'); 
-                              drawBuilding(fgCtx, { ...f, y: fy }, env.isDay, env.isOcean, 'lights'); 
-                          } 
-                      } 
+                  env.features.forEach(f => {
+                      if (f.isForeground) {
+                          const fy = f.yOff || 0;
+                          // Domes are the main foreground objects, but support others just in case
+                          if (f.type === 'dome_std') drawDome(fgCtx, f.x, fy, f, !!env.isOcean);
+                          else if (f.type === 'building_std') drawBuilding(fgCtx, { ...f, y: fy }, env.isDay, env.isOcean);
+                      }
                   });
                   fgCtx.restore();
               }
           }
 
-          if (env.weather?.isStormy) { if (s.lightning.active) { s.lightning.timer--; if (s.lightning.timer <= 0) s.lightning.active = false; } else if (Math.random() < 0.01) { s.lightning.active = true; s.lightning.timer = 15; s.lightning.x = (Math.random() - 0.5) * 2000; } }
-          
-          // RAIN - Altitude constrained
-          if (env.weather?.isRainy) {
-              const rainAlpha = Math.max(0, 1 - (s.viewY / 1500)); 
-              if (rainAlpha > 0) {
-                  const rainCtx = fgCanvasRef.current ? fgCanvasRef.current.getContext('2d') : ctx; 
-                  if (rainCtx) {
-                      rainCtx.strokeStyle = `rgba(174, 194, 224, ${0.5 * rainAlpha})`; 
-                      rainCtx.lineWidth = 1; 
-                      rainCtx.beginPath();
-                      s.rain.forEach(drop => { 
-                          drop.y += drop.speed; 
-                          if (drop.y > 1000) { drop.y = -1200; drop.x = (Math.random() - 0.5) * 2000; } 
-                          const visualY = ((drop.y + s.viewY) % 2200) - 1100 + (h/2); 
-                          const visualX = drop.x + (w/2); 
-                          if (visualY > -100 && visualY < h + 100) { 
-                              rainCtx.moveTo(visualX, visualY); 
-                              rainCtx.lineTo(visualX, visualY + drop.len); 
-                          } 
-                      });
-                      rainCtx.stroke();
-                  }
+          // RAIN & BIRDS UPDATE
+          // Lightning Logic
+          if (env.weather?.isStormy) {
+              if (s.lightning.active) {
+                  s.lightning.timer--;
+                  if (s.lightning.timer <= 0) s.lightning.active = false;
+              } else if (Math.random() < 0.01) {
+                  s.lightning.active = true;
+                  s.lightning.timer = 15;
+                  s.lightning.x = (Math.random() - 0.5) * 2000;
               }
           }
-          if (env.hasBirds && s.viewY < 1500) { const birdCtx = fgCtx || ctx; s.birdFlock.forEach(b => { b.x += b.vx; b.y += b.vy; if (b.x > 1000) b.vx = -Math.abs(b.vx); if (b.x < -1000) b.vx = Math.abs(b.vx); if (b.y < 200) b.vy = Math.abs(b.vy); if (b.y > 800) b.vy = -Math.abs(b.vy); b.flap += 0.2; const birdY = b.y + worldY; const birdX = b.x + cx; if (birdY > -50 && birdY < h + 50) { drawBird(birdCtx, birdX, birdY, 3, Math.sin(b.flap)); } }); }
 
-          if (deltaLightingFactor > 0) { ctx.fillStyle = `rgba(0,0,0,${deltaLightingFactor})`; ctx.fillRect(0, 0, w, h); }
-          if (whiteShift > 0) {
-              ctx.globalCompositeOperation = 'screen';
-              ctx.fillStyle = `rgba(255, 255, 255, ${whiteShift})`; // Pure white glare
-              ctx.fillRect(0, 0, w, h);
-              ctx.globalCompositeOperation = 'source-over';
+          // Render Rain (Foreground)
+          if (env.weather?.isRainy) {
+              const rainCtx = fgCtx || ctx;
+              rainCtx.strokeStyle = 'rgba(174, 194, 224, 0.5)';
+              rainCtx.lineWidth = 1;
+              rainCtx.beginPath();
+              
+              const rainSpeed = 25; // Base rain speed
+              
+              s.rain.forEach(drop => {
+                  // Move Drop
+                  drop.y += drop.speed;
+                  // Screen Wrap relative to camera movement
+                  // If camera moves up (s.worldSpeed > 0), drops move down faster
+                  // If camera is static, drops move down
+                  
+                  // Reset if out of bounds
+                  if (drop.y > 1000) {
+                      drop.y = -1200;
+                      drop.x = (Math.random() - 0.5) * 2000;
+                  }
+                  
+                  // Draw relative to camera center
+                  // worldY is the ground position. Rain falls in camera space mostly.
+                  // We simulate rain falling relative to camera by adding viewY offset modulo
+                  const visualY = ((drop.y + s.viewY) % 2200) - 1100 + (h/2);
+                  const visualX = drop.x + (w/2);
+                  
+                  if (visualY > -100 && visualY < h + 100) {
+                      rainCtx.moveTo(visualX, visualY);
+                      rainCtx.lineTo(visualX, visualY + drop.len);
+                  }
+              });
+              rainCtx.stroke();
           }
 
+          // Render Birds
+          if (env.hasBirds && s.viewY < 1500) { // Only near ground
+              const birdCtx = fgCtx || ctx;
+              s.birdFlock.forEach(b => {
+                  // Move
+                  b.x += b.vx;
+                  b.y += b.vy;
+                  if (b.x > 1000) b.vx = -Math.abs(b.vx);
+                  if (b.x < -1000) b.vx = Math.abs(b.vx);
+                  if (b.y < 200) b.vy = Math.abs(b.vy);
+                  if (b.y > 800) b.vy = -Math.abs(b.vy);
+                  
+                  b.flap += 0.2;
+                  
+                  // Draw relative to ground
+                  const birdY = b.y + worldY; // WorldY is ground Y pos
+                  const birdX = b.x + cx;
+                  
+                  if (birdY > -50 && birdY < h + 50) {
+                      drawBird(birdCtx, birdX, birdY, 3, Math.sin(b.flap));
+                  }
+              });
+          }
+
+          if (dimFactor > 0) { ctx.fillStyle = `rgba(0,0,0,${dimFactor})`; ctx.fillRect(0, 0, w, h); }
+
           if (currentPhase === 'ignition' || currentPhase === 'lift' || currentPhase === 'atmosphere' || currentPhase === 'orbit') {
-              const spawnCount = currentPhase === 'ignition' ? 12 : 5; const isIon = dynamicJetType === 'ion';
+              const spawnCount = currentPhase === 'ignition' ? 12 : 5; // Boosted ignition count
+              const isIon = dynamicJetType === 'ion';
+              
               for(let i=0; i<spawnCount; i++) {
                   const eng = engineLocs[Math.floor(Math.random() * engineLocs.length)]; const nozzleRelX = (eng.x - 50) * DOM_SCALE; const nozzleRelY = (eng.y + eng.h + 6 - 50) * DOM_SCALE;
                   let pType = 'fire'; let pColor = '#ef4444'; let pSize = 4 + Math.random() * 4; let pLife = 0.8;
-                  let vxVal = (Math.random()-0.5) * 2; let vyVal = 6 + Math.random() * 6;
+                  let vxVal = (Math.random()-0.5) * 2;
+                  let vyVal = 6 + Math.random() * 6;
+
                   if (currentPhase === 'ignition') { 
-                      if (Math.random() > 0.4) { pType = 'smoke'; pColor = 'rgba(180, 180, 180, 0.4)'; pSize = 6 + Math.random() * 8; pLife = 1.2; } else { pType = 'fire'; pColor = Math.random() > 0.5 ? '#facc15' : '#f97316'; } 
-                      if (s.shipY > (groundY - padHeight - 60)) { vxVal = (Math.random() > 0.5 ? 1 : -1) * (12 + Math.random() * 15); vyVal = (Math.random() - 0.5) * 4; }
-                  } else { if (isIon) { pType = 'ion'; pColor = Math.random() > 0.5 ? '#3b82f6' : '#22d3ee'; pLife = 0.6; } else { pType = 'fire'; pColor = Math.random() > 0.5 ? '#ef4444' : '#facc15'; } if (currentPhase === 'orbit') vyVal = 8 + Math.random() * 4; }
+                      if (Math.random() > 0.4) { pType = 'smoke'; pColor = 'rgba(180, 180, 180, 0.4)'; pSize = 6 + Math.random() * 8; pLife = 1.2; } 
+                      else { pType = 'fire'; pColor = Math.random() > 0.5 ? '#facc15' : '#f97316'; } 
+                      
+                      // HORIZONTAL BLAST DEFLECTION
+                      // Check if ship is low enough (ignition/early lift)
+                      if (s.shipY > (groundY - padHeight - 60)) {
+                          vxVal = (Math.random() > 0.5 ? 1 : -1) * (12 + Math.random() * 15);
+                          vyVal = (Math.random() - 0.5) * 4; // Mostly horizontal
+                      }
+                  } 
+                  else { 
+                      if (isIon) { pType = 'ion'; pColor = Math.random() > 0.5 ? '#3b82f6' : '#22d3ee'; pLife = 0.6; } 
+                      else { pType = 'fire'; pColor = Math.random() > 0.5 ? '#ef4444' : '#facc15'; } 
+                      if (currentPhase === 'orbit') vyVal = 8 + Math.random() * 4;
+                  }
+                  
                   s.particles.push({ x: cx + nozzleRelX + (Math.random()-0.5)*3, y: s.shipY + s.shake + nozzleRelY, vx: vxVal, vy: vyVal, life: pLife, maxLife: pLife, size: pSize, type: pType, color: pColor, decay: 0.02, grow: 0.4 });
               }
           }
@@ -599,7 +614,12 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           s.particles.forEach(p => { if (p.type === 'steam') { p.x += p.vx; p.y += p.vy; p.size += 0.5; p.life -= 0.01; } else { p.x += p.vx; p.y += p.vy; p.life -= p.decay || 0.02; p.size += p.grow || 0; const currentGroundY = worldY; if (p.y > currentGroundY && p.vy > 0) { p.y = currentGroundY; p.vy = 0; p.vx = (Math.random() < 0.5 ? -1 : 1) * (15 + Math.random() * 15); p.grow = 2.0; p.decay = 0.05; } } if (p.life > 0) { ctx.globalAlpha = p.life; ctx.fillStyle = p.color || '#fff'; if (p.type === 'fire' || p.type === 'ion') ctx.globalCompositeOperation = 'lighter'; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; } });
           s.particles = s.particles.filter(p => p.life > 0);
 
-          if (fgCtx) { drawCloudsByLayer(2, fgCtx); } else { drawCloudsByLayer(2, ctx); }
+          if (fgCtx) {
+             // Layer 2 (Closest) on FG - AFTER SHIP
+             drawCloudsByLayer(2, fgCtx);
+          } else {
+             drawCloudsByLayer(2, ctx);
+          }
 
           if (shipDOMRef.current) { const shipScreenY = s.shipY + s.shake; const shrinkRate = 1.0 / 240; const smoothScale = currentPhase === 'orbit' ? Math.max(0.0, 1.0 - (s.orbitFrameCount * shrinkRate)) : 1.0; shipDOMRef.current.style.transform = `translate(-50%, -50%) translate(${cx}px, ${shipScreenY}px) scale(${smoothScale})`; shipDOMRef.current.style.opacity = smoothScale < 0.2 ? `${smoothScale * 5}` : '1'; }
           raf = requestAnimationFrame(loop);

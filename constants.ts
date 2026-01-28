@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 35
-// VERSION: Beta 35 - Delta Pulsar & Windmills
+// CHECKPOINT: Beta 34
+// VERSION: Beta 34 - Restored Baseline
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;

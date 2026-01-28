@@ -125,20 +125,14 @@ export const drawBoulder = (ctx: CanvasRenderingContext2D, x: number, y: number,
     ctx.restore();
 };
 
-export const drawStreetLight = (ctx: CanvasRenderingContext2D, x: number, y: number, h: number, isDay: boolean, pass: 'base' | 'lights' = 'base') => {
+export const drawStreetLight = (ctx: CanvasRenderingContext2D, x: number, y: number, h: number, isDay: boolean) => {
     ctx.save();
     ctx.translate(x, y);
-    
-    if (pass === 'base') {
-        ctx.fillStyle = '#52525b';
-        ctx.fillRect(-1, -h, 2, h);
-        ctx.beginPath(); ctx.moveTo(0, -h); ctx.lineTo(8, -h-2); ctx.lineTo(8, -h+2); ctx.lineTo(0, -h); ctx.fill();
-    }
-    
-    if (pass === 'lights' && !isDay) {
-        ctx.fillStyle = '#facc15'; 
-        ctx.shadowColor = '#facc15'; 
-        ctx.shadowBlur = 10;
+    ctx.fillStyle = '#52525b';
+    ctx.fillRect(-1, -h, 2, h);
+    ctx.beginPath(); ctx.moveTo(0, -h); ctx.lineTo(8, -h-2); ctx.lineTo(8, -h+2); ctx.lineTo(0, -h); ctx.fill();
+    if (!isDay) {
+        ctx.fillStyle = '#facc15'; ctx.shadowColor = '#facc15'; ctx.shadowBlur = 8;
         ctx.beginPath(); ctx.arc(8, -h, 3, 0, Math.PI*2); ctx.fill();
     }
     ctx.restore();
@@ -239,568 +233,421 @@ export const drawLightning = (ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.restore();
 };
 
-export const drawWindmill = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean, type: 'classic' | 'helical' = 'classic', pass: 'base' | 'lights' = 'base') => {
+export const drawWindmill = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean, type: 'classic' | 'helical' = 'classic') => {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
     
-    if (pass === 'base') {
-        // Pole
-        ctx.fillStyle = isDay ? '#cbd5e1' : '#334155'; // Darker at night
-        ctx.beginPath();
-        ctx.moveTo(-2, 0); ctx.lineTo(-1, -60); ctx.lineTo(1, -60); ctx.lineTo(2, 0);
-        ctx.fill();
-        
-        const time = Date.now() * 0.002;
-        ctx.translate(0, -60);
-        
-        if (type === 'classic') {
-            // Hub
-            ctx.fillStyle = isDay ? '#475569' : '#1e293b';
-            ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
-            // Blades
-            ctx.rotate(time);
-            ctx.fillStyle = isDay ? '#f1f5f9' : '#94a3b8'; 
-            for(let i=0; i<3; i++) {
-                ctx.beginPath();
-                ctx.moveTo(0, 0);
-                ctx.quadraticCurveTo(5, -10, 2, -40);
-                ctx.quadraticCurveTo(-2, -40, 0, 0);
-                ctx.fill();
-                ctx.rotate((Math.PI*2)/3);
-            }
-        } else {
-            // Helical
-            ctx.fillStyle = isDay ? '#475569' : '#1e293b';
-            ctx.fillRect(-1, -20, 2, 40);
-            
-            const rotation = time * 2;
-            const width = 15;
-            const height = 30;
-            
-            ctx.lineWidth = 2;
-            ctx.strokeStyle = isDay ? '#f1f5f9' : '#94a3b8';
-            
-            ctx.beginPath();
-            for(let i=0; i<=height; i+=2) {
-                const yPos = i - (height/2);
-                const xPos = Math.sin((i * 0.2) + rotation) * width;
-                if (i===0) ctx.moveTo(xPos, yPos); else ctx.lineTo(xPos, yPos);
-            }
-            ctx.stroke();
-            
-            ctx.beginPath();
-            for(let i=0; i<=height; i+=2) {
-                const yPos = i - (height/2);
-                const xPos = Math.sin((i * 0.2) + rotation + Math.PI) * width;
-                if (i===0) ctx.moveTo(xPos, yPos); else ctx.lineTo(xPos, yPos);
-            }
-            ctx.stroke();
-        }
-    }
-    
-    if (pass === 'lights' && !isDay) {
-        // Red Beacon - Steady light, no blink to respect user request "lights do not flicker"
-        ctx.translate(0, -60);
-        ctx.fillStyle = '#ef4444';
-        ctx.shadowColor = '#ef4444';
-        ctx.shadowBlur = 10;
-        ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI*2); ctx.fill();
-    }
-    
-    ctx.restore();
-};
-
-export const drawSkyMoon = (ctx: CanvasRenderingContext2D, x: number, y: number, radius: number, phase: number, color: string) => {
-    ctx.save();
-    ctx.translate(x, y);
-    
-    // Draw bright base moon
-    ctx.fillStyle = color;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 20; // High glow for night visibility
+    // Pole
+    ctx.fillStyle = '#cbd5e1'; 
     ctx.beginPath();
-    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.moveTo(-2, 0); ctx.lineTo(-1, -60); ctx.lineTo(1, -60); ctx.lineTo(2, 0);
     ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Draw Shadow for Phase
-    if (phase > 0) {
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
-        ctx.beginPath();
-        if (phase < 0.5) {
-             ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2);
-             ctx.ellipse(0, 0, radius * (1 - phase*2), radius, 0, Math.PI/2, -Math.PI/2);
-        } else {
-             ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2);
-             ctx.ellipse(0, 0, radius * ((phase-0.5)*2), radius, 0, -Math.PI/2, Math.PI/2, true);
+    
+    const time = Date.now() * 0.002;
+    
+    ctx.translate(0, -60);
+    
+    if (type === 'classic') {
+        // Hub
+        ctx.fillStyle = '#475569';
+        ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
+        
+        // Blades
+        ctx.rotate(time);
+        ctx.fillStyle = '#f1f5f9'; 
+        for(let i=0; i<3; i++) {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.quadraticCurveTo(5, -10, 2, -40);
+            ctx.quadraticCurveTo(-2, -40, 0, 0);
+            ctx.fill();
+            ctx.rotate((Math.PI*2)/3);
         }
-        ctx.fill();
+    } else {
+        // Helical (Vertical Axis)
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(-1, -20, 2, 40);
+        
+        const rotation = time * 2;
+        const width = 15;
+        const height = 30;
+        
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#f1f5f9';
+        
+        ctx.beginPath();
+        for(let i=0; i<=height; i+=2) {
+            const yPos = i - (height/2);
+            const xPos = Math.sin((i * 0.2) + rotation) * width;
+            if (i===0) ctx.moveTo(xPos, yPos);
+            else ctx.lineTo(xPos, yPos);
+        }
+        ctx.stroke();
+        
+        ctx.beginPath();
+        for(let i=0; i<=height; i+=2) {
+            const yPos = i - (height/2);
+            const xPos = Math.sin((i * 0.2) + rotation + Math.PI) * width;
+            if (i===0) ctx.moveTo(xPos, yPos);
+            else ctx.lineTo(xPos, yPos);
+        }
+        ctx.stroke();
     }
     
-    // Crater details
-    ctx.fillStyle = 'rgba(200,200,200,0.2)';
-    ctx.beginPath(); ctx.arc(-radius*0.3, -radius*0.3, radius*0.2, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(radius*0.4, radius*0.1, radius*0.15, 0, Math.PI*2); ctx.fill();
-
     ctx.restore();
 };
 
-export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: boolean, isOcean: boolean, pass: 'base' | 'lights' = 'base') => {
+export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: boolean, isOcean: boolean) => {
     const { x, y, type, w, h, color, windowData, windowW, windowH, acUnits, hasRedRoof, hasBalcony, trunkColor, drawFoundation, isHighVoltage } = props;
     
     ctx.save();
     ctx.translate(x, y);
 
     if (type === 'windmill') {
-        drawWindmill(ctx, 0, 0, props.scale || 1.0, isDay, props.windmillType || 'classic', pass);
+        drawWindmill(ctx, 0, 0, props.scale || 1.0, isDay, props.windmillType || 'classic');
     }
     else if (type && (type.startsWith('tree') || type === 'palm' || type === 'pine' || type === 'cactus')) {
-        // Vegetation only renders in base pass, darkened at night
-        if (pass === 'base') {
-            const isCactus = type === 'cactus';
-            const isPalm = type === 'palm';
-            const isTri = type === 'tree_tri' || type === 'pine';
-            const isRound = type === 'tree_round';
-            const isOval = type === 'tree_oval';
-            
-            // Darken vegetation colors at night
-            const leafColor = isDay ? (color || '#16a34a') : '#064e3b';
-            const barkColor = isDay ? (trunkColor || '#451a03') : '#271c19';
-            
-            if (isCactus) {
-                ctx.fillStyle = leafColor;
-                const stemW = Math.max(4, w * 0.5);
-                if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-stemW/2, -h, stemW, h, stemW/2); ctx.fill(); } else { ctx.fillRect(-stemW/2, -h, stemW, h); }
-                ctx.beginPath(); ctx.moveTo(-stemW/2, -h*0.4); ctx.quadraticCurveTo(-stemW*3, -h*0.4, -stemW*3, -h*0.7); ctx.lineTo(-stemW*3 + stemW, -h*0.7); ctx.quadraticCurveTo(-stemW*3 + stemW, -h*0.5, -stemW/2, -h*0.3); ctx.fill();
-                ctx.beginPath(); ctx.moveTo(stemW/2, -h*0.6); ctx.quadraticCurveTo(stemW*3, -h*0.6, stemW*3, -h*0.8); ctx.lineTo(stemW*3 - stemW, -h*0.8); ctx.quadraticCurveTo(stemW*3 - stemW, -h*0.65, stemW/2, -h*0.5); ctx.fill();
-            } else if (isTri) {
-                ctx.fillStyle = barkColor; const trunkW = Math.max(2, w * 0.4); ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.2); 
-                ctx.fillStyle = leafColor;
-                const topY = -h; const bottomY = -h*0.2; const halfBase = w; const r = 3; 
-                ctx.beginPath(); ctx.moveTo(0, topY + r); ctx.quadraticCurveTo(0, topY, r, topY + r*2); ctx.lineTo(halfBase - r, bottomY - r); ctx.quadraticCurveTo(halfBase, bottomY, halfBase - r*2, bottomY); ctx.lineTo(-halfBase + r*2, bottomY); ctx.quadraticCurveTo(-halfBase, bottomY, -halfBase + r, bottomY - r); ctx.lineTo(-r, topY + r*2); ctx.quadraticCurveTo(0, topY, 0, topY + r); ctx.fill();
-            } else if (isPalm) {
-                 ctx.strokeStyle = isDay ? '#a16207' : '#451a03';
-                 ctx.lineWidth = Math.max(2, w * 0.3); ctx.lineCap = 'round';
-                 ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(w, -h*0.5, 0, -h); ctx.stroke();
-                 ctx.fillStyle = leafColor;
-                 for(let i=0; i<5; i++) { ctx.beginPath(); const angle = (i * Math.PI*2/5) - Math.PI/2; const lx = Math.cos(angle) * w * 2; const ly = Math.sin(angle) * w; ctx.ellipse(0 + lx/2, -h + ly/2, w*1.5, w/2, angle, 0, Math.PI*2); ctx.fill(); }
-            } else if (isOval) {
-                ctx.fillStyle = barkColor; const trunkW = Math.max(2, w * 0.3); ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
-                ctx.fillStyle = leafColor; ctx.beginPath(); ctx.ellipse(0, -h*0.65, w, h*0.45, 0, 0, Math.PI*2); ctx.fill();
+        const isCactus = type === 'cactus';
+        const isPalm = type === 'palm';
+        const isTri = type === 'tree_tri' || type === 'pine';
+        const isRound = type === 'tree_round';
+        const isOval = type === 'tree_oval';
+        
+        if (isCactus) {
+            ctx.fillStyle = '#166534';
+            const stemW = Math.max(4, w * 0.5);
+            if(ctx.roundRect) {
+                ctx.beginPath(); ctx.roundRect(-stemW/2, -h, stemW, h, stemW/2); ctx.fill();
             } else {
-                ctx.fillStyle = barkColor; const trunkW = Math.max(2, w * 0.4); ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
-                ctx.fillStyle = leafColor; ctx.beginPath(); ctx.arc(0, -h*0.6, w, 0, Math.PI*2); ctx.fill();
+                ctx.fillRect(-stemW/2, -h, stemW, h);
             }
+            ctx.beginPath();
+            ctx.moveTo(-stemW/2, -h*0.4);
+            ctx.quadraticCurveTo(-stemW*3, -h*0.4, -stemW*3, -h*0.7);
+            ctx.lineTo(-stemW*3 + stemW, -h*0.7);
+            ctx.quadraticCurveTo(-stemW*3 + stemW, -h*0.5, -stemW/2, -h*0.3);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(stemW/2, -h*0.6);
+            ctx.quadraticCurveTo(stemW*3, -h*0.6, stemW*3, -h*0.8);
+            ctx.lineTo(stemW*3 - stemW, -h*0.8);
+            ctx.quadraticCurveTo(stemW*3 - stemW, -h*0.65, stemW/2, -h*0.5);
+            ctx.fill();
+
+        } else if (isTri) {
+            ctx.fillStyle = trunkColor || '#451a03';
+            const trunkW = Math.max(2, w * 0.4);
+            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.2); 
+            ctx.fillStyle = color || '#166534';
+            
+            const topY = -h;
+            const bottomY = -h*0.2;
+            const halfBase = w;
+            const r = 3; 
+            
+            ctx.beginPath();
+            ctx.moveTo(0, topY + r);
+            ctx.quadraticCurveTo(0, topY, r, topY + r*2); 
+            ctx.lineTo(halfBase - r, bottomY - r);
+            ctx.quadraticCurveTo(halfBase, bottomY, halfBase - r*2, bottomY);
+            ctx.lineTo(-halfBase + r*2, bottomY);
+            ctx.quadraticCurveTo(-halfBase, bottomY, -halfBase + r, bottomY - r);
+            ctx.lineTo(-r, topY + r*2);
+            ctx.quadraticCurveTo(0, topY, 0, topY + r);
+            ctx.fill();
+
+        } else if (isPalm) {
+             ctx.strokeStyle = trunkColor || '#a16207';
+             ctx.lineWidth = Math.max(2, w * 0.3);
+             ctx.lineCap = 'round';
+             ctx.beginPath();
+             ctx.moveTo(0, 0);
+             ctx.quadraticCurveTo(w, -h*0.5, 0, -h);
+             ctx.stroke();
+             
+             ctx.fillStyle = color || '#15803d';
+             for(let i=0; i<5; i++) {
+                 ctx.beginPath();
+                 const angle = (i * Math.PI*2/5) - Math.PI/2;
+                 const lx = Math.cos(angle) * w * 2;
+                 const ly = Math.sin(angle) * w;
+                 ctx.ellipse(0 + lx/2, -h + ly/2, w*1.5, w/2, angle, 0, Math.PI*2);
+                 ctx.fill();
+             }
+        } else if (isOval) {
+            ctx.fillStyle = trunkColor || '#451a03';
+            const trunkW = Math.max(2, w * 0.3);
+            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
+            ctx.fillStyle = color || '#16a34a';
+            ctx.beginPath();
+            ctx.ellipse(0, -h*0.65, w, h*0.45, 0, 0, Math.PI*2);
+            ctx.fill();
+        } else {
+            ctx.fillStyle = trunkColor || '#451a03';
+            const trunkW = Math.max(2, w * 0.4);
+            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
+            ctx.fillStyle = color || '#16a34a';
+            ctx.beginPath();
+            ctx.arc(0, -h*0.6, w, 0, Math.PI*2);
+            ctx.fill();
         }
     } else if (type === 'building_std') {
-        if (pass === 'base') {
-            if (drawFoundation) {
-                 ctx.fillStyle = isDay ? '#334155' : '#1e293b';
-                 ctx.fillRect(-w/2 - 2, 0, w + 4, 6);
-            }
-            // Darker walls at night
-            ctx.fillStyle = isDay ? (color || '#475569') : '#1e293b'; 
-            ctx.fillRect(-w/2, -h, w, h);
-            
-            // Unlit windows (dark squares)
-            if (windowData) {
-                ctx.fillStyle = '#0f172a';
-                windowData.forEach((wd: any) => {
-                    if (!isDay && !wd.isLit) {
-                        ctx.fillRect(-w/2 + wd.x, -h + wd.y, windowW || 3, windowH || 5);
-                    }
-                });
-            }
-            
-            if (acUnits) {
-                ctx.fillStyle = isDay ? '#94a3b8' : '#334155';
-                acUnits.forEach((ac: any) => {
-                    ctx.fillRect(-w/2 + ac.x, -h - ac.h, ac.w, ac.h);
-                });
-            }
-
-            if (hasRedRoof) {
-                ctx.fillStyle = isDay ? '#991b1b' : '#450a0a';
-                ctx.beginPath(); ctx.moveTo(-w/2 - 2, -h); ctx.lineTo(0, -h - 10); ctx.lineTo(w/2 + 2, -h); ctx.fill();
-            }
-            
-            if (hasBalcony) {
-                 ctx.fillStyle = isDay ? '#334155' : '#0f172a';
-                 ctx.fillRect(-w/2 - 2, -h/2, w + 4, 4);
-            }
+        if (drawFoundation) {
+             ctx.fillStyle = '#334155';
+             ctx.fillRect(-w/2 - 2, 0, w + 4, 6);
+        }
+        ctx.fillStyle = color || '#475569';
+        ctx.fillRect(-w/2, -h, w, h);
+        
+        if (windowData) {
+            ctx.fillStyle = isDay ? '#0ea5e9' : '#facc15';
+            windowData.forEach((wd: any) => {
+                const wx = -w/2 + wd.x;
+                const wy = -h + wd.y;
+                if (isDay || wd.isLit) {
+                    ctx.fillRect(wx, wy, windowW || 3, windowH || 5);
+                } else {
+                    ctx.fillStyle = '#1e293b';
+                    ctx.fillRect(wx, wy, windowW || 3, windowH || 5);
+                    ctx.fillStyle = isDay ? '#0ea5e9' : '#facc15'; 
+                }
+            });
         }
         
-        if (pass === 'lights') {
-             // Lit windows only - Bright steady light
-             if (windowData) {
-                const lightColor = isDay ? '#0ea5e9' : '#facc15';
-                ctx.fillStyle = lightColor;
-                if (!isDay) {
-                    ctx.shadowColor = lightColor;
-                    ctx.shadowBlur = 8; // Bright glow
-                }
-                windowData.forEach((wd: any) => {
-                    if (isDay || wd.isLit) {
-                        ctx.fillRect(-w/2 + wd.x, -h + wd.y, windowW || 3, windowH || 5);
-                    }
-                });
-                ctx.shadowBlur = 0;
-            }
+        if (acUnits) {
+            ctx.fillStyle = '#94a3b8';
+            acUnits.forEach((ac: any) => {
+                ctx.fillRect(-w/2 + ac.x, -h - ac.h, ac.w, ac.h);
+            });
+        }
+
+        if (hasRedRoof) {
+            ctx.fillStyle = '#991b1b';
+            ctx.beginPath();
+            ctx.moveTo(-w/2 - 2, -h);
+            ctx.lineTo(0, -h - 10);
+            ctx.lineTo(w/2 + 2, -h);
+            ctx.fill();
+        }
+        
+        if (hasBalcony) {
+             ctx.fillStyle = '#334155';
+             ctx.fillRect(-w/2 - 2, -h/2, w + 4, 4);
         }
 
     } else if (type === 'power_pole') {
-        if (pass === 'base') {
-            const ph = h || 100;
-            ctx.strokeStyle = isDay ? '#52525b' : '#334155';
-            ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(0, 0); ctx.lineTo(0, -ph);
-            const cw = isHighVoltage ? 30 : 20;
-            ctx.moveTo(-cw/2, -ph + 10); ctx.lineTo(cw/2, -ph + 10);
-            ctx.stroke();
-        }
-        if (pass === 'lights' && !isDay && isHighVoltage) {
-             const ph = h || 100;
-             // Steady red light
-             ctx.fillStyle = '#ef4444';
-             ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 10;
-             ctx.beginPath(); ctx.arc(0, -ph, 2, 0, Math.PI*2); ctx.fill();
-             ctx.shadowBlur = 0;
-        }
+        const ph = h || 100;
+        ctx.strokeStyle = '#52525b';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(0, 0); ctx.lineTo(0, -ph);
+        const cw = isHighVoltage ? 30 : 20;
+        ctx.moveTo(-cw/2, -ph + 10); ctx.lineTo(cw/2, -ph + 10);
+        ctx.stroke();
     } else if (type === 'hangar') {
-        if (pass === 'base') {
-            const hw = w || 60;
-            const hh = h || 30;
-            ctx.fillStyle = isDay ? '#334155' : '#1e293b';
-            ctx.beginPath(); ctx.ellipse(0, 0, hw/2, hh, 0, Math.PI, 0); ctx.fill();
-            ctx.fillStyle = '#0f172a';
-            ctx.beginPath(); ctx.ellipse(0, 0, hw/3, hh*0.8, 0, Math.PI, 0); ctx.fill();
-        }
-        if (pass === 'lights') {
-            // Runway lights - Steady sequence
-            const hw = w || 60;
-            const hh = h || 30;
-            const active = Math.floor(Date.now() / 200) % 8;
-            for(let i=0; i<8; i++) {
-                if (i === active) {
-                    ctx.fillStyle = '#facc15';
-                    ctx.shadowColor = '#facc15'; ctx.shadowBlur = 8;
-                    const lx = -hw/2 + 5 + (i * (hw-10)/8);
-                    ctx.fillRect(lx, -hh, 2, 2);
-                    ctx.shadowBlur = 0;
-                }
-            }
-        }
+        const hw = w || 60;
+        const hh = h || 30;
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, hw/2, hh, 0, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = '#0f172a';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, hw/3, hh*0.8, 0, Math.PI, 0);
+        ctx.fill();
     }
 
     ctx.restore();
 };
 
-export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f: any, isDay: boolean, isOcean: boolean, pass: 'base' | 'lights' = 'base') => {
+export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f: any, isOcean: boolean) => {
     const scale = f.scale || 1.0;
     const r = 80; 
     const time = Date.now();
+    const slowTime = Math.floor(time / 10000); 
     
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale); 
 
-    if (pass === 'base') {
-        // Base Structure (Darker at night)
-        ctx.fillStyle = isDay ? '#334155' : '#1e293b';
-        ctx.beginPath(); ctx.moveTo(-r - 5, 0); ctx.lineTo(r + 5, 0); ctx.lineTo(r + 10, 40); ctx.lineTo(-r - 10, 40); ctx.fill();
-        ctx.fillStyle = isDay ? '#475569' : '#334155'; 
-        ctx.fillRect(-r - 5, -5, (r * 2) + 10, 10);
+    ctx.fillStyle = '#334155';
+    ctx.beginPath(); ctx.moveTo(-r - 5, 0); ctx.lineTo(r + 5, 0); ctx.lineTo(r + 10, 40); ctx.lineTo(-r - 10, 40); ctx.fill();
+    ctx.fillStyle = '#475569'; ctx.fillRect(-r - 5, -5, (r * 2) + 10, 10);
 
-        ctx.save();
-        ctx.beginPath(); ctx.arc(0, 0, r - 2, Math.PI, 0); ctx.clip();
-        
-        // Interior Dark background
-        const bgGrad = ctx.createLinearGradient(0, -r, 0, 0);
-        bgGrad.addColorStop(0, isDay ? 'rgba(148, 163, 184, 0.2)' : 'rgba(15, 23, 42, 0.8)'); 
-        bgGrad.addColorStop(1, isDay ? 'rgba(30, 41, 59, 0.6)' : 'rgba(2, 6, 23, 0.95)'); 
-        ctx.fillStyle = bgGrad; ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.arc(0, 0, r - 2, Math.PI, 0); ctx.clip();
+    const bgGrad = ctx.createLinearGradient(0, -r, 0, 0);
+    bgGrad.addColorStop(0, 'rgba(148, 163, 184, 0.2)'); bgGrad.addColorStop(1, 'rgba(30, 41, 59, 0.6)'); ctx.fillStyle = bgGrad; ctx.fill();
 
-        if (f.contents) {
-            f.contents.forEach((c: any, cIdx: number) => {
-                if (c.type === 'dome_building') {
-                    ctx.fillStyle = isDay ? (c.color || '#94a3b8') : '#1e293b'; 
-                    const safeR = r - 8; 
-                    const bLeft = c.x - c.w/2;
-                    const bRight = c.x + c.w/2;
-                    let limitY_L = -10; 
-                    let limitY_R = -10;
-                    if (Math.abs(bLeft) < safeR) { limitY_L = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bLeft, 2)); }
-                    if (Math.abs(bRight) < safeR) { limitY_R = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bRight, 2)); }
-                    const targetH = -c.h;
-                    const yL = Math.max(targetH, limitY_L);
-                    const yR = Math.max(targetH, limitY_R);
-                    ctx.beginPath(); ctx.moveTo(bLeft, 0); ctx.lineTo(bRight, 0); ctx.lineTo(bRight, yR); ctx.lineTo(bLeft, yL); ctx.closePath(); ctx.fill();
-                    
-                    // Windows unlit
-                    ctx.fillStyle = '#0f172a'; 
-                    const winRows = Math.floor(c.h / 6); const winCols = Math.floor(c.w / 5); const winW = scale > 1.2 ? 3 : 2; const winH = scale > 1.2 ? 4 : 3;
-                    const slope = (yR - yL) / (bRight - bLeft); const k = yL - (slope * bLeft);
-                    for(let i=0; i<winRows; i++) { 
-                        for(let j=0; j<winCols; j++) { 
-                            const wx = bLeft + 2 + (j*5);
-                            const wy = -c.h + 2 + (i*6);
-                            const cutY = (slope * wx) + k;
-                            if (wy > cutY + 2) { ctx.fillRect(wx, wy, winW, winH); }
-                        } 
-                    }
-                } else if (c.type === 'tree') {
-                    drawBuilding(ctx, { x: c.x, y: 0, type: 'tree_round', w: c.w, h: c.h, color: '#16a34a', trunkColor: '#78350f' }, isDay, false, 'base');
+    if (f.contents) {
+        f.contents.forEach((c: any, cIdx: number) => {
+            if (c.type === 'dome_building') {
+                ctx.fillStyle = c.color || '#94a3b8'; 
+                const safeR = r - 8; 
+                const bLeft = c.x - c.w/2;
+                const bRight = c.x + c.w/2;
+                let limitY_L = -10; 
+                let limitY_R = -10;
+                if (Math.abs(bLeft) < safeR) { limitY_L = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bLeft, 2)); }
+                if (Math.abs(bRight) < safeR) { limitY_R = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bRight, 2)); }
+                const targetH = -c.h;
+                const yL = Math.max(targetH, limitY_L);
+                const yR = Math.max(targetH, limitY_R);
+                ctx.beginPath(); ctx.moveTo(bLeft, 0); ctx.lineTo(bRight, 0); ctx.lineTo(bRight, yR); ctx.lineTo(bLeft, yL); ctx.closePath(); ctx.fill();
+                ctx.fillStyle = '#fef08a'; 
+                const winRows = Math.floor(c.h / 6); const winCols = Math.floor(c.w / 5); const winW = scale > 1.2 ? 3 : 2; const winH = scale > 1.2 ? 4 : 3;
+                const slope = (yR - yL) / (bRight - bLeft); const k = yL - (slope * bLeft);
+                for(let i=0; i<winRows; i++) { 
+                    for(let j=0; j<winCols; j++) { 
+                        const wx = bLeft + 2 + (j*5);
+                        const wy = -c.h + 2 + (i*6);
+                        const cutY = (slope * wx) + k;
+                        if (wy > cutY + 2) { 
+                            const seed = (cIdx * 100) + (i * 10) + j + slowTime; 
+                            const pseudoRand = Math.abs(Math.sin(seed * 12.9898)); 
+                            if (pseudoRand > 0.4) { ctx.fillRect(wx, wy, winW, winH); } 
+                        }
+                    } 
                 }
-            });
-        }
-        ctx.restore();
-
-        // Glass Reflection
-        const glass = ctx.createRadialGradient(-r*0.3, -r*0.5, 5, 0, 0, r);
-        glass.addColorStop(0, 'rgba(255,255,255,0.4)'); glass.addColorStop(0.2, 'rgba(255,255,255,0.1)'); glass.addColorStop(1, 'rgba(255,255,255,0.0)');
-        ctx.fillStyle = glass; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.stroke();
+            } else if (c.type === 'tree') {
+                drawBuilding(ctx, { x: c.x, y: 0, type: 'tree_round', w: c.w, h: c.h, color: '#16a34a', trunkColor: '#78350f' }, true, false);
+            } else if (c.type === 'bush') {
+                ctx.fillStyle = '#15803d'; ctx.beginPath(); ctx.arc(c.x, 0, c.w, Math.PI, 0); ctx.fill();
+                if(c.flowers) { ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(c.x-2, -2, 1.5, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(c.x+2, -3, 1.5, 0, Math.PI*2); ctx.fill(); }
+            } else if (c.type === 'flower') {
+                ctx.fillStyle = cIdx % 2 === 0 ? '#ef4444' : '#facc15'; ctx.beginPath(); ctx.arc(c.x, -2, 1.5, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = '#166534'; ctx.fillRect(c.x-0.5, -2, 1, 2);
+            } else if (c.type === 'bird') {
+                drawBird(ctx, c.x + Math.sin(time * 0.002 + cIdx) * 10, c.y + Math.cos(time * 0.003 + cIdx) * 3, 2, Math.sin(time*0.02 + cIdx));
+            } else if (c.type === 'butterfly') {
+                const bx = c.x + Math.sin(time * 0.005 + cIdx) * 15; const by = c.y - Math.abs(Math.sin(time * 0.01)) * 10;
+                ctx.fillStyle = cIdx % 2 === 0 ? '#3b82f6' : '#d946ef'; ctx.beginPath(); ctx.arc(bx, by, 1.5, 0, Math.PI*2); ctx.fill();
+            }
+        });
     }
-    
-    if (pass === 'lights') {
-        if (f.contents) {
-            ctx.save();
-            ctx.beginPath(); ctx.arc(0, 0, r - 2, Math.PI, 0); ctx.clip();
-            f.contents.forEach((c: any, cIdx: number) => {
-                if (c.type === 'dome_building') {
-                    const safeR = r - 8; 
-                    const bLeft = c.x - c.w/2;
-                    const bRight = c.x + c.w/2;
-                    let limitY_L = -10; 
-                    let limitY_R = -10;
-                    if (Math.abs(bLeft) < safeR) { limitY_L = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bLeft, 2)); }
-                    if (Math.abs(bRight) < safeR) { limitY_R = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bRight, 2)); }
-                    const targetH = -c.h;
-                    const yL = Math.max(targetH, limitY_L);
-                    const yR = Math.max(targetH, limitY_R);
-                    const winRows = Math.floor(c.h / 6); const winCols = Math.floor(c.w / 5); const winW = scale > 1.2 ? 3 : 2; const winH = scale > 1.2 ? 4 : 3;
-                    const slope = (yR - yL) / (bRight - bLeft); const k = yL - (slope * bLeft);
-                    
-                    // Bright lights
-                    ctx.fillStyle = '#fef08a';
-                    if (!isDay) { ctx.shadowColor = '#fef08a'; ctx.shadowBlur = 5; }
+    ctx.restore();
 
-                    for(let i=0; i<winRows; i++) { 
-                        for(let j=0; j<winCols; j++) { 
-                            const wx = bLeft + 2 + (j*5);
-                            const wy = -c.h + 2 + (i*6);
-                            const cutY = (slope * wx) + k;
-                            if (wy > cutY + 2) { 
-                                // Randomly lit but stable (using seeded randomness based on index)
-                                const seed = (cIdx * 100) + (i * 10) + j;
-                                const isLit = Math.abs(Math.sin(seed)) > 0.4;
-                                if (isLit) ctx.fillRect(wx, wy, winW, winH); 
-                            }
-                        } 
-                    }
-                    ctx.shadowBlur = 0;
-                }
-            });
-            ctx.restore();
-        }
-    }
+    const glass = ctx.createRadialGradient(-r*0.3, -r*0.5, 5, 0, 0, r);
+    glass.addColorStop(0, 'rgba(255,255,255,0.4)'); glass.addColorStop(0.2, 'rgba(255,255,255,0.1)'); glass.addColorStop(1, 'rgba(255,255,255,0.0)');
+    ctx.fillStyle = glass; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.stroke();
     
     ctx.restore();
 };
 
-export const drawPowerPlant = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isUnderground: boolean = false, pass: 'base' | 'lights' = 'base', isDay: boolean = true) => {
+export const drawPowerPlant = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isUnderground: boolean = false) => {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
-    
-    if (pass === 'base') {
-        if (isUnderground) {
-            ctx.fillStyle = '#27272a'; ctx.beginPath(); ctx.moveTo(-40, 0); ctx.lineTo(-30, -15); ctx.lineTo(30, -15); ctx.lineTo(40, 0); ctx.fill();
-            ctx.fillStyle = '#18181b'; ctx.fillRect(-15, -15, 30, 15); ctx.fillStyle = '#7f1d1d'; ctx.fillRect(-10, -18, 20, 3);
-            ctx.fillStyle = '#475569'; ctx.fillRect(50, -30, 40, 30);
-            ctx.fillStyle = '#64748b'; for(let k=0; k<3; k++) ctx.fillRect(55 + (k*10), -35, 6, 5);
-            ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(70, -35); ctx.lineTo(70, -60); ctx.stroke();
-            ctx.fillStyle = '#451a03'; ctx.beginPath(); ctx.arc(70, -40, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(70, -50, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(70, -60, 3, 0, Math.PI*2); ctx.fill();
-        } else {
-            ctx.fillStyle = isDay ? '#3f3f46' : '#18181b'; 
-            ctx.fillRect(-60, -30, 30, 30); 
-            ctx.fillStyle = isDay ? '#52525b' : '#27272a'; for(let i=0; i<3; i++) ctx.fillRect(-58 + (i*8), -30, 4, 30);
-            ctx.beginPath(); ctx.arc(-10, 0, 20, Math.PI, 0); ctx.fillStyle = isDay ? '#94a3b8' : '#334155'; ctx.fill();
-            ctx.strokeStyle = '#475569'; ctx.lineWidth = 2; ctx.stroke();
-            const tx = 40; ctx.fillStyle = isDay ? '#cbd5e1' : '#475569'; ctx.beginPath(); ctx.moveTo(tx - 15, 0); ctx.quadraticCurveTo(tx - 5, -40, tx - 20, -80); ctx.lineTo(tx + 20, -80); ctx.quadraticCurveTo(tx + 5, -40, tx + 15, 0); ctx.fill();
-        }
+    if (isUnderground) {
+        ctx.fillStyle = '#27272a'; ctx.beginPath(); ctx.moveTo(-40, 0); ctx.lineTo(-30, -15); ctx.lineTo(30, -15); ctx.lineTo(40, 0); ctx.fill();
+        ctx.fillStyle = '#18181b'; ctx.fillRect(-15, -15, 30, 15); ctx.fillStyle = '#ef4444'; ctx.fillRect(-10, -18, 20, 3);
+        ctx.fillStyle = '#475569'; ctx.fillRect(50, -30, 40, 30);
+        ctx.fillStyle = '#64748b'; for(let k=0; k<3; k++) ctx.fillRect(55 + (k*10), -35, 6, 5);
+        ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(70, -35); ctx.lineTo(70, -60); ctx.stroke();
+        ctx.fillStyle = '#b45309'; ctx.beginPath(); ctx.arc(70, -40, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(70, -50, 3, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(70, -60, 3, 0, Math.PI*2); ctx.fill();
+    } else {
+        ctx.fillStyle = '#3f3f46'; ctx.fillRect(-60, -30, 30, 30); 
+        ctx.fillStyle = '#52525b'; for(let i=0; i<3; i++) ctx.fillRect(-58 + (i*8), -30, 4, 30);
+        ctx.beginPath(); ctx.arc(-10, 0, 20, Math.PI, 0); ctx.fillStyle = '#94a3b8'; ctx.fill();
+        ctx.strokeStyle = '#475569'; ctx.lineWidth = 2; ctx.stroke();
+        const tx = 40; ctx.fillStyle = '#cbd5e1'; ctx.beginPath(); ctx.moveTo(tx - 15, 0); ctx.quadraticCurveTo(tx - 5, -40, tx - 20, -80); ctx.lineTo(tx + 20, -80); ctx.quadraticCurveTo(tx + 5, -40, tx + 15, 0); ctx.fill();
     }
-    
-    if (pass === 'lights') {
-        const blink = Math.floor(Date.now() / 300) % 2 === 0;
-        if (isUnderground) {
-             ctx.fillStyle = '#ef4444';
-             // Steady light at night, blink in day? Or just steady. User said "steady light" for resorts, assuming safety lights should blink but not flicker randomly. Standard blink is ok.
-             if (!isDay) { ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 8; }
-             if (blink) ctx.fillRect(-10, -18, 20, 3);
-             
-             ctx.fillStyle = '#f97316';
-             if (!isDay) ctx.shadowColor = '#f97316';
-             ctx.beginPath(); ctx.arc(70, -40, 2, 0, Math.PI*2); ctx.fill();
-             ctx.beginPath(); ctx.arc(70, -50, 2, 0, Math.PI*2); ctx.fill();
-             ctx.beginPath(); ctx.arc(70, -60, 2, 0, Math.PI*2); ctx.fill();
-             ctx.shadowBlur = 0;
-        } else {
-             // Reactor Glow
-             const pulse = 0.5 + Math.sin(Date.now() * 0.005) * 0.2;
-             ctx.fillStyle = `rgba(59, 130, 246, ${pulse})`;
-             ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 15;
-             ctx.beginPath(); ctx.arc(-10, 0, 10, 0, Math.PI*2); ctx.fill();
-             ctx.shadowBlur = 0;
-        }
-    }
-
     ctx.restore();
 };
 
-export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number, isDay: boolean, foundationH: number, pass: 'base' | 'lights' = 'base') => {
+export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean, foundationHeight: number = 0) => {
+    ctx.save();
+    ctx.translate(x, y);
+    const distScale = scale * 0.8; ctx.scale(distScale, distScale);
+    
+    if (foundationHeight > 0) {
+        ctx.fillStyle = '#64748b'; 
+        ctx.fillRect(-32, 0, 64, foundationHeight);
+        
+        ctx.strokeStyle = '#475569'; 
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let fy = 0; fy <= foundationHeight; fy += 4) {
+            ctx.moveTo(-32, fy); ctx.lineTo(32, fy);
+        }
+        for(let fx = -32; fx <= 32; fx += 8) {
+            ctx.moveTo(fx, 0); ctx.lineTo(fx, foundationHeight);
+        }
+        ctx.stroke();
+    }
+
+    ctx.fillStyle = '#e2e8f0'; ctx.fillRect(-30, -40, 60, 40);
+    ctx.fillStyle = '#cbd5e1'; ctx.fillRect(-45, -30, 15, 30); ctx.fillRect(30, -30, 15, 30);
+    ctx.fillStyle = '#991b1b'; ctx.beginPath(); ctx.moveTo(-32, -40); ctx.lineTo(0, -55); ctx.lineTo(32, -40); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-47, -30); ctx.lineTo(-37, -38); ctx.lineTo(-28, -30); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(28, -30); ctx.lineTo(37, -38); ctx.lineTo(47, -30); ctx.fill();
+
+    ctx.fillStyle = isDay ? '#38bdf8' : '#facc15';
+    for(let r=0; r<4; r++) { for(let c=0; c<5; c++) { const isLit = isDay ? true : Math.random() > 0.4; ctx.fillStyle = isLit ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(-25 + (c*11), -35 + (r*9), 4, 5); } }
+    for(let r=0; r<3; r++) { const isLitL = isDay ? true : Math.random() > 0.4; const isLitR = isDay ? true : Math.random() > 0.4; ctx.fillStyle = isLitL ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(-40, -25 + (r*9), 4, 5); ctx.fillStyle = isLitR ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(35, -25 + (r*9), 4, 5); }
+
+    ctx.fillStyle = '#475569'; ctx.fillRect(-45, 0, 90, 5);
+    const drawSimplePine = (tx: number, th: number) => { 
+        ctx.fillStyle = '#166534'; 
+        ctx.beginPath(); 
+        ctx.moveTo(tx, 5 - th);
+        ctx.quadraticCurveTo(tx+2, 5-th+2, tx + 4, 5); 
+        ctx.lineTo(tx - 4, 5); 
+        ctx.quadraticCurveTo(tx-2, 5-th+2, tx, 5 - th);
+        ctx.fill(); 
+    };
+    drawSimplePine(-35, 15); drawSimplePine(-20, 12); drawSimplePine(20, 14); drawSimplePine(35, 16);
+    ctx.restore();
+};
+
+export const drawMining = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0) => {
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(scale, scale);
-
-    if (pass === 'base') {
-        // Foundation - Dark
-        if (foundationH > 0) {
-            ctx.fillStyle = isDay ? '#334155' : '#0f172a';
-            ctx.beginPath(); ctx.moveTo(-50, 0); ctx.lineTo(50, 0); ctx.lineTo(40, foundationH + 5); ctx.lineTo(-40, foundationH + 5); ctx.fill();
-        }
-
-        // --- LUXURY TERRACED STRUCTURE (Darkened at night) ---
-        
-        // Base Terrace
-        ctx.fillStyle = isDay ? '#e2e8f0' : '#1e293b'; // White/Grey vs Dark Blue/Grey
-        ctx.fillRect(-50, -20, 100, 20);
-        
-        // Mid Terrace
-        ctx.fillStyle = isDay ? '#f1f5f9' : '#334155';
-        ctx.fillRect(-35, -40, 70, 20);
-        
-        // Top Penthouse
-        ctx.fillStyle = isDay ? '#ffffff' : '#475569';
-        ctx.fillRect(-20, -55, 40, 15);
-        
-        // Pool Water (Dark Blue Base)
-        ctx.fillStyle = '#0c4a6e';
-        ctx.beginPath(); ctx.ellipse(-30, -20, 15, 4, 0, 0, Math.PI*2); ctx.fill(); // Left Pool
-        ctx.beginPath(); ctx.ellipse(30, -20, 15, 4, 0, 0, Math.PI*2); ctx.fill(); // Right Pool
-        
-        // Glass Panels (Unlit Base)
-        ctx.fillStyle = '#020617';
-        ctx.fillRect(-45, -15, 20, 8); 
-        ctx.fillRect(25, -15, 20, 8);
-        ctx.fillRect(-30, -35, 60, 10); // Main Atrium
-        ctx.fillRect(-15, -50, 30, 8);  // Penthouse
-    }
-
-    if (pass === 'lights') {
-        // --- POOL GLOW (Cyan, Steady) ---
-        ctx.fillStyle = 'rgba(34, 211, 238, 0.6)'; // Cyan
-        if (!isDay) { ctx.shadowColor = '#22d3ee'; ctx.shadowBlur = 12; }
-        ctx.beginPath(); ctx.ellipse(-30, -20, 15, 4, 0, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.ellipse(30, -20, 15, 4, 0, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // --- WARM WINDOWS (Steady) ---
-        ctx.fillStyle = isDay ? '#0ea5e9' : '#fbbf24'; // Blue day, Warm Yellow night
-        if (!isDay) { ctx.shadowColor = '#fbbf24'; ctx.shadowBlur = 8; }
-        
-        // Main Atrium Lights
-        ctx.fillRect(-30, -35, 60, 10);
-        
-        // Penthouse
-        ctx.fillRect(-15, -50, 30, 8); 
-        
-        // Side Rooms (Some lit)
-        ctx.fillRect(-45, -15, 20, 8);
-        ctx.fillRect(25, -15, 20, 8);
-        
-        ctx.shadowBlur = 0;
-
-        // --- LANDING PADS (Steady Red) ---
-        ctx.fillStyle = '#ef4444';
-        if (!isDay) { ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 5; }
-        ctx.beginPath(); ctx.arc(-55, -20, 1.5, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(55, -20, 1.5, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-    }
-
+    const yOff = 25;
+    ctx.fillStyle = '#44403c'; ctx.beginPath(); ctx.arc(0, yOff, 14, Math.PI, 0); ctx.lineTo(14, yOff + 10); ctx.lineTo(-14, yOff + 10); ctx.fill();
+    ctx.fillStyle = '#09090b'; ctx.beginPath(); ctx.arc(0, yOff, 10, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#57534e'; ctx.beginPath(); ctx.moveTo(-12, yOff); ctx.lineTo(-18, yOff + 30); ctx.lineTo(18, yOff + 30); ctx.lineTo(12, yOff); ctx.fill();
+    ctx.strokeStyle = '#27272a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-6, yOff); ctx.lineTo(-9, yOff + 30); ctx.moveTo(6, yOff); ctx.lineTo(9, yOff + 30); ctx.stroke();
+    ctx.fillStyle = '#f59e0b'; ctx.fillRect(-7, yOff + 10, 14, 10); ctx.fillStyle = '#292524'; ctx.beginPath(); ctx.arc(0, yOff + 10, 5, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(-6, yOff + 20, 2, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(6, yOff + 20, 2, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#f59e0b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(20, yOff); ctx.lineTo(20, yOff - 30); ctx.lineTo(5, yOff - 15); ctx.stroke();
+    ctx.fillStyle = '#ef4444'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 5; ctx.beginPath(); ctx.arc(20, yOff - 30, 2, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
     ctx.restore();
 };
 
-export const drawTower = (ctx: CanvasRenderingContext2D, x: number, y: number, f: any, isDay: boolean, isOcean: boolean, armPos: number, accPos: number, hullTargets?: number[], pass: 'base' | 'lights' = 'base') => {
-    
-    if (pass === 'base') {
-        const th = 180; const tw = 50; const tx = x; 
-        // Darken structure at night
-        const strokeColor = isDay ? '#334155' : '#1e293b';
-        const innerColor = isDay ? 'rgba(30, 41, 59, 0.5)' : 'rgba(15, 23, 42, 0.8)';
-        
-        ctx.lineWidth = 4; ctx.strokeStyle = strokeColor;
-        ctx.beginPath(); ctx.moveTo(tx, y); ctx.lineTo(tx, y-th); ctx.moveTo(tx+tw, y); ctx.lineTo(tx+tw, y-th); ctx.stroke();
-        ctx.lineWidth = 1.5; ctx.strokeStyle = isDay ? '#475569' : '#334155';
-        ctx.beginPath(); const segH = 30;
-        for(let k=0; k<th; k+=segH) { ctx.moveTo(tx, y-k); ctx.lineTo(tx+tw, y-k); if (k + segH <= th) { ctx.moveTo(tx, y-k); ctx.lineTo(tx+tw, y-k-segH); ctx.moveTo(tx+tw, y-k); ctx.lineTo(tx, y-k-segH); } }
-        ctx.stroke(); ctx.fillStyle = innerColor; ctx.fillRect(tx, y-th, tw, th);
-        const antH = 40; ctx.strokeStyle = isDay ? '#64748b' : '#475569'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(tx + tw/2, y - th); ctx.lineTo(tx + tw/2, y - th - antH); ctx.stroke();
-        
-        if (f.arms) {
-            f.arms.forEach((armYOffset: number, index: number) => {
-                const armY = y + armYOffset; const dir = x > 0 ? -1 : 1; const towerCenterX = tx + tw/2; const rigidArmLength = 120; const startProtrusion = 20; const maxExtension = 80; const currentProtrusion = startProtrusion + (maxExtension * armPos); const tipX = towerCenterX + (dir * currentProtrusion); const baseX = tipX - (dir * rigidArmLength); const trussHeight = 14; const topY = armY - trussHeight/2; const botY = armY + trussHeight/2;
-                ctx.strokeStyle = isDay ? '#64748b' : '#475569'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(baseX, topY); ctx.lineTo(tipX, topY); ctx.moveTo(baseX, botY); ctx.lineTo(tipX, botY); const step = 15; for(let i=0; i<rigidArmLength/step; i++) { const sx = baseX + (i * step * dir); const ex = baseX + ((i+1) * step * dir); ctx.moveTo(sx, topY); ctx.lineTo(ex, botY); ctx.moveTo(sx, botY); ctx.lineTo(ex, topY); } ctx.stroke();
-                ctx.fillStyle = isDay ? '#334155' : '#1e293b'; const capW = 6; ctx.fillRect(tipX - (dir===1?0:capW), topY - 1, capW, trussHeight + 2);
-                let targetX = 0; if (hullTargets && hullTargets.length > index) { const halfWidth = hullTargets[index]; targetX = (dir === -1) ? halfWidth : -halfWidth; } else { targetX = (dir === -1) ? 30 : -30; }
-                const distToHull = Math.abs(targetX - tipX); const compressedLen = 10; const currentAccLen = compressedLen + (distToHull - compressedLen) * accPos; const accEndX = tipX + (dir * currentAccLen);
-                const segCount = 8; const segW = currentAccLen / segCount;
-                for(let i=0; i<segCount; i++) { const sx = tipX + (i * segW * dir); ctx.fillStyle = i % 2 === 0 ? (isDay ? '#1f2937' : '#0f172a') : (isDay ? '#0f172a' : '#020617'); const rx = dir === 1 ? sx : sx - segW; ctx.fillRect(rx, topY + 2, segW, trussHeight - 4); ctx.fillStyle = '#000'; const ribX = dir === 1 ? sx + segW : sx; ctx.fillRect(ribX, topY + 2, 1, trussHeight - 4); }
-                ctx.strokeStyle = '#374151'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(tipX, topY + 2); ctx.lineTo(accEndX, topY + 2); ctx.moveTo(tipX, botY - 2); ctx.lineTo(accEndX, botY - 2); ctx.stroke();
-                if (accPos > 0.1) { ctx.fillStyle = '#475569'; const plateW = 4; const px = accEndX - (dir===1?0:plateW); ctx.fillRect(px, armY - 12, plateW, 24); } 
-            });
-        }
-    }
-
-    if (pass === 'lights') {
-        const th = 180; const tw = 50; const tx = x; const antH = 40;
-        // Steady beacon
-        ctx.fillStyle = '#ef4444'; 
-        if (!isDay) { ctx.shadowColor = '#ff0000'; ctx.shadowBlur = 15; }
-        ctx.beginPath(); ctx.arc(tx + tw/2, y - th - antH, 4, 0, Math.PI*2); ctx.fill(); 
-        ctx.shadowBlur = 0;
-
-        // Arm Lights (Green)
-        if (f.arms) {
-             f.arms.forEach((armYOffset: number, index: number) => {
-                 const armY = y + armYOffset; const dir = x > 0 ? -1 : 1; const towerCenterX = tx + tw/2; const rigidArmLength = 120; const startProtrusion = 20; const maxExtension = 80; const currentProtrusion = startProtrusion + (maxExtension * armPos); const tipX = towerCenterX + (dir * currentProtrusion); 
-                 let targetX = 0; if (hullTargets && hullTargets.length > index) { const halfWidth = hullTargets[index]; targetX = (dir === -1) ? halfWidth : -halfWidth; } else { targetX = (dir === -1) ? 30 : -30; }
-                 const distToHull = Math.abs(targetX - tipX); const compressedLen = 10; const currentAccLen = compressedLen + (distToHull - compressedLen) * accPos; const accEndX = tipX + (dir * currentAccLen);
-                 
-                 if (accPos > 0.95) { 
-                     ctx.fillStyle = '#10b981'; 
-                     if (!isDay) { ctx.shadowColor = '#10b981'; ctx.shadowBlur = 8; }
-                     const plateW = 4; const px = accEndX - (dir===1?0:plateW); 
-                     ctx.fillRect(px, armY - 12, plateW, 24); 
-                     
-                     ctx.fillStyle = 'rgba(16, 185, 129, 0.5)'; 
-                     const sealW = 6; const sx = dir === 1 ? accEndX : accEndX - sealW; 
-                     ctx.fillRect(sx, armY - 14, sealW, 28); 
-                     
-                     ctx.shadowBlur = 0;
-                 }
-             });
-        }
+export const drawTower = (ctx: CanvasRenderingContext2D, x: number, y: number, f: any, isDay: boolean, isOcean: boolean, armPos: number, accPos: number, hullTargets?: number[]) => {
+    const th = 180; const tw = 50; const tx = x; const strokeColor = '#334155';
+    ctx.lineWidth = 4; ctx.strokeStyle = strokeColor;
+    ctx.beginPath(); ctx.moveTo(tx, y); ctx.lineTo(tx, y-th); ctx.moveTo(tx+tw, y); ctx.lineTo(tx+tw, y-th); ctx.stroke();
+    ctx.lineWidth = 1.5; ctx.strokeStyle = '#475569';
+    ctx.beginPath(); const segH = 30;
+    for(let k=0; k<th; k+=segH) { ctx.moveTo(tx, y-k); ctx.lineTo(tx+tw, y-k); if (k + segH <= th) { ctx.moveTo(tx, y-k); ctx.lineTo(tx+tw, y-k-segH); ctx.moveTo(tx+tw, y-k); ctx.lineTo(tx, y-k-segH); } }
+    ctx.stroke(); ctx.fillStyle = 'rgba(30, 41, 59, 0.5)'; ctx.fillRect(tx, y-th, tw, th);
+    const antH = 40; ctx.strokeStyle = '#64748b'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(tx + tw/2, y - th); ctx.lineTo(tx + tw/2, y - th - antH); ctx.stroke();
+    const blink = Math.floor(Date.now() / 500) % 2 === 0; ctx.fillStyle = blink ? '#ff4d4d' : '#991b1b'; ctx.shadowColor = blink ? '#ff0000' : 'transparent'; ctx.shadowBlur = blink ? 15 : 0; ctx.beginPath(); ctx.arc(tx + tw/2, y - th - antH, 4, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0;
+    if (f.arms) {
+        f.arms.forEach((armYOffset: number, index: number) => {
+            const armY = y + armYOffset; const dir = x > 0 ? -1 : 1; const towerCenterX = tx + tw/2; const rigidArmLength = 120; const startProtrusion = 20; const maxExtension = 80; const currentProtrusion = startProtrusion + (maxExtension * armPos); const tipX = towerCenterX + (dir * currentProtrusion); const baseX = tipX - (dir * rigidArmLength); const trussHeight = 14; const topY = armY - trussHeight/2; const botY = armY + trussHeight/2;
+            ctx.strokeStyle = '#64748b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(baseX, topY); ctx.lineTo(tipX, topY); ctx.moveTo(baseX, botY); ctx.lineTo(tipX, botY); const step = 15; for(let i=0; i<rigidArmLength/step; i++) { const sx = baseX + (i * step * dir); const ex = baseX + ((i+1) * step * dir); ctx.moveTo(sx, topY); ctx.lineTo(ex, botY); ctx.moveTo(sx, botY); ctx.lineTo(ex, topY); } ctx.stroke();
+            ctx.fillStyle = '#334155'; const capW = 6; ctx.fillRect(tipX - (dir===1?0:capW), topY - 1, capW, trussHeight + 2);
+            let targetX = 0; if (hullTargets && hullTargets.length > index) { const halfWidth = hullTargets[index]; targetX = (dir === -1) ? halfWidth : -halfWidth; } else { targetX = (dir === -1) ? 30 : -30; }
+            const distToHull = Math.abs(targetX - tipX); const compressedLen = 10; const currentAccLen = compressedLen + (distToHull - compressedLen) * accPos; const accEndX = tipX + (dir * currentAccLen);
+            const segCount = 8; const segW = currentAccLen / segCount;
+            for(let i=0; i<segCount; i++) { const sx = tipX + (i * segW * dir); ctx.fillStyle = i % 2 === 0 ? '#1f2937' : '#0f172a'; const rx = dir === 1 ? sx : sx - segW; ctx.fillRect(rx, topY + 2, segW, trussHeight - 4); ctx.fillStyle = '#000'; const ribX = dir === 1 ? sx + segW : sx; ctx.fillRect(ribX, topY + 2, 1, trussHeight - 4); }
+            ctx.strokeStyle = '#374151'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(tipX, topY + 2); ctx.lineTo(accEndX, topY + 2); ctx.moveTo(tipX, botY - 2); ctx.lineTo(accEndX, botY - 2); ctx.stroke();
+            if (accPos > 0.1) { ctx.fillStyle = accPos > 0.95 ? '#10b981' : '#475569'; const plateW = 4; const px = accEndX - (dir===1?0:plateW); ctx.fillRect(px, armY - 12, plateW, 24); if (accPos > 0.95) { ctx.fillStyle = 'rgba(16, 185, 129, 0.5)'; const sealW = 6; const sx = dir === 1 ? accEndX : accEndX - sealW; ctx.fillRect(sx, armY - 14, sealW, 28); } }
+        });
     }
 };
 
 const generateDomeContents = (rng: () => number) => {
     const contents: any[] = [];
-    const r = 70; 
+    const r = 70; // safe radius
     
+    // Background buildings
     const bCount = 2 + Math.floor(rng() * 3);
     for(let i=0; i<bCount; i++) {
         contents.push({
@@ -812,6 +659,7 @@ const generateDomeContents = (rng: () => number) => {
         });
     }
     
+    // Vegetation
     const vCount = 3 + Math.floor(rng() * 5);
     for(let i=0; i<vCount; i++) {
         const type = rng() > 0.6 ? 'tree' : (rng() > 0.3 ? 'bush' : 'flower');
@@ -824,6 +672,7 @@ const generateDomeContents = (rng: () => number) => {
         });
     }
     
+    // Life
     if (rng() > 0.3) {
         const lCount = 1 + Math.floor(rng() * 3);
         for(let i=0; i<lCount; i++) {
@@ -838,10 +687,8 @@ const generateDomeContents = (rng: () => number) => {
     return contents;
 };
 
-export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number = 0) => {
-    const terrainRng = createSeededRandom(planet.id);
-    const conditionRng = instanceSeed > 0 ? createSeededRandom(instanceSeed.toString()) : Math.random;
-
+export const generatePlanetEnvironment = (planet: Planet) => {
+    const rng = createSeededRandom(planet.id);
     const col = planet.color.toLowerCase();
 
     const isReddish = ['#ef4444', '#f97316', '#d97706', '#fbbf24', '#7c2d12', '#78350f', '#991b1b', '#b91c1c'].includes(col);
@@ -850,20 +697,20 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
     const isPurple = ['#a855f7', '#d8b4fe', '#7e22ce', '#6b21a8'].includes(col);
     const isWhite = ['#ffffff', '#e2e8f0', '#cbd5e1'].includes(col);
 
-    const isDay = conditionRng() > 0.5; 
-    
-    const isOcean = isBluish && terrainRng() > 0.3; 
+    const isDay = rng() > 0.5; 
+    const isOcean = isBluish && rng() > 0.3; 
     const isBarren = isReddish || ['#d97706', '#a16207', '#78350f'].includes(col) || isPurple; 
     const isLush = isGreenish || (isBluish && !isOcean && !isBarren && !isWhite); 
     
-    const hasTrains = terrainRng() > 0.4;
-    const hasDomes = isBarren || terrainRng() > 0.7;
-    const hasWindmills = isLush && terrainRng() > 0.9;
-    const hasHangars = (isBarren || isLush) && terrainRng() > 0.6;
+    const hasTrains = rng() > 0.4;
+    const hasDomes = isBarren || rng() > 0.7;
+    const hasWindmills = isLush && rng() > 0.3;
+    const hasHangars = (isBarren || isLush) && rng() > 0.6;
 
-    const isRainy = isLush && conditionRng() > 0.7; 
-    const isStormy = isRainy && conditionRng() > 0.5; 
-    const hasBirds = isLush && !isRainy && conditionRng() > 0.2; 
+    // Weather Effects Logic
+    const isRainy = isLush && rng() > 0.7; // 30% chance rain on lush
+    const isStormy = isRainy && rng() > 0.5; // 50% chance thunder if rain
+    const hasBirds = isLush && !isRainy && rng() > 0.2; // Birds only on lush, non-rainy days
 
     let skyGradient = ['#000000', '#000000'];
     let cloudColor = '#ffffff';
@@ -876,17 +723,14 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
     else if (isPurple) { if (isDay) skyGradient = ['#2e1065', '#a855f7']; else skyGradient = ['#0f0518', '#3b0764']; cloudColor = '#f3e8ff'; atmosphereColor = '#581c87'; } 
     else { if (isDay) skyGradient = ['#3f3f46', '#a1a1aa']; else skyGradient = ['#09090b', '#27272a']; atmosphereColor = '#27272a'; }
 
+    // Rain Override for Sky
     if (isRainy) {
-        skyGradient[0] = mixColor(skyGradient[0], '#1f2937', 0.6); 
-        cloudColor = mixColor(cloudColor, '#4b5563', 0.5); 
-        sunColor = '#9ca3af'; 
+        skyGradient[0] = mixColor(skyGradient[0], '#1f2937', 0.6); // Darker top
+        cloudColor = mixColor(cloudColor, '#4b5563', 0.5); // Grey clouds
+        sunColor = '#9ca3af'; // Dim sun
     }
 
-    if (isBarren && !isReddish) { const toxicColors = ['#fbcfe8', '#9ca3af', '#bef264']; cloudColor = toxicColors[Math.floor(conditionRng() * toxicColors.length)]; }
-
-    if (!isDay || planet.quadrant === QuadrantType.DELTA) {
-        skyGradient = ['#000000', '#0a0a0a']; 
-    }
+    if (isBarren && !isReddish) { const toxicColors = ['#fbcfe8', '#9ca3af', '#bef264']; cloudColor = toxicColors[Math.floor(rng() * toxicColors.length)]; }
 
     let groundColor = planet.color; 
     let hillColors: string[] = [];
@@ -900,40 +744,44 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
 
     if (!isOcean) { hillColors[0] = mixColor(hillColors[0], atmosphereColor, 0.6); hillColors[1] = mixColor(hillColors[1], atmosphereColor, 0.4); }
 
-    const stars = Array.from({ length: isDay && planet.quadrant !== QuadrantType.DELTA ? 60 : 350 }).map(() => ({ x: conditionRng(), y: conditionRng(), size: conditionRng() * 0.8 + 0.2, alpha: (isDay && planet.quadrant !== QuadrantType.DELTA) ? 0.4 : (conditionRng() * 0.5 + 0.5) }));
+    const stars = Array.from({ length: isDay ? 60 : 250 }).map(() => ({ x: rng(), y: rng(), size: rng() * 0.8 + 0.2, alpha: isDay ? 0.4 : (rng() * 0.5 + 0.5) }));
     
-    // CLOUDS
+    // CLOUDS - IMPROVED GENERATION
     const clouds: any[] = [];
-    const windDir = conditionRng() > 0.5 ? 1 : -1;
+    const windDir = rng() > 0.5 ? 1 : -1;
     const layerScales = [0.25, 0.5, 0.9]; 
     const layerSpeeds = [0.05, 0.12, 0.25];
     const layerAlphas = [0.95, 0.85, 0.6]; 
     
+    // Y-offsets: Extended range for "infinite" feeling
     const bandYCenters = [-1200, -800, -400]; 
 
     for (let l = 0; l < 3; l++) {
         const scale = layerScales[l];
         const speed = layerSpeeds[l];
-        const dir = l === 0 ? (conditionRng() > 0.5 ? 1 : -1) : windDir;
+        const dir = l === 0 ? (rng() > 0.5 ? 1 : -1) : windDir;
         const center = bandYCenters[l];
 
-        const count = 15 + Math.floor(conditionRng() * 5); 
+        // INCREASED COUNT: 15-20 clouds per layer
+        const count = 15 + Math.floor(rng() * 5); 
         for (let c = 0; c < count; c++) {
              const color = l === 0 ? mixColor(cloudColor, planet.color, 0.2) : cloudColor;
-             const alpha = l === 2 ? (0.3 + conditionRng() * 0.5) : layerAlphas[l];
+             const alpha = l === 2 ? (0.3 + rng() * 0.5) : layerAlphas[l];
+             
+             // Spread clouds vertically much more
              const ySpread = 1000;
              
              clouds.push({
-                 x: (conditionRng() * 4000) - 2000,
-                 y: center + (conditionRng() * ySpread - (ySpread/2)), 
-                 w: (150 + conditionRng() * 100) * scale,
+                 x: (rng() * 4000) - 2000,
+                 y: center + (rng() * ySpread - (ySpread/2)), 
+                 w: (150 + rng() * 100) * scale,
                  baseAlpha: alpha,
                  alpha: alpha,
                  speed: speed,
                  direction: dir,
                  layer: l,
                  color: color,
-                 id: c 
+                 id: c // For sin wave calculation
              });
         }
     }
@@ -941,9 +789,10 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
     const hills = [];
     const trains: any[] = [];
     let domeCount = 0;
+    
+    // Check if we need to force a dome on barren planets
     const forceDome = isBarren;
     let domePlaced = false;
-    let windmillCount = 0;
     
     for(let i=0; i<(isOcean?0:6); i++) {
         const points = [];
@@ -955,8 +804,8 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
         for(let j=0; j<=segments; j++) {
             let minH = isMountain ? 0.4 : 0.15; 
             let maxH = isMountain ? 0.8 : 0.45;
-            if (!isMountain && i >= 3 && terrainRng() > 0.6) minH = 0.02; 
-            const yVar = terrainRng();
+            if (!isMountain && i >= 3 && rng() > 0.6) minH = 0.02; 
+            const yVar = rng();
             points.push({ xRatio: j/segments, heightRatio: minH + (yVar * (maxH - minH)) });
         }
 
@@ -975,56 +824,62 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
         const roadBuildingsFront: any[] = [];
         const nearbyBuildings: any[] = [];
         
-        if (isMountain && terrainRng() < 0.7) { 
-            const numFeatures = 2 + Math.floor(terrainRng() * 2);
+        if (isMountain && rng() < 0.7) { 
+            const numFeatures = 2 + Math.floor(rng() * 2);
             for(let k=0; k<numFeatures; k++) {
-                const idx = Math.floor(terrainRng() * (segments - 2)) + 1;
+                const idx = Math.floor(rng() * (segments - 2)) + 1;
                 const p = points[idx];
+                const pNext = points[idx+1];
                 
                 if (p.heightRatio > 0.4) {
                     if (isLush) {
-                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'resort', scale: 0.7 + terrainRng()*0.5 });
-                        const treeType = 'tree_tri'; 
+                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'resort', scale: 0.7 + rng()*0.5 });
+                        
+                        const treeType = 'tree_tri'; // Mountains prefer triangular trees
                         trees.push({ segIdx: idx, offset: 0.4, w: 4, h: 10, type: treeType, color: '#166534' });
                         trees.push({ segIdx: idx, offset: 0.6, w: 4, h: 12, type: treeType, color: '#166534' });
                     } else if (isBarren) {
-                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'mining', scale: 0.8 + terrainRng()*0.4 });
+                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'mining', scale: 0.8 + rng()*0.4 });
                     }
                 }
-            }
-        }
-        
-        // Limited Windmill placement
-        if (hasWindmills && !isMountain && i >= 2 && windmillCount < 2) {
-            const chance = terrainRng();
-            if (chance > 0.8) {
-                // Pick a segment
-                const seg = Math.floor(terrainRng() * (segments - 2)) + 1;
-                trees.push({ segIdx: seg, offset: 0.5, w: 0, h: 0, type: 'windmill', scale: 0.8 + terrainRng()*0.4, windmillType: terrainRng() > 0.5 ? 'classic' : 'helical' });
-                windmillCount++;
+                
+                // Add Windmills on Lush Hills (Slope Check)
+                if (hasWindmills && !isMountain && i > 2) {
+                    const slope = Math.abs(p.heightRatio - pNext.heightRatio);
+                    if (slope > 0.05 && rng() > 0.6) {
+                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'windmill', scale: 0.8 + rng()*0.4, windmillType: rng() > 0.5 ? 'classic' : 'helical' });
+                    }
+                }
             }
         }
 
         if (isLush || isBarren) {
             for(let j=0; j<segments; j++) {
+                // Adjust density based on terrain
                 const densityChance = isLush ? 0.4 : 0.1;
-                if (terrainRng() < densityChance) {
-                    const clusterSize = 2 + Math.floor(terrainRng() * 3);
+                if (rng() < densityChance) {
+                    const clusterSize = 2 + Math.floor(rng() * 3);
                     for(let k=0; k<clusterSize; k++) {
-                        let treeType = 'tree_round'; 
+                        let treeType = 'tree_round'; // Default
+                        
                         if (isLush) {
-                            if (isMountain) treeType = 'tree_tri'; 
-                            else { treeType = terrainRng() > 0.5 ? 'tree_round' : 'tree_oval'; }
+                            if (isMountain) treeType = 'tree_tri'; // Triangular on lush mountains
+                            else {
+                                // Hills: Round or Oval
+                                treeType = rng() > 0.5 ? 'tree_round' : 'tree_oval';
+                            }
+                            // Snow/White special case
                             if (isWhite) treeType = 'pine';
                         } else if (isBarren) {
-                            treeType = terrainRng() > 0.6 ? 'cactus' : 'palm';
+                            // Desert/Barren: Cactus or Palm
+                            treeType = rng() > 0.6 ? 'cactus' : 'palm';
                         }
 
                         trees.push({ 
                             segIdx: j, 
-                            offset: terrainRng(), 
-                            w: 4 + terrainRng() * 4, 
-                            h: 10 + terrainRng() * 20, 
+                            offset: rng(), 
+                            w: 4 + rng() * 4, 
+                            h: 10 + rng() * 20, 
                             color: isLush ? '#166534' : '#15803d', 
                             trunkColor: '#78350f', 
                             type: treeType 
@@ -1043,34 +898,35 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
         }
 
         if (hasRoad) {
-            const cityStart = 0.2 + (terrainRng() * 0.1); 
+            const cityStart = 0.2 + (rng() * 0.1); 
             const density = 20; 
             for(let k=0; k<density; k++) {
-                if (terrainRng() > 0.4) {
-                    const xRatio = cityStart + (k/density * 0.6) + (terrainRng() * 0.02);
+                if (rng() > 0.4) {
+                    const xRatio = cityStart + (k/density * 0.6) + (rng() * 0.02);
                     const segIdx = Math.floor(xRatio * segments);
                     const p1 = points[segIdx] || points[points.length-1];
                     const p2 = points[segIdx+1] || p1;
                     const sub = (xRatio * segments) - segIdx;
                     const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
 
-                    if (hasDomes && (domeCount < 3 && (terrainRng() > 0.8 || (forceDome && !domePlaced && k > 15)))) {
+                    if (hasDomes && (domeCount < 3 && (rng() > 0.8 || (forceDome && !domePlaced && k > 15)))) {
                         domeCount++;
                         domePlaced = true;
-                        const domeContents = generateDomeContents(terrainRng);
-                        roadBuildingsBack.push({ xRatio, yBase, yOffset: 2, type: 'dome_std', scale: 0.7 + terrainRng() * 0.3, contents: domeContents });
+                        const domeContents = generateDomeContents(rng);
+                        roadBuildingsBack.push({ xRatio, yBase, yOffset: 2, type: 'dome_std', scale: 0.7 + rng() * 0.3, contents: domeContents });
                     } else if (isLush) {
-                        const w = 15 + terrainRng() * 15; const h = 30 + terrainRng() * 30; const winData = [];
+                        const w = 15 + rng() * 15; const h = 30 + rng() * 30; const winData = [];
                         const rows = Math.floor(h/8); const cols = Math.floor(w/6);
-                        for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(terrainRng()>0.3) winData.push({x: 2 + c*5, y: 4 + r*7, isLit: terrainRng()>0.5}); } }
+                        for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 2 + c*5, y: 4 + r*7, isLit: rng()>0.5}); } }
                         roadBuildingsBack.push({ xRatio, yBase, yOffset: -2, w, h, color: '#475569', type: 'building_std', drawFoundation: true, windowData: winData, windowW: 3, windowH: 5 });
-                    } else if (hasHangars && terrainRng() > 0.9) {
+                    } else if (hasHangars && rng() > 0.9) {
+                        // Rare hangar in background
                         roadBuildingsBack.push({ xRatio, yBase, yOffset: 0, type: 'hangar', w: 50, h: 25 });
                     }
                 }
             }
             for(let k=0; k<15; k++) {
-                if (terrainRng() > 0.3) { 
+                if (rng() > 0.3) { 
                     const xRatio = cityStart + (k/15 * 0.6);
                     const segIdx = Math.floor(xRatio * segments);
                     const p1 = points[segIdx] || points[points.length-1];
@@ -1078,16 +934,17 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
                     const sub = (xRatio * segments) - segIdx;
                     const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
 
-                    if (hasDomes && (domeCount < 3 && terrainRng() > 0.8)) {
+                    if (hasDomes && (domeCount < 3 && rng() > 0.8)) {
                          domeCount++;
-                         const domeContents = generateDomeContents(terrainRng);
-                         roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, type: 'dome_std', scale: 1.0 + terrainRng() * 0.4, contents: domeContents });
+                         const domeContents = generateDomeContents(rng);
+                         roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, type: 'dome_std', scale: 1.0 + rng() * 0.4, contents: domeContents });
                     } else if (isLush) {
-                        const w = 30 + terrainRng() * 20; const h = 50 + terrainRng() * 30; const winData = [];
+                        const w = 30 + rng() * 20; const h = 50 + rng() * 30; const winData = [];
                         const rows = Math.floor(h/10); const cols = Math.floor(w/8);
-                        for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(terrainRng()>0.3) winData.push({x: 4 + c*7, y: 6 + r*9, isLit: terrainRng()>0.5}); } }
-                        roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, w, h, color: '#64748b', type: 'building_std', windowData: winData, windowW: 4, windowH: 6, acUnits: terrainRng()>0.5 ? [{x: 5, w: 8, h: 4}] : [] });
-                    } else if (hasHangars && terrainRng() > 0.85) {
+                        for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 4 + c*7, y: 6 + r*9, isLit: rng()>0.5}); } }
+                        roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, w, h, color: '#64748b', type: 'building_std', windowData: winData, windowW: 4, windowH: 6, acUnits: rng()>0.5 ? [{x: 5, w: 8, h: 4}] : [] });
+                    } else if (hasHangars && rng() > 0.85) {
+                        // Foreground Hangar
                         roadBuildingsFront.push({ xRatio, yBase, yOffset: 10, type: 'hangar', w: 80, h: 40 });
                     }
                 }
@@ -1095,33 +952,36 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
         }
 
         if (hasTrainTrack) { 
-            trains.push({ layer: i, progress: terrainRng(), speed: 0.0005 + (terrainRng() * 0.0005), cars: 4 + Math.floor(terrainRng() * 3), color: '#ef4444', dir: terrainRng() > 0.5 ? 1 : -1 }); 
+            trains.push({ layer: i, progress: rng(), speed: 0.0005 + (rng() * 0.0005), cars: 4 + Math.floor(rng() * 3), color: '#ef4444', dir: rng() > 0.5 ? 1 : -1 }); 
         }
 
         hills.push({ layer: i, type: isMountain ? 'mountain' : 'hill', color: hillColors[i], points, trees, snowCaps, roadBuildingsBack, roadBuildingsFront, nearbyBuildings, cityBuildings, hasRoad, hasTrainTrack, parallaxFactor: 0.1 + (i * 0.15) });
     }
 
+    // Force dome if still not placed on a barren world (foreground backup)
     if (forceDome && !domePlaced) {
-        const domeX = (terrainRng() - 0.5) * 600;
-        const domeContents = generateDomeContents(terrainRng);
+        // Place one in features
+        const domeX = (rng() - 0.5) * 600;
+        const domeContents = generateDomeContents(rng);
         hills[4].nearbyBuildings.push({ xRatio: 0.5, yBase: 0.2, yOffset: 10, type: 'dome_std', scale: 1.5, contents: domeContents });
     }
 
     const features: any[] = [];
     const powerLines: any[] = [];
     
-    const towerX = (terrainRng()>0.5?1:-1) * 180; 
+    const towerX = (rng()>0.5?1:-1) * 180; 
     features.push({ x: towerX, type: 'tower', h: 160, w: 42, color: '#e2e8f0', yOff: 0, arms: [-130, -50] });
 
-    if (hasDomes && !isOcean && terrainRng() > 0.5) {
+    if (hasDomes && !isOcean && rng() > 0.5) {
         const domeX = -towerX * 0.8; 
-        const domeContents = generateDomeContents(terrainRng);
+        const domeContents = generateDomeContents(rng);
+        // Mark as foreground for closer domes
         features.push({ x: domeX, yOff: 20, type: 'dome_std', scale: 2.5, contents: domeContents, isForeground: true });
     }
 
     if (isOcean) {
         for(let i=0; i<3; i++) {
-            const domeContents = generateDomeContents(terrainRng);
+            const domeContents = generateDomeContents(rng);
             const isNearCenter = i === 0 || i === 1; 
             features.push({ 
                 x: (i%2===0?1:-1)*(400 + i*250), 
@@ -1132,15 +992,8 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
             });
         }
     } else {
-        const plantX = -towerX * 1.5;
-        // Replaced power plant with windmill if appropriate
-        if (hasWindmills && windmillCount < 3) {
-             features.push({ x: plantX, type: 'windmill', scale: 1.2, windmillType: terrainRng() > 0.5 ? 'classic' : 'helical' });
-             windmillCount++;
-        } else {
-             features.push({ x: plantX, type: 'power_plant', scale: 1.0, isUnderground: !isGreenish });
-        }
-        
+        const plantX = -towerX * 1.5; 
+        features.push({ x: plantX, type: 'power_plant', scale: 1.0, isUnderground: !isGreenish });
         const poleX = plantX + (plantX>0?80:-80);
         features.push({ x: poleX, type: 'power_pole', h: 140, isHighVoltage: true });
         
@@ -1156,83 +1009,16 @@ export const generatePlanetEnvironment = (planet: Planet, instanceSeed: number =
 
     const cars: any[] = [];
     if (hills[4]?.hasRoad) {
-        for(let i=0; i<5; i++) cars.push({ type: 'car', progress: terrainRng(), speed: 0.0003, color: '#ef4444', dir: terrainRng()>0.5?1:-1 });
-    }
-
-    // DELTA / NIGHT SKY EXTRAS
-    const skyWanderers: any[] = [];
-    if (planet.quadrant === QuadrantType.DELTA || !isDay) {
-        skyWanderers.push({ x: 0.2 + conditionRng() * 0.6, y: 0.2 + conditionRng() * 0.3, size: 3, color: '#ffffff' });
-        skyWanderers.push({ x: 0.2 + conditionRng() * 0.6, y: 0.2 + conditionRng() * 0.3, size: 5, color: planet.color }); 
-    }
-
-    // MOON LOGIC (UPDATED: Specific moon assignments for p10 and p12)
-    let skyMoon = null;
-    const isDelta = planet.quadrant === QuadrantType.DELTA;
-    
-    // DELTA QUADRANT MOONS - STRICT CORNER PLACEMENT
-    if (isDelta) {
-        // Position logic: "Corner of sky" means we want X/Y in range ~10-20%
-        // p10: Void Edge (1 Moon)
-        if (planet.id === 'p10') {
-            skyMoon = {
-                x: 0.1 + conditionRng() * 0.1,  // Top Left Corner
-                y: 0.1 + conditionRng() * 0.1, 
-                size: 3 + conditionRng() * 2,
-                phase: 0, 
-                color: '#a855f7' // Purplish
-            };
-        }
-        // p12: Omega Prime (1 or 2 Moons, never 3)
-        else if (planet.id === 'p12') {
-            const hasTwo = conditionRng() > 0.5;
-            skyMoon = {
-                x: 0.8 + conditionRng() * 0.1, // Top Right Corner
-                y: 0.15 + conditionRng() * 0.1, 
-                size: 2 + conditionRng() * 3,
-                phase: 0, 
-                color: '#94a3b8',
-                secondary: hasTwo ? { 
-                    x: 0.85 + conditionRng() * 0.1,
-                    y: 0.25 + conditionRng() * 0.1,
-                    size: 2 + conditionRng() * 1,
-                    phase: 0.5,
-                    color: '#f87171' 
-                } : null
-            };
-        }
-        // General Delta Night Moon (Low probability)
-        else if (!isDay && conditionRng() > 0.7) {
-             skyMoon = {
-                x: 0.15, 
-                y: 0.2, 
-                size: 4,
-                phase: 0, 
-                color: '#e2e8f0'
-            };
-        }
-    } 
-    // OTHER QUADRANTS (Standard logic)
-    else if (!isDay && planet.moons && planet.moons.length > 0) {
-        skyMoon = {
-            x: 0.1 + conditionRng() * 0.8, 
-            y: 0.1 + conditionRng() * 0.2, 
-            size: 15 + conditionRng() * 15,
-            phase: conditionRng() > 0.7 ? conditionRng() : 0, 
-            color: '#e2e8f0'
-        };
+        for(let i=0; i<5; i++) cars.push({ type: 'car', progress: rng(), speed: 0.0003, color: '#ef4444', dir: rng()>0.5?1:-1 });
     }
 
     return {
-        isDay: isDay && planet.quadrant !== QuadrantType.DELTA, // Force 'false' for Delta so dynamic logic takes over
-        isOcean, isReddish, isBluish, isGreenish, isBarren, isLush,
+        isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush,
         sunColor, skyGradient, cloudColor, hillColors,
         stars, clouds, hills, features, cars, trains,
         groundColor, powerLines,
         quadrant: planet.quadrant,
         weather: { isRainy, isStormy },
-        hasBirds,
-        skyWanderers,
-        skyMoon
+        hasBirds
     };
 };

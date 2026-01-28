@@ -572,24 +572,7 @@ export default function App() {
     const launchCost = 1.0;
     if (selectedFitting.fuel < launchCost) { audioService.playSfx('denied'); triggerSystemMessage("LAUNCH ABORTED: INSUFFICIENT FUEL RESERVES", 'error'); return; }
     setLaunchDestination('map'); 
-    
-    // Ensure we open the map in the quadrant where we are docked
-    const homeId = gameState.dockedPlanetId || 'p1';
-    const homePlanet = PLANETS.find(p => p.id === homeId);
-    const targetQuadrant = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA;
-
-    setGameState(prev => { 
-        const sId = prev.selectedShipInstanceId!; 
-        const fit = prev.shipFittings[sId]; 
-        return { 
-            ...prev, 
-            currentQuadrant: targetQuadrant,
-            shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: Math.max(0, fit.fuel - launchCost) } } 
-        }; 
-    });
-
-    if (gameState.settings.showTransitions) { setScreen('launch'); } 
-    else { setScreen('map'); audioService.playTrack('map'); }
+    if (gameState.settings.showTransitions) { setScreen('launch'); } else { setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: Math.max(0, fit.fuel - launchCost) } } }; }); setScreen('map'); audioService.playTrack('map'); }
   };
 
   const handleLaunchSequenceComplete = () => { setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: Math.max(0, fit.fuel - 1.0) } } }; }); if (launchDestination === 'map') { setScreen('map'); audioService.playTrack('map'); } else { setScreen('game'); audioService.playTrack('combat'); } };
@@ -608,23 +591,7 @@ export default function App() {
        const pEntry = { ...reg[currentPId] };
        let newMessages = [...prev.messages];
        if (success) { pEntry.wins += 1; pEntry.losses = 0; if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { pEntry.status = 'friendly'; pEntry.wins = 0; newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); } else { newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); } if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } } else { if (!aborted) { pEntry.losses += 1; if (pEntry.losses >= 1) { pEntry.losses = 0; const pIndex = PLANETS.findIndex(p => p.id === currentPId); if (pIndex > 0) { const prevPId = PLANETS[pIndex - 1].id; const prevEntry = { ...reg[prevPId] }; let regressionHappened = false; if (prevEntry.status === 'friendly') { prevEntry.status = 'siege'; regressionHappened = true; } else if (prevEntry.status === 'siege') { prevEntry.status = 'occupied'; regressionHappened = true; } if (regressionHappened) { reg[prevPId] = prevEntry; newMessages.unshift({ id: `loss_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, timestamp: Date.now() }); } } } } } reg[currentPId] = pEntry;
-       
-       // Calculate target quadrant if abort/fail
-       const homeId = prev.dockedPlanetId || 'p1';
-       const homePlanet = PLANETS.find(p => p.id === homeId);
-       const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA;
-
-       return { 
-           ...prev, 
-           credits: newCredits, 
-           shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, 
-           gameInProgress: false, 
-           planetRegistry: reg, 
-           messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), 
-           leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, 
-           currentQuadrant: success ? prev.currentPlanet!.quadrant : homeQuad, 
-           dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId 
-       };
+       return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
     });
     if (aborted) { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; const currentQuad = gameState.currentQuadrant; const showTrans = gameState.settings.showTransitions; if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } else { setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } } else { if (payload?.health > 0 && gameState.settings.showTransitions && success) { setScreen('landing'); } else { setScreen('hangar'); audioService.playTrack('command'); } }
   };
@@ -994,13 +961,7 @@ export default function App() {
               shipConfig={selectedShipConfig}
               onComplete={() => { 
                   const pid = gameState.currentPlanet?.id || 'p1';
-                  const planet = PLANETS.find(p => p.id === pid);
-                  // Update docked planet AND sync quadrant to match new location
-                  setGameState(p => ({ 
-                      ...p, 
-                      dockedPlanetId: pid,
-                      currentQuadrant: planet ? planet.quadrant : p.currentQuadrant 
-                  })); 
+                  setGameState(p => ({ ...p, dockedPlanetId: pid })); 
                   setScreen('hangar'); 
                   audioService.playTrack('command'); 
               }} 
