@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData, AmmoType } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
@@ -574,6 +573,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     capacitorLocked: false
   });
   
+  const [showExitDialog, setShowExitDialog] = useState(false);
+
   const inputRef = useRef({ main: false, secondary: false });
   const tiltRef = useRef({ beta: 0, gamma: 0 }); 
   const hasTiltRef = useRef(false);
@@ -634,7 +635,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     weaponCoolDownTimer: 0,
     // Burst Logic
     missileBurstCount: 0,
-    mineBurstCount: 0
+    mineBurstCount: 0,
+    isExitDialogOpen: false
   });
 
   const togglePause = (forceVal?: boolean) => {
@@ -650,6 +652,24 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           audioService.pauseMusic();
       } else {
           audioService.resumeMusic();
+      }
+  };
+
+  const handleExit = () => {
+      const s = state.current;
+      let finalHp = s.hp; let finalFuel = s.fuel;
+      if (s.criticalExposure > 0 || s.rescueMode) { finalHp = 10; finalFuel *= 0.5; }
+      
+      onGameOver(false, s.score, true, { health: finalHp, fuel: finalFuel, water: s.water, rockets: s.missiles, mines: s.mines, redMineCount: s.redMines, cargo: s.cargo, ammo: s.ammo, magazineCurrent: s.magazineCurrent, reloadTimer: s.reloadTimer });
+      
+      try {
+          if (window.history.length > 1) {
+              window.history.back();
+          } else {
+              window.close();
+          }
+      } catch (e) {
+          console.warn("Could not close window", e);
       }
   };
 
@@ -1044,9 +1064,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if(e.code === 'KeyP') { togglePause(); }
         if(e.code === 'Escape') {
             const s = state.current;
-            let finalHp = s.hp; let finalFuel = s.fuel;
-            if (s.criticalExposure > 0 || s.rescueMode) { finalHp = 10; finalFuel *= 0.5; }
-            onGameOver(false, s.score, true, { health: finalHp, fuel: finalFuel, water: s.water, rockets: s.missiles, mines: s.mines, redMineCount: s.redMines, cargo: s.cargo, ammo: s.ammo, magazineCurrent: s.magazineCurrent, reloadTimer: s.reloadTimer });
+            if (s.isExitDialogOpen) {
+                s.isExitDialogOpen = false;
+                setShowExitDialog(false);
+                togglePause(false);
+            } else {
+                s.isExitDialogOpen = true;
+                setShowExitDialog(true);
+                togglePause(true);
+            }
         }
         if(!state.current.paused && state.current.active && !state.current.rescueMode) {
             if(e.code === 'KeyB') fireRedMine(); 
@@ -2076,14 +2102,40 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     <div 
         className="relative w-full h-full bg-black overflow-hidden cursor-crosshair touch-none select-none"
         onPointerDown={handlePointerDown}
-        onClick={() => { if (state.current.paused) togglePause(false); }}
+        onClick={() => { if (state.current.paused && !state.current.isExitDialogOpen) togglePause(false); }}
     >
         <canvas ref={canvasRef} className="block w-full h-full" />
         
+        {showExitDialog && (
+            <div className="fixed inset-0 z-[6000] bg-black/80 flex items-center justify-center backdrop-blur-sm">
+                <div className="bg-zinc-900 border-2 border-red-500 p-8 rounded-xl flex flex-col items-center gap-6 shadow-[0_0_50px_rgba(220,38,38,0.5)] max-w-sm w-full">
+                    <h2 className="text-3xl font-black text-red-500 uppercase tracking-widest retro-font">GAME PAUSED</h2>
+                    <div className="flex flex-col w-full gap-3">
+                        <button 
+                            onClick={() => { 
+                                state.current.isExitDialogOpen = false; 
+                                setShowExitDialog(false); 
+                                togglePause(false); 
+                            }} 
+                            className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-widest rounded border border-emerald-400 transition-all shadow-lg"
+                        >
+                            RESUME
+                        </button>
+                        <button 
+                            onClick={handleExit} 
+                            className="w-full py-4 bg-zinc-800 hover:bg-red-900/50 text-zinc-400 hover:text-red-200 font-black uppercase tracking-widest rounded border border-zinc-600 hover:border-red-500 transition-all"
+                        >
+                            EXIT GAME
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
+
         {/* HUD LAYOUT */}
         <div className="absolute inset-0 pointer-events-none p-2 sm:p-4 flex flex-col justify-between z-10">
-            {/* PAUSE OVERLAY */}
-            {hud.isPaused && (
+            {/* PAUSE OVERLAY (Standard) - Only show if Exit Dialog is NOT open */}
+            {hud.isPaused && !showExitDialog && (
                 <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-none">
                     <h2 className="text-4xl md:text-6xl font-black text-white uppercase tracking-widest drop-shadow-lg mb-4 animate-pulse">GAME PAUSED</h2>
                     <p className="text-sm md:text-xl text-emerald-400 font-mono uppercase tracking-[0.2em] bg-black/80 px-4 py-2 rounded border border-emerald-500/50">Press P to Resume</p>

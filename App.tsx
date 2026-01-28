@@ -19,7 +19,7 @@ import WarpSequence from './components/WarpSequence.tsx';
 import GameEngine from './components/GameEngine.tsx';
 import { LandingScene } from './components/LandingScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_32'; 
+const SAVE_KEY = 'galactic_defender_beta_34'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -86,13 +86,23 @@ export default function App() {
       initialRegistry[p.id] = { id: p.id, status: i === 0 ? 'friendly' : p.status, wins: 0, losses: 0 };
     });
 
+    const initialMessage: GameMessage = { 
+        id: 'init', 
+        type: 'activity', 
+        category: 'system', 
+        pilotName: 'COMMAND', 
+        pilotAvatar: '🛰️', 
+        text: 'Welcome. Systems online.', 
+        timestamp: Date.now() 
+    };
+
     return {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
       currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
       marketListingsByPlanet: {}, marketRefreshes: {},
-      messages: [{ id: 'init', type: 'activity', category: 'system', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: 'Welcome. Systems online.', timestamp: Date.now() }],
+      messages: [initialMessage],
       leaderboard: [],
       planetOrbitOffsets: initialOffsets,
       universeStartTime: Date.now(),
@@ -175,7 +185,7 @@ export default function App() {
                 if (lostCount >= 4) msgText = "CRITICAL ALERT: OUTER RIM DEFENSES COLLAPSED DURING HYPER-SLEEP.";
                 if (updatedRegistry['p12'].status === 'occupied') msgText = "DELTA QUADRANT LOST. RECLAMATION REQUIRED.";
                 
-                const msg: any = {
+                const msg: GameMessage = {
                     id: `invasion_${now}`,
                     type: 'activity',
                     category: 'combat',
@@ -204,6 +214,45 @@ export default function App() {
 
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
+  
+  // Intro Pause State
+  const [isIntroPaused, setIsIntroPaused] = useState(false);
+
+  // Handle Escape key on Intro Screen
+  useEffect(() => {
+    if (screen !== 'intro') {
+        setIsIntroPaused(false);
+        return;
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.code === 'Escape') {
+            setIsIntroPaused(prev => {
+                const nextState = !prev;
+                if (nextState) {
+                    audioService.stop();
+                } else {
+                    audioService.playTrack('intro');
+                }
+                return nextState;
+            });
+        }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [screen]);
+
+  const handleIntroExit = () => {
+      try {
+          if (window.history.length > 1) {
+              window.history.back();
+          } else {
+              window.close();
+          }
+      } catch (e) {
+          console.warn("Could not close window", e);
+      }
+  };
 
   const handleProfileReset = (pilotName: string, pilotAvatar: string) => {
       const newState = createInitialState();
@@ -212,16 +261,16 @@ export default function App() {
       newState.pilotName = pilotName;
       newState.pilotAvatar = pilotAvatar;
       
-      const welcomeMsg = {
+      const welcomeMsg: GameMessage = {
           id: `reset_${Date.now()}`,
-          type: 'activity' as const,
-          category: 'system' as const,
+          type: 'activity',
+          category: 'system',
           pilotName: 'SYSTEM',
           pilotAvatar: '🔄',
           text: `IDENTITY RECONFIGURED. WELCOME, ${pilotName}. SIMULATION RESET.`,
           timestamp: Date.now()
       };
-      newState.messages = [welcomeMsg as any, ...newState.messages];
+      newState.messages = [welcomeMsg, ...newState.messages];
       
       setGameState(newState);
       setScreen('hangar');
@@ -446,18 +495,21 @@ export default function App() {
       const hasWelcomed = sessionStorage.getItem('has_welcomed_session');
       if (!hasWelcomed) {
           backendService.registerUser(gameState.pilotName).then(msg => {
-              setGameState(p => ({
-                  ...p,
-                  messages: [{
+              setGameState(p => {
+                  const newMessage: GameMessage = {
                       id: `sys_${Date.now()}`,
-                      type: 'activity' as const,
-                      category: 'system' as const,
+                      type: 'activity',
+                      category: 'system',
                       pilotName: 'SYSTEM',
                       pilotAvatar: '🛰️',
                       text: msg,
                       timestamp: Date.now()
-                  } as GameMessage, ...p.messages].slice(0, MAX_MESSAGE_HISTORY)
-              }));
+                  };
+                  return {
+                      ...p,
+                      messages: [newMessage, ...p.messages].slice(0, MAX_MESSAGE_HISTORY)
+                  };
+              });
               sessionStorage.setItem('has_welcomed_session', 'true');
           });
       }
@@ -770,52 +822,80 @@ export default function App() {
       <StarBackground />
       {screen === 'intro' && (
         <div className="relative w-full h-full flex items-center justify-center">
-          <StoryScene />
-          <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
-            
-            <div className="mb-12 text-center pointer-events-auto">
-                <h1 className={`retro-font text-4xl sm:text-6xl md:text-8xl lg:text-9xl text-emerald-500 animate-pulse drop-shadow-[0_0_20px_rgba(16,185,129,0.6)] leading-none text-center flex flex-col items-center`}>
-                    GALACTIC
-                    <span className={`block mt-2 md:mt-4 text-xl sm:text-3xl md:text-5xl lg:text-6xl text-orange-500 drop-shadow-[0_0_15px_rgba(249,115,22,0.8)]`}>FREELANCER</span>
-                </h1>
+          {/* Main Content or Pause Dialog */}
+          {isIntroPaused ? (
+              <div className="absolute inset-0 z-[6000] bg-black flex flex-col items-center justify-center p-4">
+                  <h1 className="retro-font text-3xl md:text-5xl text-emerald-500 mb-6 text-center uppercase tracking-widest drop-shadow-[0_0_15px_rgba(16,185,129,0.5)]">
+                      Galactic Freelancer
+                  </h1>
+                  <div className="text-zinc-400 font-mono text-center mb-12 max-w-md leading-relaxed tracking-wide text-sm md:text-base">
+                      Created by Sage-Code Laboratory using Gemini AI studio
+                  </div>
+                  <div className="flex gap-6">
+                      <button 
+                          onClick={handleIntroExit}
+                          className="px-8 py-4 bg-red-900/20 border-2 border-red-600 text-red-500 font-black uppercase tracking-[0.2em] hover:bg-red-900/40 hover:text-red-400 transition-all min-w-[140px] rounded"
+                      >
+                          Exit
+                      </button>
+                      <button 
+                          onClick={() => { setIsIntroPaused(false); audioService.playTrack('intro'); }}
+                          className="px-8 py-4 bg-emerald-900/20 border-2 border-emerald-600 text-emerald-500 font-black uppercase tracking-[0.2em] hover:bg-emerald-900/40 hover:text-emerald-400 transition-all min-w-[140px] rounded"
+                      >
+                          Resume
+                      </button>
+                  </div>
+              </div>
+          ) : (
+            <>
+              <StoryScene />
+              <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
                 
-            </div>
-
-            <div className={`flex flex-col ${uiStyles.spacing} pointer-events-auto ${uiStyles.container}`}>
-                <button 
-                  onClick={startNewGame}
-                  className={`w-full h-14 bg-zinc-900 border-2 border-emerald-500 text-emerald-400 font-black ${uiStyles.btn} tracking-[0.2em] uppercase overflow-hidden hover:bg-emerald-500 hover:text-black transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] flex items-center justify-center`}
-                >
-                  START MISSION
-                </button>
-
-                <button 
-                  onClick={resumeGame}
-                  className={`w-full h-14 bg-zinc-900 border border-zinc-600 text-zinc-400 font-black ${uiStyles.btn} tracking-[0.15em] uppercase hover:border-emerald-500 hover:text-emerald-400 transition-all duration-300 flex items-center justify-center`}
-                >
-                  RESUME MISSION
-                </button>
-
-                <div className="flex gap-4 w-full">
-                    <button 
-                      onClick={() => setIsManualOpen(true)}
-                      className={`flex-1 h-14 bg-zinc-900 border border-zinc-700 text-zinc-500 font-black ${uiStyles.btn} tracking-[0.1em] uppercase hover:border-zinc-400 hover:text-white transition-all duration-300 flex items-center justify-center`}
-                    >
-                      STORY
-                    </button>
-
-                    <button 
-                      onClick={() => setIsOptionsOpen(true)}
-                      className={`flex-1 h-14 bg-zinc-900 border border-zinc-700 text-zinc-500 font-black ${uiStyles.btn} tracking-[0.1em] uppercase hover:border-zinc-400 hover:text-white transition-all duration-300 flex items-center justify-center`}
-                    >
-                      OPTIONS
-                    </button>
+                <div className="mb-12 text-center pointer-events-auto">
+                    <h1 className={`retro-font text-4xl sm:text-6xl md:text-8xl lg:text-9xl text-emerald-500 animate-pulse drop-shadow-[0_0_20px_rgba(16,185,129,0.6)] leading-none text-center flex flex-col items-center`}>
+                        GALACTIC
+                        <span className={`block mt-2 md:mt-4 text-xl sm:text-3xl md:text-5xl lg:text-6xl text-orange-500 drop-shadow-[0_0_15px_rgba(249,115,22,0.8)]`}>FREELANCER</span>
+                    </h1>
+                    
                 </div>
-            </div>
 
-            <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 32 - January 2026</div>
+                <div className={`flex flex-col ${uiStyles.spacing} pointer-events-auto ${uiStyles.container}`}>
+                    <button 
+                      onClick={startNewGame}
+                      className={`w-full h-14 bg-zinc-900 border-2 border-emerald-500 text-emerald-400 font-black ${uiStyles.btn} tracking-[0.2em] uppercase overflow-hidden hover:bg-emerald-500 hover:text-black transition-all duration-300 shadow-[0_0_15px_rgba(16,185,129,0.3)] hover:shadow-[0_0_30px_rgba(16,185,129,0.6)] flex items-center justify-center`}
+                    >
+                      START MISSION
+                    </button>
 
-          </div>
+                    <button 
+                      onClick={resumeGame}
+                      className={`w-full h-14 bg-zinc-900 border border-zinc-600 text-zinc-400 font-black ${uiStyles.btn} tracking-[0.15em] uppercase hover:border-emerald-500 hover:text-emerald-400 transition-all duration-300 flex items-center justify-center`}
+                    >
+                      RESUME MISSION
+                    </button>
+
+                    <div className="flex gap-4 w-full">
+                        <button 
+                          onClick={() => setIsManualOpen(true)}
+                          className={`flex-1 h-14 bg-zinc-900 border border-zinc-700 text-zinc-500 font-black ${uiStyles.btn} tracking-[0.1em] uppercase hover:border-zinc-400 hover:text-white transition-all duration-300 flex items-center justify-center`}
+                        >
+                          STORY
+                        </button>
+
+                        <button 
+                          onClick={() => setIsOptionsOpen(true)}
+                          className={`flex-1 h-14 bg-zinc-900 border border-zinc-700 text-zinc-500 font-black ${uiStyles.btn} tracking-[0.1em] uppercase hover:border-zinc-400 hover:text-white transition-all duration-300 flex items-center justify-center`}
+                        >
+                          OPTIONS
+                        </button>
+                    </div>
+                </div>
+
+                <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 34 - January 2026</div>
+
+              </div>
+            </>
+          )}
         </div>
       )}
 
