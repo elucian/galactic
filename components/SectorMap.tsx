@@ -24,6 +24,11 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const [briefing, setBriefing] = useState<string>("");
   const [isLoadingBriefing, setIsLoadingBriefing] = useState(false);
 
+  // Sync internal state with prop changes (e.g. warping to new sector)
+  useEffect(() => {
+      setActiveQuadrant(currentQuadrant);
+  }, [currentQuadrant]);
+
   // Time & Animation Constants
   const elapsed = currentTime - universeStartTime;
   const SPEED_CONSTANT = 0.00005;

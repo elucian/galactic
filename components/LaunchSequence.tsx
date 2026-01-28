@@ -4,7 +4,7 @@ import { ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { audioService } from '../services/audioService.ts';
 import { LandingGear } from './LandingGear.tsx';
-import { getEngineCoordinates, generatePlanetEnvironment, drawCloud, drawVehicle, drawStreetLight, drawPlatform, drawTower, drawDome, drawBuilding, drawPowerPlant, drawBoulder, drawResort, drawMining, getShipHullWidths } from '../utils/drawingUtils.ts';
+import { getEngineCoordinates, generatePlanetEnvironment, drawCloud, drawVehicle, drawStreetLight, drawPlatform, drawTower, drawDome, drawBuilding, drawPowerPlant, drawBoulder, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning } from '../utils/drawingUtils.ts';
 import { SequenceStatusBar } from './SequenceStatusBar.tsx';
 
 interface LaunchSequenceProps {
@@ -84,7 +84,11 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
     accPos: 1.0,
     suspension: 0.8,
     legExtension: 1.0,
-    countdownFrame: -1
+    countdownFrame: -1,
+    // Weather States
+    rain: [] as {x: number, y: number, len: number, speed: number}[],
+    lightning: { active: false, x: 0, timer: 0 },
+    birdFlock: [] as {x: number, y: number, vx: number, vy: number, flap: number}[]
   });
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -113,6 +117,34 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               }
           }
       }
+      
+      // Init Birds Flock
+      if (env.hasBirds) {
+          const count = 5 + Math.floor(Math.random() * 5);
+          for(let i=0; i<count; i++) {
+              s.birdFlock.push({
+                  x: Math.random() * 2000 - 1000,
+                  y: 500 + Math.random() * 300,
+                  vx: (Math.random() > 0.5 ? 1 : -1) * (2 + Math.random() * 2),
+                  vy: (Math.random() - 0.5) * 0.5,
+                  flap: Math.random() * 10
+              });
+          }
+      }
+      
+      // Init Rain
+      if (env.weather?.isRainy) {
+          const count = 200;
+          for(let i=0; i<count; i++) {
+              s.rain.push({
+                  x: Math.random() * 2000 - 1000,
+                  y: Math.random() * 2000 - 1000,
+                  len: 10 + Math.random() * 20,
+                  speed: 15 + Math.random() * 5
+              });
+          }
+      }
+
   }, [env, planet]);
 
   useEffect(() => {
@@ -278,19 +310,30 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                   // Fade out clouds as we go higher
                   const altitudeFade = Math.min(1, Math.max(0, 1 - (s.viewY / 2000)));
 
-                  env.clouds.forEach(c => { 
+                  env.clouds.forEach((c: any) => { 
                       if (c.layer !== targetLayer) return; 
-                      // PARALLAX: Farthest (layer 0) moves least (0.1), closest (layer 3) moves most (1.0)
-                      const pFactor = 0.05 + (c.layer * 0.35); 
+                      
+                      // PARALLAX FIX:
+                      // Use very low values (0.0 to 0.1) to keep clouds moving roughly with the ground (quasi constant distance)
+                      // but slightly slower to indicate they are above the surface (background relative to surface).
+                      // 0.0 = Moves exactly with ground.
+                      // 0.1 = Moves 90% of ground speed (falls behind slightly).
+                      const parallaxMult = c.layer * 0.05; 
 
                       // NO WRAP - STRICT POSITIONING
-                      const relativeY = c.y - (s.viewY * (1 - pFactor));
-                      const cloudY = relativeY; // Already relative to ground origin (0,0) in world space
+                      // Cloud world Y is fixed. As viewY increases (we go up), cloud relative Y must decrease.
+                      // We subtract (viewY * speed) from cloudY.
+                      const relativeY = c.y - (s.viewY * parallaxMult);
+                      const cloudY = relativeY; 
                       const cloudX = (c.x + (s.frameCount * c.speed * c.direction)) % (w + 800) - 400; 
                       
+                      // Calculate opacity pulse
+                      const pulse = Math.sin((s.frameCount * 0.01) + (c.id || 0));
+                      const opacity = Math.max(0, Math.min(1, c.baseAlpha * (0.8 + 0.2 * pulse))) * altitudeFade;
+
                       // Only draw if within visible range
                       if (cloudY > -1000 && cloudY < 1000) {
-                          drawCloud(ctx, cloudX, cloudY, c.w, c.alpha * altitudeFade, c.color); 
+                          drawCloud(ctx, cloudX, cloudY, c.w, opacity, c.color); 
                       }
                   }); 
               } 
@@ -321,7 +364,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       });
                   }
 
-                  if (hill.roadBuildingsBack) { hill.roadBuildingsBack.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, drawFoundation: b.drawFoundation }, env.isDay, false); } }); }
+                  if (hill.roadBuildingsBack) { hill.roadBuildingsBack.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, drawFoundation: b.drawFoundation }, env.isDay, false); } }); }
 
                   if (hill.hasRoad && pathPoints.length > 0) {
                       ctx.beginPath(); pathPoints.forEach((p, idx) => { if(idx===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.strokeStyle = '#333'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.stroke(); ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.setLineDash([10, 10]); ctx.stroke(); ctx.setLineDash([]);
@@ -359,16 +402,43 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       }
                   }
 
-                  if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits }, env.isDay, false); } }); }
+                  if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits }, env.isDay, false); } }); }
 
                   if (hill.trees) {
                       hill.trees.forEach((t: any, tIdx: number) => {
                           const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1];
                           if (p1 && p2) {
                               const x1 = p1.xRatio * 3000 - 1500; const y1 = - (p1.heightRatio * 300) - yOff; const x2 = p2.xRatio * 3000 - 1500; const y2 = - (p2.heightRatio * 300) - yOff; const tx = x1 + (x2 - x1) * t.offset; let ty = y1 + (y2 - y1) * t.offset;
-                              if (t.type === 'resort') { drawResort(ctx, tx, ty, t.scale, env.isDay); }
+                              
+                              // Slope calculation for resort foundation
+                              // dx is segment width in pixels (x2 - x1)
+                              // dy is segment height in pixels (y2 - y1)
+                              // Resort logic: If slope causes > 8px drop from center, lower building and add foundation
+                              if (t.type === 'resort') {
+                                  // Estimated building half-width (scale * 30 base width)
+                                  const halfWidth = 30 * t.scale * 0.8; // 0.8 is distScale inside drawResort
+                                  const slope = (y2 - y1) / (x2 - x1);
+                                  const drop = Math.abs(slope * halfWidth);
+                                  
+                                  let drawY = ty;
+                                  let foundationH = 0;
+                                  
+                                  if (drop > 8) {
+                                      // Lower the building so the gap is exactly 8px on the floating side
+                                      // We need to shift Y down by (drop - 8)
+                                      const adjustment = drop - 8;
+                                      drawY = ty + adjustment;
+                                      foundationH = 8; // Max visual foundation per requirement
+                                  } else {
+                                      // Small slope, just fill gap
+                                      foundationH = drop;
+                                  }
+                                  
+                                  drawResort(ctx, tx, drawY, t.scale, env.isDay, foundationH); 
+                              }
+                              else if (t.type === 'windmill') { drawBuilding(ctx, { x: tx, y: ty, type: 'windmill', scale: t.scale, windmillType: t.windmillType }, env.isDay, false); }
                               else if (t.type === 'mining') { drawMining(ctx, tx, ty, t.scale); }
-                              else { drawBuilding(ctx, { x: tx, y: ty, type: t.type === 'pine' ? 'tree' : 'palm', w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false); }
+                              else { drawBuilding(ctx, { x: tx, y: ty, type: t.type, w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false); }
                           }
                       });
                   }
@@ -381,9 +451,22 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               // --- RENDER BACKGROUND PASS ---
               ctx.save(); ctx.translate(cx, worldY);
               
+              // LIGHTNING FLASH - Global flash
+              if (s.lightning.active) {
+                  const opacity = Math.min(1, s.lightning.timer / 10);
+                  ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.3})`;
+                  ctx.fillRect(-w, -h*2, w*2, h*4);
+              }
+
               // LAYER 0 (DISTANT) - BEHIND HILLS
               drawCloudsByLayer(0, ctx);
               
+              // Distant Lightning Bolt
+              if (s.lightning.active && s.lightning.timer > 5 && s.lightning.x) {
+                  const ly = -1200; // Sky height
+                  drawLightning(ctx, s.lightning.x, ly, 600);
+              }
+
               if (env.hills[0]) drawHillItem(env.hills[0], 0); if (env.hills[1]) drawHillItem(env.hills[1], 1);
               
               // LAYER 1 (MID) - BETWEEN HILLS
@@ -420,6 +503,79 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                   });
                   fgCtx.restore();
               }
+          }
+
+          // RAIN & BIRDS UPDATE
+          // Lightning Logic
+          if (env.weather?.isStormy) {
+              if (s.lightning.active) {
+                  s.lightning.timer--;
+                  if (s.lightning.timer <= 0) s.lightning.active = false;
+              } else if (Math.random() < 0.01) {
+                  s.lightning.active = true;
+                  s.lightning.timer = 15;
+                  s.lightning.x = (Math.random() - 0.5) * 2000;
+              }
+          }
+
+          // Render Rain (Foreground)
+          if (env.weather?.isRainy) {
+              const rainCtx = fgCtx || ctx;
+              rainCtx.strokeStyle = 'rgba(174, 194, 224, 0.5)';
+              rainCtx.lineWidth = 1;
+              rainCtx.beginPath();
+              
+              const rainSpeed = 25; // Base rain speed
+              
+              s.rain.forEach(drop => {
+                  // Move Drop
+                  drop.y += drop.speed;
+                  // Screen Wrap relative to camera movement
+                  // If camera moves up (s.worldSpeed > 0), drops move down faster
+                  // If camera is static, drops move down
+                  
+                  // Reset if out of bounds
+                  if (drop.y > 1000) {
+                      drop.y = -1200;
+                      drop.x = (Math.random() - 0.5) * 2000;
+                  }
+                  
+                  // Draw relative to camera center
+                  // worldY is the ground position. Rain falls in camera space mostly.
+                  // We simulate rain falling relative to camera by adding viewY offset modulo
+                  const visualY = ((drop.y + s.viewY) % 2200) - 1100 + (h/2);
+                  const visualX = drop.x + (w/2);
+                  
+                  if (visualY > -100 && visualY < h + 100) {
+                      rainCtx.moveTo(visualX, visualY);
+                      rainCtx.lineTo(visualX, visualY + drop.len);
+                  }
+              });
+              rainCtx.stroke();
+          }
+
+          // Render Birds
+          if (env.hasBirds && s.viewY < 1500) { // Only near ground
+              const birdCtx = fgCtx || ctx;
+              s.birdFlock.forEach(b => {
+                  // Move
+                  b.x += b.vx;
+                  b.y += b.vy;
+                  if (b.x > 1000) b.vx = -Math.abs(b.vx);
+                  if (b.x < -1000) b.vx = Math.abs(b.vx);
+                  if (b.y < 200) b.vy = Math.abs(b.vy);
+                  if (b.y > 800) b.vy = -Math.abs(b.vy);
+                  
+                  b.flap += 0.2;
+                  
+                  // Draw relative to ground
+                  const birdY = b.y + worldY; // WorldY is ground Y pos
+                  const birdX = b.x + cx;
+                  
+                  if (birdY > -50 && birdY < h + 50) {
+                      drawBird(birdCtx, birdX, birdY, 3, Math.sin(b.flap));
+                  }
+              });
           }
 
           if (dimFactor > 0) { ctx.fillStyle = `rgba(0,0,0,${dimFactor})`; ctx.fillRect(0, 0, w, h); }

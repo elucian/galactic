@@ -188,26 +188,175 @@ export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w
     ctx.restore();
 };
 
+export const drawBird = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, flap: number, color: string = '#000') => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    const wingY = flap * (size * 0.6); 
+    ctx.moveTo(-size, -wingY);
+    ctx.quadraticCurveTo(0, size * 0.3, size, -wingY);
+    ctx.stroke();
+    ctx.restore();
+};
+
+export const drawLightning = (ctx: CanvasRenderingContext2D, x: number, y: number, height: number, color: string = '#fff') => {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 15;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    let curX = x;
+    let curY = y;
+    const segments = 10;
+    const segH = height / segments;
+    
+    for(let i=0; i<segments; i++) {
+        curX += (Math.random() - 0.5) * 40;
+        curY += segH;
+        ctx.lineTo(curX, curY);
+        // Chance for a branch
+        if (Math.random() > 0.7 && i < segments - 2) {
+            ctx.save();
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(curX, curY);
+            ctx.lineTo(curX + (Math.random()-0.5)*30, curY + 30);
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+    ctx.stroke();
+    ctx.restore();
+};
+
+export const drawWindmill = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean, type: 'classic' | 'helical' = 'classic') => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    
+    // Pole
+    ctx.fillStyle = '#cbd5e1'; 
+    ctx.beginPath();
+    ctx.moveTo(-2, 0); ctx.lineTo(-1, -60); ctx.lineTo(1, -60); ctx.lineTo(2, 0);
+    ctx.fill();
+    
+    const time = Date.now() * 0.002;
+    
+    ctx.translate(0, -60);
+    
+    if (type === 'classic') {
+        // Hub
+        ctx.fillStyle = '#475569';
+        ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
+        
+        // Blades
+        ctx.rotate(time);
+        ctx.fillStyle = '#f1f5f9'; 
+        for(let i=0; i<3; i++) {
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.quadraticCurveTo(5, -10, 2, -40);
+            ctx.quadraticCurveTo(-2, -40, 0, 0);
+            ctx.fill();
+            ctx.rotate((Math.PI*2)/3);
+        }
+    } else {
+        // Helical (Vertical Axis)
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(-1, -20, 2, 40);
+        
+        const rotation = time * 2;
+        const width = 15;
+        const height = 30;
+        
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#f1f5f9';
+        
+        ctx.beginPath();
+        for(let i=0; i<=height; i+=2) {
+            const yPos = i - (height/2);
+            const xPos = Math.sin((i * 0.2) + rotation) * width;
+            if (i===0) ctx.moveTo(xPos, yPos);
+            else ctx.lineTo(xPos, yPos);
+        }
+        ctx.stroke();
+        
+        ctx.beginPath();
+        for(let i=0; i<=height; i+=2) {
+            const yPos = i - (height/2);
+            const xPos = Math.sin((i * 0.2) + rotation + Math.PI) * width;
+            if (i===0) ctx.moveTo(xPos, yPos);
+            else ctx.lineTo(xPos, yPos);
+        }
+        ctx.stroke();
+    }
+    
+    ctx.restore();
+};
+
 export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: boolean, isOcean: boolean) => {
     const { x, y, type, w, h, color, windowData, windowW, windowH, acUnits, hasRedRoof, hasBalcony, trunkColor, drawFoundation, isHighVoltage } = props;
     
     ctx.save();
     ctx.translate(x, y);
 
-    if (type === 'tree' || type === 'palm' || type === 'pine') {
-        const isPine = type === 'pine';
+    if (type === 'windmill') {
+        drawWindmill(ctx, 0, 0, props.scale || 1.0, isDay, props.windmillType || 'classic');
+    }
+    else if (type && (type.startsWith('tree') || type === 'palm' || type === 'pine' || type === 'cactus')) {
+        const isCactus = type === 'cactus';
         const isPalm = type === 'palm';
+        const isTri = type === 'tree_tri' || type === 'pine';
+        const isRound = type === 'tree_round';
+        const isOval = type === 'tree_oval';
         
-        if (isPine) {
+        if (isCactus) {
+            ctx.fillStyle = '#166534';
+            const stemW = Math.max(4, w * 0.5);
+            if(ctx.roundRect) {
+                ctx.beginPath(); ctx.roundRect(-stemW/2, -h, stemW, h, stemW/2); ctx.fill();
+            } else {
+                ctx.fillRect(-stemW/2, -h, stemW, h);
+            }
+            ctx.beginPath();
+            ctx.moveTo(-stemW/2, -h*0.4);
+            ctx.quadraticCurveTo(-stemW*3, -h*0.4, -stemW*3, -h*0.7);
+            ctx.lineTo(-stemW*3 + stemW, -h*0.7);
+            ctx.quadraticCurveTo(-stemW*3 + stemW, -h*0.5, -stemW/2, -h*0.3);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.moveTo(stemW/2, -h*0.6);
+            ctx.quadraticCurveTo(stemW*3, -h*0.6, stemW*3, -h*0.8);
+            ctx.lineTo(stemW*3 - stemW, -h*0.8);
+            ctx.quadraticCurveTo(stemW*3 - stemW, -h*0.65, stemW/2, -h*0.5);
+            ctx.fill();
+
+        } else if (isTri) {
             ctx.fillStyle = trunkColor || '#451a03';
             const trunkW = Math.max(2, w * 0.4);
-            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.2); // Trunk up
+            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.2); 
             ctx.fillStyle = color || '#166534';
+            
+            const topY = -h;
+            const bottomY = -h*0.2;
+            const halfBase = w;
+            const r = 3; 
+            
             ctx.beginPath();
-            ctx.moveTo(-w, -h*0.2); 
-            ctx.lineTo(0, -h); 
-            ctx.lineTo(w, -h*0.2);
+            ctx.moveTo(0, topY + r);
+            ctx.quadraticCurveTo(0, topY, r, topY + r*2); 
+            ctx.lineTo(halfBase - r, bottomY - r);
+            ctx.quadraticCurveTo(halfBase, bottomY, halfBase - r*2, bottomY);
+            ctx.lineTo(-halfBase + r*2, bottomY);
+            ctx.quadraticCurveTo(-halfBase, bottomY, -halfBase + r, bottomY - r);
+            ctx.lineTo(-r, topY + r*2);
+            ctx.quadraticCurveTo(0, topY, 0, topY + r);
             ctx.fill();
+
         } else if (isPalm) {
              ctx.strokeStyle = trunkColor || '#a16207';
              ctx.lineWidth = Math.max(2, w * 0.3);
@@ -226,8 +375,15 @@ export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: b
                  ctx.ellipse(0 + lx/2, -h + ly/2, w*1.5, w/2, angle, 0, Math.PI*2);
                  ctx.fill();
              }
+        } else if (isOval) {
+            ctx.fillStyle = trunkColor || '#451a03';
+            const trunkW = Math.max(2, w * 0.3);
+            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
+            ctx.fillStyle = color || '#16a34a';
+            ctx.beginPath();
+            ctx.ellipse(0, -h*0.65, w, h*0.45, 0, 0, Math.PI*2);
+            ctx.fill();
         } else {
-            // Standard tree
             ctx.fillStyle = trunkColor || '#451a03';
             const trunkW = Math.max(2, w * 0.4);
             ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
@@ -244,7 +400,6 @@ export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: b
         ctx.fillStyle = color || '#475569';
         ctx.fillRect(-w/2, -h, w, h);
         
-        // Windows
         if (windowData) {
             ctx.fillStyle = isDay ? '#0ea5e9' : '#facc15';
             windowData.forEach((wd: any) => {
@@ -260,7 +415,6 @@ export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: b
             });
         }
         
-        // AC Units
         if (acUnits) {
             ctx.fillStyle = '#94a3b8';
             acUnits.forEach((ac: any) => {
@@ -298,7 +452,6 @@ export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: b
         ctx.beginPath();
         ctx.ellipse(0, 0, hw/2, hh, 0, Math.PI, 0);
         ctx.fill();
-        // Door
         ctx.fillStyle = '#0f172a';
         ctx.beginPath();
         ctx.ellipse(0, 0, hw/3, hh*0.8, 0, Math.PI, 0);
@@ -318,82 +471,38 @@ export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f:
     ctx.translate(x, y);
     ctx.scale(scale, scale); 
 
-    // Foundation
     ctx.fillStyle = '#334155';
     ctx.beginPath(); ctx.moveTo(-r - 5, 0); ctx.lineTo(r + 5, 0); ctx.lineTo(r + 10, 40); ctx.lineTo(-r - 10, 40); ctx.fill();
     ctx.fillStyle = '#475569'; ctx.fillRect(-r - 5, -5, (r * 2) + 10, 10);
 
-    // Glass Clipping Area for Contents
-    // Keep this for generic items (trees, etc.) but handle buildings specially
     ctx.save();
     ctx.beginPath(); ctx.arc(0, 0, r - 2, Math.PI, 0); ctx.clip();
     const bgGrad = ctx.createLinearGradient(0, -r, 0, 0);
     bgGrad.addColorStop(0, 'rgba(148, 163, 184, 0.2)'); bgGrad.addColorStop(1, 'rgba(30, 41, 59, 0.6)'); ctx.fillStyle = bgGrad; ctx.fill();
 
-    // Internal Content
     if (f.contents) {
         f.contents.forEach((c: any, cIdx: number) => {
             if (c.type === 'dome_building') {
                 ctx.fillStyle = c.color || '#94a3b8'; 
-                
-                // Safe Padding Calculation for Diagonal Cut
-                // Building extends from x-w/2 to x+w/2.
-                // We need to find the ceiling height at these x-coords on the circle x^2 + y^2 = r^2
-                // We reduce r slightly (safeR) to provide padding.
                 const safeR = r - 8; 
-                
                 const bLeft = c.x - c.w/2;
                 const bRight = c.x + c.w/2;
-                
-                // Height limit (y is negative going up)
                 let limitY_L = -10; 
                 let limitY_R = -10;
-                
-                // Calculate y on circle: y = -sqrt(r^2 - x^2)
-                if (Math.abs(bLeft) < safeR) {
-                    limitY_L = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bLeft, 2));
-                }
-                if (Math.abs(bRight) < safeR) {
-                    limitY_R = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bRight, 2));
-                }
-                
-                // The requested height of the building
+                if (Math.abs(bLeft) < safeR) { limitY_L = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bLeft, 2)); }
+                if (Math.abs(bRight) < safeR) { limitY_R = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bRight, 2)); }
                 const targetH = -c.h;
-                
-                // The actual top corners are the lower (closer to 0) of target height or dome limit
-                // Since y is negative, we use Math.max to find the "lower" visual point (closer to 0)
                 const yL = Math.max(targetH, limitY_L);
                 const yR = Math.max(targetH, limitY_R);
-                
-                ctx.beginPath();
-                ctx.moveTo(bLeft, 0);
-                ctx.lineTo(bRight, 0);
-                
-                // Diagonal Top Logic
-                // We draw to the calculated limits. If they differ, it creates a diagonal cut.
-                ctx.lineTo(bRight, yR); 
-                ctx.lineTo(bLeft, yL); 
-                
-                ctx.closePath();
-                ctx.fill();
-
-                // Windows
+                ctx.beginPath(); ctx.moveTo(bLeft, 0); ctx.lineTo(bRight, 0); ctx.lineTo(bRight, yR); ctx.lineTo(bLeft, yL); ctx.closePath(); ctx.fill();
                 ctx.fillStyle = '#fef08a'; 
                 const winRows = Math.floor(c.h / 6); const winCols = Math.floor(c.w / 5); const winW = scale > 1.2 ? 3 : 2; const winH = scale > 1.2 ? 4 : 3;
-                
-                // Slope for window check: y = mx + k
-                const slope = (yR - yL) / (bRight - bLeft);
-                const k = yL - (slope * bLeft);
-
+                const slope = (yR - yL) / (bRight - bLeft); const k = yL - (slope * bLeft);
                 for(let i=0; i<winRows; i++) { 
                     for(let j=0; j<winCols; j++) { 
                         const wx = bLeft + 2 + (j*5);
                         const wy = -c.h + 2 + (i*6);
-                        
-                        // Check if window top is below the diagonal cut line (plus a margin)
-                        // wy (window top) needs to be > cut_y at wx
                         const cutY = (slope * wx) + k;
-                        
                         if (wy > cutY + 2) { 
                             const seed = (cIdx * 100) + (i * 10) + j + slowTime; 
                             const pseudoRand = Math.abs(Math.sin(seed * 12.9898)); 
@@ -401,9 +510,8 @@ export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f:
                         }
                     } 
                 }
-
             } else if (c.type === 'tree') {
-                drawBuilding(ctx, { x: c.x, y: 0, type: 'tree', w: c.w, h: c.h, color: '#16a34a', trunkColor: '#78350f' }, true, false);
+                drawBuilding(ctx, { x: c.x, y: 0, type: 'tree_round', w: c.w, h: c.h, color: '#16a34a', trunkColor: '#78350f' }, true, false);
             } else if (c.type === 'bush') {
                 ctx.fillStyle = '#15803d'; ctx.beginPath(); ctx.arc(c.x, 0, c.w, Math.PI, 0); ctx.fill();
                 if(c.flowers) { ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(c.x-2, -2, 1.5, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(c.x+2, -3, 1.5, 0, Math.PI*2); ctx.fill(); }
@@ -411,9 +519,7 @@ export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f:
                 ctx.fillStyle = cIdx % 2 === 0 ? '#ef4444' : '#facc15'; ctx.beginPath(); ctx.arc(c.x, -2, 1.5, 0, Math.PI*2); ctx.fill();
                 ctx.fillStyle = '#166534'; ctx.fillRect(c.x-0.5, -2, 1, 2);
             } else if (c.type === 'bird') {
-                const bx = c.x + Math.sin(time * 0.002 + cIdx) * 10; const by = c.y + Math.cos(time * 0.003 + cIdx) * 3;
-                ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(bx, by, 1, 0, Math.PI*2); ctx.fill();
-                ctx.strokeStyle = '#000'; ctx.lineWidth = 0.5; ctx.beginPath(); ctx.moveTo(bx-2, by-1); ctx.quadraticCurveTo(bx, by+1, bx+2, by-1); ctx.stroke();
+                drawBird(ctx, c.x + Math.sin(time * 0.002 + cIdx) * 10, c.y + Math.cos(time * 0.003 + cIdx) * 3, 2, Math.sin(time*0.02 + cIdx));
             } else if (c.type === 'butterfly') {
                 const bx = c.x + Math.sin(time * 0.005 + cIdx) * 15; const by = c.y - Math.abs(Math.sin(time * 0.01)) * 10;
                 ctx.fillStyle = cIdx % 2 === 0 ? '#3b82f6' : '#d946ef'; ctx.beginPath(); ctx.arc(bx, by, 1.5, 0, Math.PI*2); ctx.fill();
@@ -422,7 +528,6 @@ export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f:
     }
     ctx.restore();
 
-    // Glass Overlay (Drawn last to be on top of contents)
     const glass = ctx.createRadialGradient(-r*0.3, -r*0.5, 5, 0, 0, r);
     glass.addColorStop(0, 'rgba(255,255,255,0.4)'); glass.addColorStop(0.2, 'rgba(255,255,255,0.1)'); glass.addColorStop(1, 'rgba(255,255,255,0.0)');
     ctx.fillStyle = glass; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fill();
@@ -452,14 +557,26 @@ export const drawPowerPlant = (ctx: CanvasRenderingContext2D, x: number, y: numb
     ctx.restore();
 };
 
-export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean) => {
+export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean, foundationHeight: number = 0) => {
     ctx.save();
     ctx.translate(x, y);
     const distScale = scale * 0.8; ctx.scale(distScale, distScale);
     
-    // Deep foundation fix for uneven terrain
-    ctx.fillStyle = '#334155';
-    ctx.fillRect(-35, 0, 70, 80);
+    if (foundationHeight > 0) {
+        ctx.fillStyle = '#64748b'; 
+        ctx.fillRect(-32, 0, 64, foundationHeight);
+        
+        ctx.strokeStyle = '#475569'; 
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for(let fy = 0; fy <= foundationHeight; fy += 4) {
+            ctx.moveTo(-32, fy); ctx.lineTo(32, fy);
+        }
+        for(let fx = -32; fx <= 32; fx += 8) {
+            ctx.moveTo(fx, 0); ctx.lineTo(fx, foundationHeight);
+        }
+        ctx.stroke();
+    }
 
     ctx.fillStyle = '#e2e8f0'; ctx.fillRect(-30, -40, 60, 40);
     ctx.fillStyle = '#cbd5e1'; ctx.fillRect(-45, -30, 15, 30); ctx.fillRect(30, -30, 15, 30);
@@ -472,7 +589,15 @@ export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, 
     for(let r=0; r<3; r++) { const isLitL = isDay ? true : Math.random() > 0.4; const isLitR = isDay ? true : Math.random() > 0.4; ctx.fillStyle = isLitL ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(-40, -25 + (r*9), 4, 5); ctx.fillStyle = isLitR ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(35, -25 + (r*9), 4, 5); }
 
     ctx.fillStyle = '#475569'; ctx.fillRect(-45, 0, 90, 5);
-    const drawSimplePine = (tx: number, th: number) => { ctx.fillStyle = '#166534'; ctx.beginPath(); ctx.moveTo(tx, 5); ctx.lineTo(tx - 4, 5); ctx.lineTo(tx, 5 - th); ctx.lineTo(tx + 4, 5); ctx.fill(); };
+    const drawSimplePine = (tx: number, th: number) => { 
+        ctx.fillStyle = '#166534'; 
+        ctx.beginPath(); 
+        ctx.moveTo(tx, 5 - th);
+        ctx.quadraticCurveTo(tx+2, 5-th+2, tx + 4, 5); 
+        ctx.lineTo(tx - 4, 5); 
+        ctx.quadraticCurveTo(tx-2, 5-th+2, tx, 5 - th);
+        ctx.fill(); 
+    };
     drawSimplePine(-35, 15); drawSimplePine(-20, 12); drawSimplePine(20, 14); drawSimplePine(35, 16);
     ctx.restore();
 };
@@ -520,30 +645,46 @@ export const drawTower = (ctx: CanvasRenderingContext2D, x: number, y: number, f
 
 const generateDomeContents = (rng: () => number) => {
     const contents: any[] = [];
-    const numBuildings = 3 + Math.floor(rng() * 3); 
-    for (let i = 0; i < numBuildings; i++) {
-        const levels = [3, 6, 10][Math.floor(rng() * 3)];
-        const h = (levels * 6) + (rng() * 5); 
-        const w = 12 + (rng() * 15);
-        const x = (rng() * 120) - 60; 
-        contents.push({ type: 'dome_building', x, w, h, color: '#94a3b8', levels });
+    const r = 70; // safe radius
+    
+    // Background buildings
+    const bCount = 2 + Math.floor(rng() * 3);
+    for(let i=0; i<bCount; i++) {
+        contents.push({
+            type: 'dome_building',
+            x: (rng() - 0.5) * r * 1.5,
+            w: 15 + rng() * 15,
+            h: 20 + rng() * 30,
+            color: rng() > 0.5 ? '#cbd5e1' : '#94a3b8'
+        });
     }
-    for (let i = 0; i < 3 + Math.floor(rng()*3); i++) contents.push({ type: 'tree', x: (rng() * 140) - 70, w: 4 + rng()*3, h: 10 + rng()*10 });
-    for (let i = 0; i < 5 + Math.floor(rng()*8); i++) contents.push({ type: 'bush', x: (rng() * 150) - 75, w: 3 + rng()*3, h: 3 + rng()*2, flowers: rng() > 0.5 });
+    
+    // Vegetation
+    const vCount = 3 + Math.floor(rng() * 5);
+    for(let i=0; i<vCount; i++) {
+        const type = rng() > 0.6 ? 'tree' : (rng() > 0.3 ? 'bush' : 'flower');
+        contents.push({
+            type,
+            x: (rng() - 0.5) * r * 1.8,
+            w: 3 + rng() * 3,
+            h: 10 + rng() * 10,
+            flowers: rng() > 0.5
+        });
+    }
+    
+    // Life
     if (rng() > 0.3) {
-        for (let i = 0; i < 5; i++) contents.push({ type: 'flower', x: (rng() * 140) - 70 });
-        for (let i = 0; i < 3; i++) contents.push({ type: 'bird', x: (rng() * 100) - 50, y: -(rng() * 40) - 10 });
-        for (let i = 0; i < 3; i++) contents.push({ type: 'butterfly', x: (rng() * 100) - 50, y: -5 });
+        const lCount = 1 + Math.floor(rng() * 3);
+        for(let i=0; i<lCount; i++) {
+            contents.push({
+                type: rng() > 0.5 ? 'bird' : 'butterfly',
+                x: (rng() - 0.5) * r,
+                y: -10 - (rng() * 30)
+            });
+        }
     }
-    return contents.sort((a, b) => {
-        const score = (type: string) => {
-            if (type === 'dome_building') return 0;
-            if (type === 'tree') return 1;
-            if (type === 'bush') return 2;
-            return 3;
-        };
-        return score(a.type) - score(b.type);
-    });
+    
+    return contents;
 };
 
 export const generatePlanetEnvironment = (planet: Planet) => {
@@ -561,8 +702,15 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const isBarren = isReddish || ['#d97706', '#a16207', '#78350f'].includes(col) || isPurple; 
     const isLush = isGreenish || (isBluish && !isOcean && !isBarren && !isWhite); 
     
-    const hasWindmills = (isGreenish || isWhite) && rng() > 0.4;
     const hasTrains = rng() > 0.4;
+    const hasDomes = isBarren || rng() > 0.7;
+    const hasWindmills = isLush && rng() > 0.3;
+    const hasHangars = (isBarren || isLush) && rng() > 0.6;
+
+    // Weather Effects Logic
+    const isRainy = isLush && rng() > 0.7; // 30% chance rain on lush
+    const isStormy = isRainy && rng() > 0.5; // 50% chance thunder if rain
+    const hasBirds = isLush && !isRainy && rng() > 0.2; // Birds only on lush, non-rainy days
 
     let skyGradient = ['#000000', '#000000'];
     let cloudColor = '#ffffff';
@@ -574,6 +722,13 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     else if (isGreenish) { if (isDay) skyGradient = ['#0ea5e9', '#e0f2fe']; else skyGradient = ['#020617', '#0f172a']; cloudColor = '#ecfdf5'; sunColor = '#fef08a'; atmosphereColor = '#064e3b'; } 
     else if (isPurple) { if (isDay) skyGradient = ['#2e1065', '#a855f7']; else skyGradient = ['#0f0518', '#3b0764']; cloudColor = '#f3e8ff'; atmosphereColor = '#581c87'; } 
     else { if (isDay) skyGradient = ['#3f3f46', '#a1a1aa']; else skyGradient = ['#09090b', '#27272a']; atmosphereColor = '#27272a'; }
+
+    // Rain Override for Sky
+    if (isRainy) {
+        skyGradient[0] = mixColor(skyGradient[0], '#1f2937', 0.6); // Darker top
+        cloudColor = mixColor(cloudColor, '#4b5563', 0.5); // Grey clouds
+        sunColor = '#9ca3af'; // Dim sun
+    }
 
     if (isBarren && !isReddish) { const toxicColors = ['#fbcfe8', '#9ca3af', '#bef264']; cloudColor = toxicColors[Math.floor(rng() * toxicColors.length)]; }
 
@@ -591,17 +746,14 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     const stars = Array.from({ length: isDay ? 60 : 250 }).map(() => ({ x: rng(), y: rng(), size: rng() * 0.8 + 0.2, alpha: isDay ? 0.4 : (rng() * 0.5 + 0.5) }));
     
-    // CLOUDS - 3 STRICT LAYERS (Far, Mid, Close)
+    // CLOUDS - IMPROVED GENERATION
     const clouds: any[] = [];
     const windDir = rng() > 0.5 ? 1 : -1;
-    
-    // Scales: 0 (Far/Small) -> 2 (Close/Large)
     const layerScales = [0.25, 0.5, 0.9]; 
     const layerSpeeds = [0.05, 0.12, 0.25];
-    const layerAlphas = [0.95, 0.85, 0.6]; // Base alphas
+    const layerAlphas = [0.95, 0.85, 0.6]; 
     
-    // Y-offsets relative to ground (negative means up)
-    // Constrained to lower atmosphere
+    // Y-offsets: Extended range for "infinite" feeling
     const bandYCenters = [-1200, -800, -400]; 
 
     for (let l = 0; l < 3; l++) {
@@ -610,29 +762,37 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         const dir = l === 0 ? (rng() > 0.5 ? 1 : -1) : windDir;
         const center = bandYCenters[l];
 
-        // 3-5 clouds per band
-        const count = 3 + Math.floor(rng() * 3); 
+        // INCREASED COUNT: 15-20 clouds per layer
+        const count = 15 + Math.floor(rng() * 5); 
         for (let c = 0; c < count; c++) {
              const color = l === 0 ? mixColor(cloudColor, planet.color, 0.2) : cloudColor;
-             // Layer 2 gets variable transparency
              const alpha = l === 2 ? (0.3 + rng() * 0.5) : layerAlphas[l];
+             
+             // Spread clouds vertically much more
+             const ySpread = 1000;
              
              clouds.push({
                  x: (rng() * 4000) - 2000,
-                 y: center + (rng() * 400 - 200), // +/- 200 variance
+                 y: center + (rng() * ySpread - (ySpread/2)), 
                  w: (150 + rng() * 100) * scale,
+                 baseAlpha: alpha,
                  alpha: alpha,
                  speed: speed,
                  direction: dir,
                  layer: l,
-                 color: color
+                 color: color,
+                 id: c // For sin wave calculation
              });
         }
     }
 
     const hills = [];
     const trains: any[] = [];
-    let domeCount = 0; 
+    let domeCount = 0;
+    
+    // Check if we need to force a dome on barren planets
+    const forceDome = isBarren;
+    let domePlaced = false;
     
     for(let i=0; i<(isOcean?0:6); i++) {
         const points = [];
@@ -669,25 +829,61 @@ export const generatePlanetEnvironment = (planet: Planet) => {
             for(let k=0; k<numFeatures; k++) {
                 const idx = Math.floor(rng() * (segments - 2)) + 1;
                 const p = points[idx];
+                const pNext = points[idx+1];
+                
                 if (p.heightRatio > 0.4) {
                     if (isLush) {
                         trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'resort', scale: 0.7 + rng()*0.5 });
-                        trees.push({ segIdx: idx, offset: 0.4, w: 4, h: 10, type: isWhite ? 'pine' : 'tree', color: '#166534' });
-                        trees.push({ segIdx: idx, offset: 0.6, w: 4, h: 12, type: isWhite ? 'pine' : 'tree', color: '#166534' });
+                        
+                        const treeType = 'tree_tri'; // Mountains prefer triangular trees
+                        trees.push({ segIdx: idx, offset: 0.4, w: 4, h: 10, type: treeType, color: '#166534' });
+                        trees.push({ segIdx: idx, offset: 0.6, w: 4, h: 12, type: treeType, color: '#166534' });
                     } else if (isBarren) {
                         trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'mining', scale: 0.8 + rng()*0.4 });
+                    }
+                }
+                
+                // Add Windmills on Lush Hills (Slope Check)
+                if (hasWindmills && !isMountain && i > 2) {
+                    const slope = Math.abs(p.heightRatio - pNext.heightRatio);
+                    if (slope > 0.05 && rng() > 0.6) {
+                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'windmill', scale: 0.8 + rng()*0.4, windmillType: rng() > 0.5 ? 'classic' : 'helical' });
                     }
                 }
             }
         }
 
-        if (isLush) {
+        if (isLush || isBarren) {
             for(let j=0; j<segments; j++) {
-                if (rng() < 0.4) {
+                // Adjust density based on terrain
+                const densityChance = isLush ? 0.4 : 0.1;
+                if (rng() < densityChance) {
                     const clusterSize = 2 + Math.floor(rng() * 3);
                     for(let k=0; k<clusterSize; k++) {
-                        const treeType = (isMountain || isWhite) ? (isWhite ? 'pine' : 'tree') : (rng() > 0.7 ? 'palm' : 'tree');
-                        trees.push({ segIdx: j, offset: rng(), w: 4 + rng() * 4, h: 10 + rng() * 20, color: '#166534', trunkColor: '#78350f', type: treeType });
+                        let treeType = 'tree_round'; // Default
+                        
+                        if (isLush) {
+                            if (isMountain) treeType = 'tree_tri'; // Triangular on lush mountains
+                            else {
+                                // Hills: Round or Oval
+                                treeType = rng() > 0.5 ? 'tree_round' : 'tree_oval';
+                            }
+                            // Snow/White special case
+                            if (isWhite) treeType = 'pine';
+                        } else if (isBarren) {
+                            // Desert/Barren: Cactus or Palm
+                            treeType = rng() > 0.6 ? 'cactus' : 'palm';
+                        }
+
+                        trees.push({ 
+                            segIdx: j, 
+                            offset: rng(), 
+                            w: 4 + rng() * 4, 
+                            h: 10 + rng() * 20, 
+                            color: isLush ? '#166534' : '#15803d', 
+                            trunkColor: '#78350f', 
+                            type: treeType 
+                        });
                     }
                 }
             }
@@ -713,17 +909,19 @@ export const generatePlanetEnvironment = (planet: Planet) => {
                     const sub = (xRatio * segments) - segIdx;
                     const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
 
-                    if (isBarren) {
-                        if (domeCount < 3 && rng() > 0.8) {
-                            domeCount++;
-                            const domeContents = generateDomeContents(rng);
-                            roadBuildingsBack.push({ xRatio, yBase, yOffset: 2, type: 'dome_std', scale: 0.7 + rng() * 0.3, contents: domeContents });
-                        }
+                    if (hasDomes && (domeCount < 3 && (rng() > 0.8 || (forceDome && !domePlaced && k > 15)))) {
+                        domeCount++;
+                        domePlaced = true;
+                        const domeContents = generateDomeContents(rng);
+                        roadBuildingsBack.push({ xRatio, yBase, yOffset: 2, type: 'dome_std', scale: 0.7 + rng() * 0.3, contents: domeContents });
                     } else if (isLush) {
                         const w = 15 + rng() * 15; const h = 30 + rng() * 30; const winData = [];
                         const rows = Math.floor(h/8); const cols = Math.floor(w/6);
                         for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 2 + c*5, y: 4 + r*7, isLit: rng()>0.5}); } }
                         roadBuildingsBack.push({ xRatio, yBase, yOffset: -2, w, h, color: '#475569', type: 'building_std', drawFoundation: true, windowData: winData, windowW: 3, windowH: 5 });
+                    } else if (hasHangars && rng() > 0.9) {
+                        // Rare hangar in background
+                        roadBuildingsBack.push({ xRatio, yBase, yOffset: 0, type: 'hangar', w: 50, h: 25 });
                     }
                 }
             }
@@ -736,17 +934,18 @@ export const generatePlanetEnvironment = (planet: Planet) => {
                     const sub = (xRatio * segments) - segIdx;
                     const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
 
-                    if (isBarren) {
-                         if (domeCount < 3 && rng() > 0.8) {
-                             domeCount++;
-                             const domeContents = generateDomeContents(rng);
-                             roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, type: 'dome_std', scale: 1.0 + rng() * 0.4, contents: domeContents });
-                         }
+                    if (hasDomes && (domeCount < 3 && rng() > 0.8)) {
+                         domeCount++;
+                         const domeContents = generateDomeContents(rng);
+                         roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, type: 'dome_std', scale: 1.0 + rng() * 0.4, contents: domeContents });
                     } else if (isLush) {
                         const w = 30 + rng() * 20; const h = 50 + rng() * 30; const winData = [];
                         const rows = Math.floor(h/10); const cols = Math.floor(w/8);
                         for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 4 + c*7, y: 6 + r*9, isLit: rng()>0.5}); } }
                         roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, w, h, color: '#64748b', type: 'building_std', windowData: winData, windowW: 4, windowH: 6, acUnits: rng()>0.5 ? [{x: 5, w: 8, h: 4}] : [] });
+                    } else if (hasHangars && rng() > 0.85) {
+                        // Foreground Hangar
+                        roadBuildingsFront.push({ xRatio, yBase, yOffset: 10, type: 'hangar', w: 80, h: 40 });
                     }
                 }
             }
@@ -759,13 +958,21 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         hills.push({ layer: i, type: isMountain ? 'mountain' : 'hill', color: hillColors[i], points, trees, snowCaps, roadBuildingsBack, roadBuildingsFront, nearbyBuildings, cityBuildings, hasRoad, hasTrainTrack, parallaxFactor: 0.1 + (i * 0.15) });
     }
 
+    // Force dome if still not placed on a barren world (foreground backup)
+    if (forceDome && !domePlaced) {
+        // Place one in features
+        const domeX = (rng() - 0.5) * 600;
+        const domeContents = generateDomeContents(rng);
+        hills[4].nearbyBuildings.push({ xRatio: 0.5, yBase: 0.2, yOffset: 10, type: 'dome_std', scale: 1.5, contents: domeContents });
+    }
+
     const features: any[] = [];
     const powerLines: any[] = [];
     
     const towerX = (rng()>0.5?1:-1) * 180; 
     features.push({ x: towerX, type: 'tower', h: 160, w: 42, color: '#e2e8f0', yOff: 0, arms: [-130, -50] });
 
-    if (isBarren && !isOcean) {
+    if (hasDomes && !isOcean && rng() > 0.5) {
         const domeX = -towerX * 0.8; 
         const domeContents = generateDomeContents(rng);
         // Mark as foreground for closer domes
@@ -810,6 +1017,8 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         sunColor, skyGradient, cloudColor, hillColors,
         stars, clouds, hills, features, cars, trains,
         groundColor, powerLines,
-        quadrant: planet.quadrant
+        quadrant: planet.quadrant,
+        weather: { isRainy, isStormy },
+        hasBirds
     };
 };
