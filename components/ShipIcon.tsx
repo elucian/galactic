@@ -284,7 +284,9 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
             const jetY = eng.y + eng.h + nozzleH;
             const jetW = eng.w * 0.8;
             const jetX = eng.x - (jetW / 2);
-            const length = jetType === 'combustion' ? 60 : 75;
+            
+            // "Hot Plasma Triangular Elongated with Blurry Margins Bright Blue" logic for 'ion'
+            const length = jetType === 'combustion' ? 60 : 160; // Elongated for Ion
             
             ctx.beginPath();
             ctx.moveTo(jetX, jetY);
@@ -293,14 +295,18 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
             
             const grad = ctx.createLinearGradient(jetX, jetY, jetX, jetY + length);
             if (jetType === 'combustion') {
+                ctx.shadowBlur = 0;
                 grad.addColorStop(0, '#ffffff'); 
                 grad.addColorStop(0.2, '#facc15'); 
                 grad.addColorStop(0.6, '#ef4444'); 
                 grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
             } else {
-                grad.addColorStop(0, '#ffffff'); 
-                grad.addColorStop(0.2, '#60a5fa'); 
-                grad.addColorStop(0.6, '#3b82f6'); 
+                // Hot Plasma Effect
+                ctx.shadowColor = '#3b82f6';
+                ctx.shadowBlur = 20; // Blurry margins
+                grad.addColorStop(0, '#ffffff'); // Hot Core
+                grad.addColorStop(0.1, '#93c5fd'); // Very light blue
+                grad.addColorStop(0.4, '#3b82f6'); // Bright Blue
                 grad.addColorStop(1, 'rgba(59, 130, 246, 0)');
             }
             

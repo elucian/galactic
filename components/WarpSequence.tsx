@@ -387,6 +387,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
                 engineColor={shipColors.engines}
                 nozzleColor={shipColors.nozzles}
                 showJets={true}
+                jetType="ion"
                 className="w-full h-full drop-shadow-[0_0_15px_rgba(34,211,238,0.3)]"
                 weaponId={weaponId}
                 equippedWeapons={equippedWeapons}

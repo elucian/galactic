@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 32
-// VERSION: Beta 32 - Restored Baseline
+// CHECKPOINT: Beta 34
+// VERSION: Beta 34 - Restored Baseline
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;

@@ -480,7 +480,7 @@ class AudioService {
       seqMaster.gain.value = 1.0; 
       seqMaster.connect(this.sfxGain);
 
-      // 1. RUMBLE: Sawtooth Oscillator (Bass)
+      // 1. RUMBLE: Sawtooth Oscillator (Bass) -> INCREASED VOLUME
       const osc1 = this.ctx.createOscillator();
       osc1.type = 'sawtooth';
       osc1.frequency.setValueAtTime(50, now);
@@ -488,17 +488,17 @@ class AudioService {
       
       const rumbleFilter = this.ctx.createBiquadFilter();
       rumbleFilter.type = 'lowpass';
-      rumbleFilter.frequency.value = 400;
+      rumbleFilter.frequency.value = 400; // Allow more roar
 
       const rumbleGain = this.ctx.createGain();
-      rumbleGain.gain.value = 0.6; 
+      rumbleGain.gain.value = 1.0; // Boosted from 0.6
       
       osc1.connect(rumbleFilter);
       rumbleFilter.connect(rumbleGain);
       rumbleGain.connect(seqMaster);
       osc1.start(now);
 
-      // 2. ROAR: Filtered Noise (Thrust)
+      // 2. ROAR: Filtered Noise (Thrust) -> DECREASED HISS
       // Safety Check: Generate buffer if missing
       if (!this.noiseBuffer) {
           const bufferSize = this.ctx.sampleRate * 2;
@@ -514,10 +514,10 @@ class AudioService {
       const noiseFilter = this.ctx.createBiquadFilter();
       noiseFilter.type = 'lowpass';
       noiseFilter.frequency.setValueAtTime(100, now);
-      noiseFilter.frequency.exponentialRampToValueAtTime(2500, now + 8); 
+      noiseFilter.frequency.exponentialRampToValueAtTime(800, now + 8); // Capped at 800 (was 2500) to reduce hiss
       
       const noiseGain = this.ctx.createGain();
-      noiseGain.gain.value = 0.8;
+      noiseGain.gain.value = 0.3; // Reduced from 0.8
       
       noiseNode.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
@@ -557,7 +557,7 @@ class AudioService {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.noiseBuffer) return;
       const now = this.ctx.currentTime;
 
-      // 1. Hover Tone (Pulsing Sci-Fi Hum)
+      // 1. Hover Tone (Pulsing Sci-Fi Hum) -> BOOSTED
       const osc = this.ctx.createOscillator();
       osc.type = 'triangle'; // Smoother than saw
       osc.frequency.setValueAtTime(100, now); 
@@ -580,13 +580,13 @@ class AudioService {
       oscGain.connect(this.sfxGain);
       osc.start(now);
 
-      // 2. Gas Hiss (High Pass Noise - No Growl)
+      // 2. Gas Hiss (High Pass Noise - No Growl) -> REDUCED
       const noiseSrc = this.ctx.createBufferSource();
       noiseSrc.buffer = this.noiseBuffer;
       noiseSrc.loop = true;
 
       const noiseFilter = this.ctx.createBiquadFilter();
-      noiseFilter.type = 'highpass'; // Removes low-end rumble/growl
+      noiseFilter.type = 'highpass'; 
       noiseFilter.frequency.value = 1000; 
 
       const noiseGain = this.ctx.createGain();
@@ -605,14 +605,14 @@ class AudioService {
       const now = this.ctx.currentTime;
       
       const targetPitch = 80 + (intensity * 100);
-      const targetVol = intensity * 0.3;
+      const targetVol = intensity * 0.8; // Boosted from 0.3
       
       this.landingNodes.osc.frequency.setTargetAtTime(targetPitch, now, 0.1);
       this.landingNodes.oscGain.gain.setTargetAtTime(targetVol, now, 0.1);
       
       this.landingNodes.lfo.frequency.setTargetAtTime(10 + (intensity * 20), now, 0.1);
 
-      const hissVol = intensity * 0.2;
+      const hissVol = intensity * 0.1; // Reduced from 0.2
       this.landingNodes.noiseGain.gain.setTargetAtTime(hissVol, now, 0.1);
   }
 
