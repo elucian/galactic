@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData, AmmoType } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
@@ -6,7 +7,7 @@ import { getEngineCoordinates, getWingMounts } from '../utils/drawingUtils.ts';
 
 // --- CONFIGURATION ---
 const ASTEROID_VARIANTS = [
-    { color: '#3b82f6', type: 'ice', loot: ['water', 'fuel', 'energy'] }, 
+    { color: '#3b82f6', type: 'ice', loot: ['water', 'fuel'] }, // Removed 'energy'
     { color: '#e2e8f0', type: 'platinum', loot: ['platinum', 'titanium', 'silver'] }, 
     { color: '#6b7280', type: 'rock', loot: ['iron', 'copper', 'chromium', 'titanium'] }, 
     { color: '#78350f', type: 'copper', loot: ['copper', 'iron'] }, 
@@ -130,7 +131,8 @@ class Asteroid {
     const variant = ASTEROID_VARIANTS.find(v => v.type === selectedType) || ASTEROID_VARIANTS[2]; 
     this.color = variant.color;
 
-    if (this.size > 30 && Math.random() < 0.1) {
+    // Drop Rate: 80%
+    if (Math.random() > 0.8) {
         this.loot = null;
     } else {
         const lootType = variant.loot[Math.floor(Math.random() * variant.loot.length)];
@@ -142,7 +144,12 @@ class Asteroid {
         if (lootType === 'energy') { finalType = 'energy'; capType = 'Energy Cell'; }
 
         if (['water', 'fuel', 'gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium', 'energy'].includes(finalType)) {
-            this.loot = { type: finalType, name: capType, quantity: 1 };
+            // Special rules for blue (ice) asteroids
+            let qty = 1;
+            if (variant.type === 'ice' && finalType === 'water') qty = 5;
+            if (variant.type === 'ice' && finalType === 'fuel') qty = 2;
+            
+            this.loot = { type: finalType, name: capType, quantity: qty };
         } else {
             this.loot = { type: 'goods', name: capType, quantity: 1 };
         }
@@ -756,18 +763,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   
   const getCapacitorBeamState = (chargeLevel: number) => {
       let color = '#ef4444'; 
-      let lengthMult = 1.0; 
-      
+      // This is now purely for color, lengthMult is handled in fireSalvoShot
       if (chargeLevel > 80) {
           color = '#e0f2fe'; 
-          lengthMult = 2.5;
       } else if (chargeLevel > 40) {
           color = '#facc15'; 
-          lengthMult = 1.8;
-      } else {
-          lengthMult = 1.0; 
       }
-      return { color, lengthMult };
+      return { color };
   };
 
   const fireSalvoShot = () => { 
@@ -775,8 +777,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const mainWeapon = activeShip.fitting.weapons[0]; 
       const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null; 
       const baseDamage = mainDef ? mainDef.damage : 45; 
-      const dmg = baseDamage * 10.0; 
       
+      // Logarithmic Power Scaling: 1x to 5x
+      // Math.log(1) = 0, Math.log(101) ~ 4.615. Ratio is 0 to 1.
+      const powerFactor = Math.log(s.capacitor + 1) / Math.log(101); 
+      const damageMult = 1.0 + 4.0 * powerFactor; 
+      const dmg = baseDamage * damageMult; 
+      
+      // Length Scaling: 1x to 2x
+      const lengthMult = 1.0 + 1.0 * powerFactor;
+
       let powerCost = 10;
       if (mainDef?.id === 'exotic_star_shatter') powerCost = 100/12; 
       if (mainDef?.id === 'exotic_phaser_sweep') powerCost = 25; 
@@ -797,8 +807,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           const isOcto = mainDef.id === 'exotic_octo_burst';
           const isPhaser = mainDef.id === 'exotic_phaser_sweep';
 
+          // Base Dimensions
           let w = 6;
-          let h = 16;
+          let h = 12; // Standard base height
           let grow = EXP_GROWTH_RATE; 
           let speed = 20; 
           const life = 60;
@@ -842,8 +853,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           }
           else if (isPhaser) { 
               type = 'laser';
-              w = 5; h = 120; speed = 32; 
+              w = 5; h = 40; // Base height reduced from 120 to match logic
+              speed = 32; 
               color = '#d946ef'; 
+          }
+
+          // Apply Dynamic Scaling
+          if (isPhaser || isElectric) {
+              // Laser types mainly scale in length/height
+              h = h * lengthMult;
+          } else {
+              // Projectiles scale both dimensions slightly for mass feel, but mainly height for "length"
+              w = w * (1 + 0.5 * powerFactor);
+              h = h * lengthMult;
           }
 
           const spawnY = s.py - 30 - (h / 2);
@@ -870,14 +892,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               isMulticolor: isMulti
           });
           
-          if (isPhaser) audioService.playWeaponFire('exotic_power', 0); 
+          if (isPhaser) audioService.playWeaponFire('phaser', 0); 
           else audioService.playWeaponFire('exotic_power', 0);
       } else { 
           const beamState = getCapacitorBeamState(s.capacitor);
           const baseW = 4; 
-          const baseH = 25 * beamState.lengthMult; 
-          const width = baseW * 1.4; 
-          const height = baseH * 3; 
+          const baseH = 25; 
+          
+          const width = baseW * (1 + 0.4 * powerFactor); // Slight width increase
+          const height = baseH * lengthMult; 
           const color = beamState.color;
 
           const spawnY = s.py - 30 - (height / 2);
@@ -1391,16 +1414,37 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         audioService.playExplosion(e.x, 3.0, 'boss');
                         createExplosion(e.x, e.y, '#a855f7', 30, 'boss');
                         setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
-                        const rand = Math.random(); let lootType = ''; let lootId = ''; let quantity = 1; let name = '';
-                        if (rand < 0.2) { const w = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)]; lootType = 'weapon'; lootId = w.id; name = w.name; } 
-                        else if (rand < 0.4) { const sh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)]; lootType = 'shield'; lootId = sh.id; name = sh.name; } 
-                        else if (rand < 0.6) { lootType = 'missile'; quantity = 100; name = 'Missile Pack'; } 
-                        else if (rand < 0.8) { lootType = 'mine'; quantity = 100; name = 'Mine Pack'; } 
-                        else { const ammos = ['iridium', 'tungsten', 'explosive']; const selected = ammos[Math.floor(Math.random() * ammos.length)]; lootType = 'ammo'; lootId = selected; quantity = 5000; name = 'Heavy Ammo Crate'; }
-                        spawnLoot(e.x, e.y, 0, lootType, lootId, name, quantity);
+                        
+                        // Boss Drop: 2 Drops, Pack of missiles/mines, exotic weapon/shield
+                        for (let k=0; k<2; k++) {
+                            const rand = Math.random();
+                            let lootType = ''; let lootId = ''; let quantity = 1; let name = '';
+                            if (rand < 0.25) { 
+                                const w = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)]; 
+                                lootType = 'weapon'; lootId = w.id; name = w.name; 
+                            } else if (rand < 0.5) { 
+                                const sh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)]; 
+                                lootType = 'shield'; lootId = sh.id; name = sh.name; 
+                            } else if (rand < 0.75) { 
+                                lootType = 'missile'; quantity = 50; name = 'Missile Pack'; 
+                            } else { 
+                                lootType = 'mine'; quantity = 50; name = 'Mine Pack'; 
+                            }
+                            spawnLoot(e.x + (k*40)-20, e.y, 0, lootType, lootId, name, quantity);
+                        }
                     } else {
                         audioService.playExplosion(e.x, 1.0, 'normal');
                         s.score += 100 * difficulty;
+                        // Enemy Drop: 50% chance, Ammo (100) or Energy Pack
+                        if (Math.random() < 0.5) {
+                            if (Math.random() < 0.5) {
+                                spawnLoot(e.x, e.y, 0, 'energy', 'energy', 'Energy Pack', 1);
+                            } else {
+                                const ammos = ['iron', 'titanium', 'cobalt', 'iridium', 'tungsten', 'explosive'];
+                                const selected = ammos[Math.floor(Math.random() * ammos.length)];
+                                spawnLoot(e.x, e.y, 0, 'ammo', selected, 'Ammo Box', 100);
+                            }
+                        }
                     }
                 }
                 s.enemies.splice(i, 1);
@@ -1650,13 +1694,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             else { l.isBeingPulled = false; l.y += 2 * worldSpeedFactor; l.x += l.vx; l.y += l.vy; }
             if (dist < 30) {
                 l.isPulled = true; audioService.playSfx('buy');
-                if (l.type === 'fuel') { s.fuel = Math.min(maxFuel, s.fuel + 1.0); setHud(h => ({...h, alert: "+FUEL", alertType: 'success'})); }
-                else if (l.type === 'water') { s.water = Math.min(maxWater, s.water + 20); setHud(h => ({...h, alert: "+WATER", alertType: 'success'})); }
+                if (l.type === 'fuel') { s.fuel = Math.min(maxFuel, s.fuel + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} FUEL`, alertType: 'success'})); }
+                else if (l.type === 'water') { s.water = Math.min(maxWater, s.water + (l.quantity || 20)); setHud(h => ({...h, alert: `+${l.quantity || 20} WATER`, alertType: 'success'})); }
                 else if (l.type === 'energy') { s.energy = Math.min(maxEnergy, s.energy + 200); setHud(h => ({...h, alert: "+ENERGY", alertType: 'success'})); }
                 else if (l.type === 'repair' || l.type === 'nanite') { s.hp = Math.min(100, s.hp + 10); setHud(h => ({...h, alert: "+HULL REPAIR", alertType: 'success'})); }
                 else if (l.type === 'missile') { s.missiles = Math.min(10, s.missiles + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} MISSILES`, alertType: 'success'})); }
                 else if (l.type === 'mine') { s.mines = Math.min(10, s.mines + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} MINES`, alertType: 'success'})); }
-                else if (l.type === 'ammo') { const ammoId = l.id as any; if (ammoId) { s.ammo[ammoId] = (s.ammo[ammoId] || 0) + ((l.quantity || 1) * 1000); setHud(h => ({...h, alert: `+${l.quantity || 1} AMMO UNITS`, alertType: 'success'})); } }
+                else if (l.type === 'ammo') { const ammoId = l.id as any; if (ammoId) { s.ammo[ammoId] = (s.ammo[ammoId] || 0) + (l.quantity || 100); setHud(h => ({...h, alert: `+${l.quantity || 100} AMMO UNITS`, alertType: 'success'})); } }
                 else if (l.type === 'weapon' || l.type === 'shield') { const newItem: CargoItem = { instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, type: l.type as any, id: l.id, name: l.name || 'Unknown', quantity: l.quantity || 1, weight: 1 }; s.cargo.push(newItem); setHud(h => ({...h, alert: `LOOT ACQUIRED: ${l.name}`, alertType: 'success'})); }
                 else if (['gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium', 'tungsten', 'goods', 'robot', 'drug', 'medicine', 'food', 'equipment', 'part', 'luxury'].includes(l.type)) { const itemId = l.id || l.type; const qty = l.quantity || 1; const existingItem = s.cargo.find(c => c.id === itemId); if (existingItem) { existingItem.quantity += qty; } else { s.cargo.push({ instanceId: `loot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, type: l.type as any, id: itemId, name: l.name || itemId.toUpperCase(), quantity: qty, weight: 1 }); } setHud(h => ({...h, alert: `+${qty} ${l.name || l.type.toUpperCase()}`, alertType: 'success'})); }
                 else { s.score += 500; }

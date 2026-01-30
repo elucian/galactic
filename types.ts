@@ -53,6 +53,7 @@ export interface Weapon {
   beamColor?: string;
   barrelCount?: number; // 1, 3, or 6
   defaultAmmo?: AmmoType;
+  description?: string;
 }
 
 export interface Shield {
@@ -64,6 +65,7 @@ export interface Shield {
   energyCost: number;
   visualType: 'full' | 'forward' | 'inner-full';
   color: string;
+  description?: string;
 }
 
 export interface ShipConfig {

@@ -1,3 +1,4 @@
+
 import { ExtendedShipConfig } from '../constants';
 import { Planet, QuadrantType } from '../types';
 
@@ -746,21 +747,25 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     const stars = Array.from({ length: isDay ? 60 : 250 }).map(() => ({ x: rng(), y: rng(), size: rng() * 0.8 + 0.2, alpha: isDay ? 0.4 : (rng() * 0.5 + 0.5) }));
     
-    // CLOUDS - IMPROVED GENERATION
+    // CLOUDS - IMPROVED GENERATION FOR PARALLAX
     const clouds: any[] = [];
     const windDir = rng() > 0.5 ? 1 : -1;
-    const layerScales = [0.25, 0.5, 0.9]; 
+    const layerScales = [0.4, 0.7, 1.2]; // Larger clouds for better visibility
     const layerSpeeds = [0.05, 0.12, 0.25];
-    const layerAlphas = [0.95, 0.85, 0.6]; 
+    const layerAlphas = [0.9, 0.8, 0.6];
+    const layerParallax = [0.2, 0.5, 1.2]; // Specific Parallax Factors (0.2=Far Sky, 0.5=Mid, 1.2=Foreground Zoom)
     
-    // Y-offsets: Extended range for "infinite" feeling
-    const bandYCenters = [-1200, -800, -400]; 
+    // Altitude Range for Clouds (Screen Y when ViewY=0/Landed)
+    // 0 is Top of screen. H is ~900.
+    // We want clouds distributed from Sky (-400) to Horizon (500).
+    const rangeMin = -600;
+    const rangeMax = 400;
 
     for (let l = 0; l < 3; l++) {
         const scale = layerScales[l];
         const speed = layerSpeeds[l];
         const dir = l === 0 ? (rng() > 0.5 ? 1 : -1) : windDir;
-        const center = bandYCenters[l];
+        const parallax = layerParallax[l];
 
         // INCREASED COUNT: 15-20 clouds per layer
         const count = 15 + Math.floor(rng() * 5); 
@@ -768,12 +773,11 @@ export const generatePlanetEnvironment = (planet: Planet) => {
              const color = l === 0 ? mixColor(cloudColor, planet.color, 0.2) : cloudColor;
              const alpha = l === 2 ? (0.3 + rng() * 0.5) : layerAlphas[l];
              
-             // Spread clouds vertically much more
-             const ySpread = 1000;
-             
              clouds.push({
                  x: (rng() * 4000) - 2000,
-                 y: center + (rng() * ySpread - (ySpread/2)), 
+                 // Altitude replaces 'y'. It is the vertical position relative to the ground when landed.
+                 // Lower value = Higher in sky (negative). Higher value = Closer to horizon (positive).
+                 altitude: -(rangeMin + (rng() * (rangeMax - rangeMin))), 
                  w: (150 + rng() * 100) * scale,
                  baseAlpha: alpha,
                  alpha: alpha,
@@ -781,7 +785,8 @@ export const generatePlanetEnvironment = (planet: Planet) => {
                  direction: dir,
                  layer: l,
                  color: color,
-                 id: c // For sin wave calculation
+                 id: c, // For sin wave calculation
+                 parallaxFactor: parallax
              });
         }
     }
@@ -1012,6 +1017,26 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         for(let i=0; i<5; i++) cars.push({ type: 'car', progress: rng(), speed: 0.0003, color: '#ef4444', dir: rng()>0.5?1:-1 });
     }
 
+    const wanderers: {x: number, y: number, size: number, color: string}[] = [];
+    if (!isDay && rng() > 0.5) {
+        const wCount = 1 + Math.floor(rng() * 2);
+        for(let i=0; i<wCount; i++) {
+            wanderers.push({
+                x: rng(),
+                y: rng() * 0.4,
+                size: 1 + rng() * 2,
+                color: '#94a3b8'
+            });
+        }
+    }
+
+    const streetLights: {x: number, h: number}[] = [];
+    if (hills[4]?.hasRoad) {
+        for(let k=0; k<15; k++) {
+             streetLights.push({ x: -1400 + (k * 200) + (rng() * 20), h: 25 });
+        }
+    }
+
     return {
         isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush,
         sunColor, skyGradient, cloudColor, hillColors,
@@ -1019,6 +1044,8 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         groundColor, powerLines,
         quadrant: planet.quadrant,
         weather: { isRainy, isStormy },
-        hasBirds
+        hasBirds,
+        wanderers,
+        streetLights
     };
 };

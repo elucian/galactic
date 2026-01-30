@@ -1,3 +1,4 @@
+
 import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Planet, Moon, QuadrantType, EquippedWeapon } from '../types.ts';
 import { ExtendedShipConfig } from '../constants.ts';
@@ -314,16 +315,8 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       if (c.layer !== targetLayer) return; 
                       
                       // PARALLAX FIX:
-                      // Use very low values (0.0 to 0.1) to keep clouds moving roughly with the ground (quasi constant distance)
-                      // but slightly slower to indicate they are above the surface (background relative to surface).
-                      // 0.0 = Moves exactly with ground.
-                      // 0.1 = Moves 90% of ground speed (falls behind slightly).
-                      const parallaxMult = c.layer * 0.05; 
-
-                      // NO WRAP - STRICT POSITIONING
-                      // Cloud world Y is fixed. As viewY increases (we go up), cloud relative Y must decrease.
-                      // We subtract (viewY * speed) from cloudY.
-                      const relativeY = c.y - (s.viewY * parallaxMult);
+                      // Relative Y = -c.altitude + (s.viewY * (c.parallaxFactor - 1))
+                      const relativeY = -c.altitude + (s.viewY * (c.parallaxFactor - 1));
                       const cloudY = relativeY; 
                       const cloudX = (c.x + (s.frameCount * c.speed * c.direction)) % (w + 800) - 400; 
                       
@@ -331,8 +324,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       const pulse = Math.sin((s.frameCount * 0.01) + (c.id || 0));
                       const opacity = Math.max(0, Math.min(1, c.baseAlpha * (0.8 + 0.2 * pulse))) * altitudeFade;
 
-                      // Only draw if within visible range
-                      if (cloudY > -1000 && cloudY < 1000) {
+                      if (cloudY > -2000 && cloudY < 2000) {
                           drawCloud(ctx, cloudX, cloudY, c.w, opacity, c.color); 
                       }
                   }); 
@@ -411,12 +403,8 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                               const x1 = p1.xRatio * 3000 - 1500; const y1 = - (p1.heightRatio * 300) - yOff; const x2 = p2.xRatio * 3000 - 1500; const y2 = - (p2.heightRatio * 300) - yOff; const tx = x1 + (x2 - x1) * t.offset; let ty = y1 + (y2 - y1) * t.offset;
                               
                               // Slope calculation for resort foundation
-                              // dx is segment width in pixels (x2 - x1)
-                              // dy is segment height in pixels (y2 - y1)
-                              // Resort logic: If slope causes > 8px drop from center, lower building and add foundation
                               if (t.type === 'resort') {
-                                  // Estimated building half-width (scale * 30 base width)
-                                  const halfWidth = 30 * t.scale * 0.8; // 0.8 is distScale inside drawResort
+                                  const halfWidth = 30 * t.scale * 0.8; 
                                   const slope = (y2 - y1) / (x2 - x1);
                                   const drop = Math.abs(slope * halfWidth);
                                   
@@ -424,13 +412,10 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                                   let foundationH = 0;
                                   
                                   if (drop > 8) {
-                                      // Lower the building so the gap is exactly 8px on the floating side
-                                      // We need to shift Y down by (drop - 8)
                                       const adjustment = drop - 8;
                                       drawY = ty + adjustment;
-                                      foundationH = 8; // Max visual foundation per requirement
+                                      foundationH = 8;
                                   } else {
-                                      // Small slope, just fill gap
                                       foundationH = drop;
                                   }
                                   
@@ -530,9 +515,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               s.rain.forEach(drop => {
                   // Move Drop
                   drop.y += drop.speed;
-                  // Screen Wrap relative to camera movement
-                  // If camera moves up (s.worldSpeed > 0), drops move down faster
-                  // If camera is static, drops move down
                   
                   // Reset if out of bounds
                   if (drop.y > 1000) {
@@ -540,9 +522,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       drop.x = (Math.random() - 0.5) * 2000;
                   }
                   
-                  // Draw relative to camera center
-                  // worldY is the ground position. Rain falls in camera space mostly.
-                  // We simulate rain falling relative to camera by adding viewY offset modulo
                   const visualY = ((drop.y + s.viewY) % 2200) - 1100 + (h/2);
                   const visualX = drop.x + (w/2);
                   
@@ -595,7 +574,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       else { pType = 'fire'; pColor = Math.random() > 0.5 ? '#facc15' : '#f97316'; } 
                       
                       // HORIZONTAL BLAST DEFLECTION
-                      // Check if ship is low enough (ignition/early lift)
                       if (s.shipY > (groundY - padHeight - 60)) {
                           vxVal = (Math.random() > 0.5 ? 1 : -1) * (12 + Math.random() * 15);
                           vyVal = (Math.random() - 0.5) * 4; // Mostly horizontal
@@ -615,7 +593,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           s.particles = s.particles.filter(p => p.life > 0);
 
           if (fgCtx) {
-             // Layer 2 (Closest) on FG - AFTER SHIP
              drawCloudsByLayer(2, fgCtx);
           } else {
              drawCloudsByLayer(2, ctx);
@@ -634,7 +611,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-0" />
       <SequenceStatusBar altitude={altitude} velocity={velocity} fuel={visualFuel} maxFuel={maxFuel} status={statusText} onSkip={() => { audioService.stopLaunchSequence(); audioService.stop(); onCompleteRef.current(); }} phase={phase} />
       {countdown !== null && countdown > 0 && ( <div className="absolute top-[25%] left-0 right-0 flex flex-col items-center justify-center z-40 pointer-events-none"> <div className="text-sm md:text-xl text-emerald-500 font-black tracking-[0.5em] mb-1 drop-shadow-[0_2px_2px_rgba(0,0,0,1)]">T-MINUS</div> <div className="text-8xl md:text-[10rem] font-black text-white drop-shadow-[0_0_20px_rgba(0,0,0,1)] animate-pulse">{countdown}</div> </div> )}
-      {/* Ship DOM - z-20 (Between background canvas z-0 and foreground canvas z-30) */}
       <div ref={shipDOMRef} className="absolute left-0 top-0 w-32 h-32 will-change-transform z-20">
         <div className="absolute inset-0 z-0 overflow-visible">
              <svg className="absolute w-full h-full" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>

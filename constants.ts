@@ -20,12 +20,12 @@ export const AMMO_CONFIG: Record<AmmoType, { name: string, damageMult: number, p
 };
 
 export const AMMO_MARKET_ITEMS = [
-    { id: 'iron', name: 'Iron Rounds', price: 100, type: 'ammo', description: 'Standard kinetic rounds. 1000 count.' },
-    { id: 'titanium', name: 'Titanium Rounds', price: 250, type: 'ammo', description: 'Enhanced armor piercing. 1000 count.' },
-    { id: 'cobalt', name: 'Cobalt Rounds', price: 500, type: 'ammo', description: 'High velocity shield breakers. 1000 count.' },
-    { id: 'iridium', name: 'Iridium Rounds', price: 1000, type: 'ammo', description: 'Maximum damage plasma-infused. 1000 count.' },
-    { id: 'tungsten', name: 'Tungsten Rounds', price: 2000, type: 'ammo', description: 'Heavy kinetic penetrators. 1000 count.' },
-    { id: 'explosive', name: 'HE Rounds', price: 3500, type: 'ammo', description: 'High Explosive tips. 1000 count.' }
+    { id: 'iron', name: 'Iron Rounds', price: 100, type: 'ammo', description: 'Standard 20mm kinetic rounds. Low damage profile. Effective against unshielded targets. Bulk pack (1000).' },
+    { id: 'titanium', name: 'Titanium Rounds', price: 250, type: 'ammo', description: 'Reinforced 20mm rounds with titanium tips. Improved armor penetration for ballistic weapons. Bulk pack (1000).' },
+    { id: 'cobalt', name: 'Cobalt Rounds', price: 500, type: 'ammo', description: 'Magnetic core ammunition. Disrupts energy fields upon impact. Bonus damage vs Shields. Bulk pack (1000).' },
+    { id: 'iridium', name: 'Iridium Rounds', price: 1000, type: 'ammo', description: 'Plasma-infused heavy slugs. Maximized hull damage capability. Rare alloy. Bulk pack (1000).' },
+    { id: 'tungsten', name: 'Tungsten Rounds', price: 2000, type: 'ammo', description: 'High-density kinetic penetrators. Crushes hull integrity through sheer mass. Bulk pack (1000).' },
+    { id: 'explosive', name: 'HE Rounds', price: 3500, type: 'ammo', description: 'High Explosive Incendiary payload. Deals blast damage to hull and nearby components. Bulk pack (1000).' }
 ];
 
 export interface ExtendedShipConfig extends ShipConfig {
@@ -65,7 +65,7 @@ export const SHIPS: ExtendedShipConfig[] = [
   { 
     id: 'vanguard', 
     name: 'Scout Interceptor', 
-    description: 'Light single-engine craft.', 
+    description: 'Class 1 Light Fighter. Single-engine craft designed for reconnaissance. High speed, low cargo capacity.', 
     price: 5000, 
     maxEnergy: 1500, 
     maxCargo: 50, 
@@ -92,7 +92,7 @@ export const SHIPS: ExtendedShipConfig[] = [
   { 
     id: 'ranger', 
     name: 'Patrol Corvette', 
-    description: 'Reliable twin-engine vessel.', 
+    description: 'Class 2 Multi-Role Vessel. Reliable twin-engine design with balanced cargo and combat capabilities.', 
     price: 45000, 
     maxEnergy: 3500, 
     maxCargo: 200, 
@@ -119,7 +119,7 @@ export const SHIPS: ExtendedShipConfig[] = [
   { 
     id: 'striker', 
     name: 'Heavy Fighter', 
-    description: 'Combat-focused single-engine.', 
+    description: 'Class 3 Combat Fighter. Reinforced hull and upgraded reactor for extended engagements. Limited cargo.', 
     price: 95000, 
     maxEnergy: 6000, 
     maxCargo: 450, 
@@ -146,7 +146,7 @@ export const SHIPS: ExtendedShipConfig[] = [
   { 
     id: 'eclipse', 
     name: 'Stealth Infiltrator', 
-    description: 'Tri-engine inverted wing tech.', 
+    description: 'Class 4 Advanced Tech. Tri-engine inverted wing configuration. Superior speed and energy density.', 
     price: 180000, 
     maxEnergy: 10000, 
     maxCargo: 800, 
@@ -173,7 +173,7 @@ export const SHIPS: ExtendedShipConfig[] = [
   { 
     id: 'behemoth', 
     name: 'Star Dreadnought', 
-    description: 'Tri-engine mobile fortress.', 
+    description: 'Class 5 Mobile Fortress. Massive cargo hold and triple-engine thrust. Heavy armor plating.', 
     price: 450000, 
     maxEnergy: 15000, 
     maxCargo: 2000, 
@@ -241,68 +241,130 @@ export const BOSS_SHIPS: ExtendedShipConfig[] = [
 // WEAPONS UPDATED: Energy=Blue, Projectile=Red
 export const WEAPONS: Weapon[] = [
   // Level 1 Standard Energy: Cheap, Inefficient
-  // Buffed from 25 to 38
-  { id: 'gun_pulse', name: 'Pulse Laser', type: WeaponType.LASER, price: 2000, damage: 38, fireRate: 4, energyCost: 5, cargoWeight: 3, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
+  { 
+      id: 'gun_pulse', name: 'Pulse Laser', type: WeaponType.LASER, price: 2000, damage: 38, fireRate: 4, energyCost: 5, cargoWeight: 3, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1,
+      description: 'Class 1 Energy Weapon. Output: 5MW. Rapid-fire thermal pulses. Effective against shields and asteroids. Weak vs heavy armor.'
+  },
   // Level 4 High-End Energy: Expensive, Efficient
-  // Buffed from 60 to 90
-  { id: 'gun_photon', name: 'Photon Emitter', type: WeaponType.LASER, price: 100000, damage: 90, fireRate: 8, energyCost: 2, cargoWeight: 5, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
+  { 
+      id: 'gun_photon', name: 'Photon Emitter', type: WeaponType.LASER, price: 100000, damage: 90, fireRate: 8, energyCost: 2, cargoWeight: 5, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1,
+      description: 'Class 4 Energy Weapon. Output: 20MW. High-precision beam slices through shields. Effective against shields and asteroids.'
+  },
   
   // Standard Projectile (UPDATED: gun_bolt became Ion Emitter / LASER)
-  // Buffed from 55 to 83
-  { id: 'gun_bolt', name: 'Ion Emitter', type: WeaponType.LASER, price: 5000, damage: 83, fireRate: 2, energyCost: 4, cargoWeight: 4, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1 },
-  // Buffed from 35 to 53
-  { id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 53, fireRate: 4, energyCost: 0, cargoWeight: 10, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 3, defaultAmmo: 'titanium' }, 
-  // Level 3 Standard Projectile (New: 6 shots/s)
-  { id: 'gun_repeater', name: 'Rapid Repeater', type: WeaponType.PROJECTILE, price: 40000, damage: 45, fireRate: 6, energyCost: 0, cargoWeight: 15, isAmmoBased: true, beamColor: '#fb923c', barrelCount: 2, defaultAmmo: 'cobalt' },
-  // Buffed from 30 to 45
-  { id: 'gun_heavy', name: 'Heavy Chaingun', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 6, energyCost: 0, cargoWeight: 25, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'cobalt' }, 
-  // Buffed from 25 to 38
-  { id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 38, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium' },
-  // Level 5 High-End Projectile (New: 12 shots/s)
-  { id: 'gun_hyper', name: 'Hyper Gatling', type: WeaponType.PROJECTILE, price: 150000, damage: 40, fireRate: 12, energyCost: 0, cargoWeight: 35, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'tungsten' } 
+  { 
+      id: 'gun_bolt', name: 'Ion Emitter', type: WeaponType.LASER, price: 5000, damage: 83, fireRate: 2, energyCost: 4, cargoWeight: 4, isAmmoBased: false, beamColor: '#3b82f6', barrelCount: 1,
+      description: 'Class 2 Ion Weapon. Output: 8MW. Fires charged ion packets. Instantly overloads shield generators. Effective against shields.'
+  },
+  { 
+      id: 'gun_vulcan', name: 'Rotary Vulcan', type: WeaponType.PROJECTILE, price: 15000, damage: 53, fireRate: 4, energyCost: 0, cargoWeight: 10, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 3, defaultAmmo: 'titanium',
+      description: 'Class 2 Projectile Weapon. Caliber: 20mm. High rate of fire. Effective against spaceship hull. Ineffective vs shields. Requires Ammo.'
+  }, 
+  // Level 3 Standard Projectile
+  { 
+      id: 'gun_repeater', name: 'Rapid Repeater', type: WeaponType.PROJECTILE, price: 40000, damage: 45, fireRate: 6, energyCost: 0, cargoWeight: 15, isAmmoBased: true, beamColor: '#fb923c', barrelCount: 2, defaultAmmo: 'cobalt',
+      description: 'Class 3 Projectile Weapon. Caliber: 30mm. Sustained kinetic output. Effective against spaceship hull. Requires Ammo.'
+  },
+  { 
+      id: 'gun_heavy', name: 'Heavy Chaingun', type: WeaponType.PROJECTILE, price: 35000, damage: 45, fireRate: 6, energyCost: 0, cargoWeight: 25, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'cobalt',
+      description: 'Class 3 Heavy Projectile. Caliber: 50mm. Massive impact force. Effective against spaceship hull. Requires Ammo.'
+  }, 
+  { 
+      id: 'gun_plasma', name: 'Iron Driver', type: WeaponType.PROJECTILE, price: 85000, damage: 38, fireRate: 8, energyCost: 0, cargoWeight: 30, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'iridium',
+      description: 'Class 4 Kinetic Driver. Accelerates slugs to 0.1c. Effective against spaceship hull and heavy armor. Requires Ammo.'
+  },
+  // Level 5 High-End Projectile
+  { 
+      id: 'gun_hyper', name: 'Hyper Gatling', type: WeaponType.PROJECTILE, price: 150000, damage: 40, fireRate: 12, energyCost: 0, cargoWeight: 35, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'tungsten',
+      description: 'Class 5 Projectile Storm. Extreme fire rate saturates target area. Effective against spaceship hull. Depletes ammunition reserves rapidly.'
+  } 
 ];
 
 // 9 DISTINCT EXOTIC WEAPONS
-// UPDATED: Damages increased to compensate for slower speed (approx 25-30% boost)
 export const EXOTIC_WEAPONS: Weapon[] = [
-  // 1. Star Shatter: 12 stars/sec normal, 6 shots/sec power
-  { id: 'exotic_star_shatter', name: 'Star Shatter', type: WeaponType.PROJECTILE, price: 450000, damage: 70, fireRate: 12, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 1 },
+  // 1. Star Shatter
+  { 
+      id: 'exotic_star_shatter', name: 'Star Shatter', type: WeaponType.PROJECTILE, price: 450000, damage: 70, fireRate: 12, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#fbbf24', barrelCount: 1,
+      description: 'Class X Celestial Tech. Fires unstable stellar fragments that fracture on impact. Ignores conventional shielding. Area damage.'
+  },
   
-  // 2. Dragon Breath: Spreading fire flames on a 30 deg angle range half of screen
-  { id: 'exotic_flamer', name: 'Dragon Breath', type: WeaponType.PROJECTILE, price: 120000, damage: 45, fireRate: 15, energyCost: 2, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 3 },
+  // 2. Dragon Breath
+  { 
+      id: 'exotic_flamer', name: 'Dragon Breath', type: WeaponType.PROJECTILE, price: 120000, damage: 45, fireRate: 15, energyCost: 2, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 3,
+      description: 'Class X Plasma Vent. Short-range cone of superheated gas (5000K). Melts hull plating and incinerates biological targets.'
+  },
   
-  // 3. Rainbow Nova: 8 shots/sec normal, 4 shots/sec power
-  { id: 'exotic_rainbow_spread', name: 'Rainbow Nova', type: WeaponType.PROJECTILE, price: 550000, damage: 60, fireRate: 8, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff', barrelCount: 6 },
+  // 3. Rainbow Nova
+  { 
+      id: 'exotic_rainbow_spread', name: 'Rainbow Nova', type: WeaponType.PROJECTILE, price: 550000, damage: 60, fireRate: 8, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#ffffff', barrelCount: 6,
+      description: 'Class X Prismatic Projector. Cycles through energy frequencies to bypass adaptive shields. Multi-spectrum damage output.'
+  },
   
-  // 4. Zeus Thunderbolt: Electricity bolts (Renamed)
-  { id: 'exotic_electric', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 600000, damage: 750, fireRate: 4, energyCost: 6, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff', barrelCount: 3 },
+  // 4. Zeus Thunderbolt
+  { 
+      id: 'exotic_electric', name: 'Zeus Thunderbolt', type: WeaponType.LASER, price: 600000, damage: 750, fireRate: 4, energyCost: 6, cargoWeight: 0, isAmmoBased: false, beamColor: '#00ffff', barrelCount: 3,
+      description: 'Class X Arc Emitter. 1.2GW Discharge. Chain lightning effect arcs between targets. Instantly vaporizes shields.'
+  },
   
-  // 5. Octo Burst: Plasma Jet Stream, random spread 12 deg, 8 shots/sec
-  { id: 'exotic_octo_burst', name: 'Octo Burst', type: WeaponType.PROJECTILE, price: 380000, damage: 220, fireRate: 8, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7', barrelCount: 1 },
+  // 5. Octo Burst
+  { 
+      id: 'exotic_octo_burst', name: 'Octo Burst', type: WeaponType.PROJECTILE, price: 380000, damage: 220, fireRate: 8, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#a855f7', barrelCount: 1,
+      description: 'Class X Bio-Plasma. Fires corrosive organic pods in a spread pattern. Eats through hull metal over time.'
+  },
   
-  // 6. Sonic Ring: Shooting rings of plasma that grow
-  { id: 'exotic_wave', name: 'Sonic Ring', type: WeaponType.PROJECTILE, price: 320000, damage: 350, fireRate: 5, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#8b5cf6', barrelCount: 1 },
+  // 6. Sonic Ring
+  { 
+      id: 'exotic_wave', name: 'Sonic Ring', type: WeaponType.PROJECTILE, price: 320000, damage: 350, fireRate: 5, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#8b5cf6', barrelCount: 1,
+      description: 'Class X Resonance Cannon. Fires concentrated sound waves in vacuum via graviton lattice. Shockwave shatters crystalline armor.'
+  },
   
-  // 7. Gravity Wave: Shooting arcs of circle similar to tractor beam
-  { id: 'exotic_gravity_wave', name: 'Gravity Wave', type: WeaponType.PROJECTILE, price: 400000, damage: 450, fireRate: 3, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#10b981', barrelCount: 1 },
+  // 7. Gravity Wave
+  { 
+      id: 'exotic_gravity_wave', name: 'Gravity Wave', type: WeaponType.PROJECTILE, price: 400000, damage: 450, fireRate: 3, energyCost: 5, cargoWeight: 0, isAmmoBased: false, beamColor: '#10b981', barrelCount: 1,
+      description: 'Class X Graviton Emitter. Creates localized singularity distortions. Crushes targets under their own mass.'
+  },
   
-  // 8. Plasma Orb: Just shooting orbs of plasma
-  { id: 'exotic_plasma_orb', name: 'Plasma Orb', type: WeaponType.PROJECTILE, price: 275000, damage: 600, fireRate: 4, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#f472b6', barrelCount: 1 },
+  // 8. Plasma Orb
+  { 
+      id: 'exotic_plasma_orb', name: 'Plasma Orb', type: WeaponType.PROJECTILE, price: 275000, damage: 600, fireRate: 4, energyCost: 4, cargoWeight: 0, isAmmoBased: false, beamColor: '#f472b6', barrelCount: 1,
+      description: 'Class X High-Yield Plasma. Fires slow-moving balls of pure fusion energy. Massive impact damage.'
+  },
   
-  // 9. Phaser Sweep: Continuous beam, 8 shots/sec (was 60), high damage per shot
-  { id: 'exotic_phaser_sweep', name: 'Phaser Sweep', type: WeaponType.LASER, price: 500000, damage: 180, fireRate: 8, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 1 }
+  // 9. Phaser Sweep
+  { 
+      id: 'exotic_phaser_sweep', name: 'Phaser Sweep', type: WeaponType.LASER, price: 500000, damage: 180, fireRate: 8, energyCost: 3, cargoWeight: 0, isAmmoBased: false, beamColor: '#ef4444', barrelCount: 1,
+      description: 'Class X Continuous Beam. Variable frequency phaser. Sweeping motion cuts multiple targets. Melting capability.'
+  }
 ];
 
 export const SHIELDS: Shield[] = [
-  { id: 'sh_alpha', name: 'Cobalt Blue Front', price: 10000, capacity: 250, regenRate: 5, energyCost: 20, visualType: 'forward', color: '#3b82f6' }, 
-  { id: 'sh_beta', name: 'Solar Red Glow', price: 25000, capacity: 500, regenRate: 10, energyCost: 40, visualType: 'forward', color: '#ef4444' }, 
-  { id: 'sh_gamma', name: 'Omni-Sphere Crystal', price: 75000, capacity: 1200, regenRate: 25, energyCost: 80, visualType: 'inner-full', color: '#38bdf8' }
+  { 
+      id: 'sh_alpha', name: 'Cobalt Blue Front', price: 10000, capacity: 250, regenRate: 5, energyCost: 20, visualType: 'forward', color: '#3b82f6',
+      description: 'Class 1 Forward Shield. Capacity: 250MJ. Forward-facing emitter. Basic protection against frontal attacks.'
+  }, 
+  { 
+      id: 'sh_beta', name: 'Solar Red Glow', price: 25000, capacity: 500, regenRate: 10, energyCost: 40, visualType: 'forward', color: '#ef4444',
+      description: 'Class 2 Forward Shield. Capacity: 500MJ. Reinforced barrier. Effective against frontal fire and debris.'
+  }, 
+  { 
+      id: 'sh_gamma', name: 'Omni-Sphere Crystal', price: 75000, capacity: 1200, regenRate: 25, energyCost: 80, visualType: 'inner-full', color: '#38bdf8',
+      description: 'Class 3 Omni-Shield. Capacity: 1200MJ. 360-degree coverage. Fortress-level protection effective against all incoming fire.'
+  }
 ];
 
 export const EXOTIC_SHIELDS: Shield[] = [
-  { id: 'exotic_sh_void', name: 'Void Mantle', price: 500000, capacity: 3500, regenRate: 50, energyCost: 150, visualType: 'inner-full', color: '#a855f7' },
-  { id: 'exotic_sh_plasma', name: 'Plasma Aegis', price: 600000, capacity: 2800, regenRate: 80, energyCost: 200, visualType: 'inner-full', color: '#10b981' },
-  { id: 'exotic_sh_pulsar', name: 'Pulsar Starfield', price: 750000, capacity: 5000, regenRate: 20, energyCost: 100, visualType: 'inner-full', color: '#fbbf24' }
+  { 
+      id: 'exotic_sh_void', name: 'Void Mantle', price: 500000, capacity: 3500, regenRate: 50, energyCost: 150, visualType: 'inner-full', color: '#a855f7',
+      description: 'Class X Dark Matter Field. Capacity: 3500MJ. Regen: 150MJ/s. Absorbs 99% of incoming radiation and kinetic energy.'
+  },
+  { 
+      id: 'exotic_sh_plasma', name: 'Plasma Aegis', price: 600000, capacity: 2800, regenRate: 80, energyCost: 200, visualType: 'inner-full', color: '#10b981',
+      description: 'Class X Ionized Field. Capacity: 2800MJ. Regen: 200MJ/s. Super-charged plasma layer vaporizes projectiles on contact.'
+  },
+  { 
+      id: 'exotic_sh_pulsar', name: 'Pulsar Starfield', price: 750000, capacity: 5000, regenRate: 20, energyCost: 100, visualType: 'inner-full', color: '#fbbf24',
+      description: 'Class X Stellar Energy Buffer. Capacity: 5000MJ. Regen: 100MJ/s. Massive capacity for capital ship engagements.'
+  }
 ];
 
 export const BOSS_EXOTIC_SHIELDS = [
@@ -314,49 +376,49 @@ export const BOSS_EXOTIC_SHIELDS = [
 ];
 
 export const DEFENSE_SYSTEMS = [
-  { id: 'df_flares', name: 'Flare Dispenser Mk I', price: 15000, description: 'Anti-missile countermeasure system.' }
+  { id: 'df_flares', name: 'Flare Dispenser Mk I', price: 15000, description: 'Anti-missile countermeasure system. Deploys thermal decoys to confuse heat-seeking ordnance.' }
 ];
 
 export const EXPLODING_ORDNANCE = [
-  { id: 'ord_missile_light', name: 'Sparrow Missiles', price: 8000, count: 10 },
-  { id: 'ord_missile_heavy', name: 'Titan Missiles', price: 25000, count: 10 },
-  { id: 'ord_missile_emp', name: 'EMP Shock Missiles', price: 35000, count: 10 },
-  { id: 'ord_mine_plasma', name: 'Plasma Core Mines', price: 45000, count: 10 },
-  { id: 'ord_mine_emp', name: 'EMP Auto-Mines', price: 30000, count: 10 },
+  { id: 'ord_missile_light', name: 'Sparrow Missiles', price: 8000, count: 10, description: 'Class 1 Air-to-Air Homing Missile. Light HE Warhead. Agile tracking guidance. Standard anti-fighter countermeasure.' },
+  { id: 'ord_missile_heavy', name: 'Titan Missiles', price: 25000, count: 10, description: 'Class 2 Heavy Anti-Ship Missile. High-Yield Warhead. Slow tracking but deals massive hull damage.' },
+  { id: 'ord_missile_emp', name: 'EMP Shock Missiles', price: 35000, count: 10, description: 'Class 2 EMP Torpedo. Delivers a concentrated Electro-Magnetic Pulse. Instantly strips shields and disables electronics.' },
+  { id: 'ord_mine_plasma', name: 'Plasma Core Mines', price: 45000, count: 10, description: 'Class 3 Proximity Mine. Plasma Core. Deploys a stationary trap that vaporizes nearby hulls upon detonation.' },
+  { id: 'ord_mine_emp', name: 'EMP Auto-Mines', price: 30000, count: 10, description: 'Class 2 EMP Mine. Static disruptor. Creates a shield-nullifying zone upon detonation. Effective for area denial.' },
   // Omega Mine: Powerful red mine
-  { id: 'ord_mine_red', name: 'Omega Mine', price: 150000, count: 5 }
+  { id: 'ord_mine_red', name: 'Omega Mine', price: 150000, count: 5, description: 'Class X Omega Nuke. Strategic weapon. Total matter annihilation within blast radius. Use with extreme caution.' }
 ];
 
 export const COMMODITIES: any[] = [
-    { id: 'bot_repair', name: 'Repair Robot', price: 2000, type: 'robot', description: 'Auto-repair drone. Repairs hull using resources. If hull integrity drops below 90%, robots sacrifice themselves to block incoming fire.' },
-    { id: 'can_fuel', name: 'Fuel Cell', price: 200, type: 'fuel' },
-    { id: 'water', name: 'Water Container', price: 50, type: 'water', _buyAmount: 50 },
-    { id: 'batt_cell', name: 'Energy Cell', price: 300, type: 'energy' },
-    { id: 'pack_repair', name: 'Nanite Pack', price: 500, type: 'repair' },
+    { id: 'bot_repair', name: 'Repair Robot', price: 2000, type: 'robot', description: 'Autonomous repair drone. Consumes resources to fix hull damage during flight. Essential for long missions.' },
+    { id: 'can_fuel', name: 'Fuel Cell', price: 200, type: 'fuel', description: 'Refined hyper-fuel canister. Restores flight capacity for maneuvering thrusters.' },
+    { id: 'water', name: 'Water Container', price: 50, type: 'water', _buyAmount: 50, description: 'Potable water. Essential for crew survival and reactor cooling systems.' },
+    { id: 'batt_cell', name: 'Energy Cell', price: 300, type: 'energy', description: 'Charged capacitor battery. Rapidly restores ship energy reserves for weapon systems.' },
+    { id: 'pack_repair', name: 'Nanite Pack', price: 500, type: 'repair', description: 'Compressed nanobot injector. Provides instant hull patch repair in emergency situations.' },
     
     // RESOURCES
-    { id: 'iron', name: 'Iron Ingot', price: 100, type: 'iron' },
-    { id: 'copper', name: 'Copper Spool', price: 200, type: 'copper' },
-    { id: 'chromium', name: 'Chromium', price: 500, type: 'chromium' },
-    { id: 'titanium', name: 'Titanium', price: 800, type: 'titanium' },
-    { id: 'tungsten', name: 'Tungsten', price: 1500, type: 'tungsten' },
-    { id: 'gold', name: 'Gold Bullion', price: 1000, type: 'gold' },
-    { id: 'platinum', name: 'Platinum Ingot', price: 2500, type: 'platinum' },
-    { id: 'lithium', name: 'Lithium Crystal', price: 4000, type: 'lithium' },
+    { id: 'iron', name: 'Iron Ingot', price: 100, type: 'iron', description: 'Refined Iron. Basic construction material used in hull plating and ballistics.' },
+    { id: 'copper', name: 'Copper Spool', price: 200, type: 'copper', description: 'Industrial Copper. Highly conductive material for ship electronics and wiring.' },
+    { id: 'chromium', name: 'Chromium', price: 500, type: 'chromium', description: 'Chromium Alloy. Heat-resistant plating used in engine components and lasers.' },
+    { id: 'titanium', name: 'Titanium', price: 800, type: 'titanium', description: 'Aerospace Grade Titanium. High-strength lightweight metal for advanced chassis.' },
+    { id: 'tungsten', name: 'Tungsten', price: 1500, type: 'tungsten', description: 'Heavy Tungsten. Extremely dense metal used for armor piercing kinetic rounds.' },
+    { id: 'gold', name: 'Gold Bullion', price: 1000, type: 'gold', description: 'Standard Gold Bullion. Universal currency and high-end conductor.' },
+    { id: 'platinum', name: 'Platinum Ingot', price: 2500, type: 'platinum', description: 'Rare Platinum. Critical catalyst for fuel cells and high-tech systems.' },
+    { id: 'lithium', name: 'Lithium Crystal', price: 4000, type: 'lithium', description: 'Volatile Lithium Crystal. High-density energy storage medium for batteries.' },
 
     // FOOD & PROVISIONS (NEW CATEGORY)
-    { id: 'com_food', name: 'Nutri-Paste', price: 50, type: 'food' },
-    { id: 'com_grain', name: 'Synth-Grain', price: 80, type: 'food' },
-    { id: 'com_fruit', name: 'Star Fruit', price: 150, type: 'food' },
-    { id: 'com_meat', name: 'Vat Meat', price: 200, type: 'food' },
-    { id: 'com_spice', name: 'Nebula Spice', price: 800, type: 'food' }, // Rare spice
+    { id: 'com_food', name: 'Nutri-Paste', price: 50, type: 'food', description: 'Standard military rations. Flavorless but contains all essential nutrients.' },
+    { id: 'com_grain', name: 'Synth-Grain', price: 80, type: 'food', description: 'Genetically modified cereal crop. Staple food for colony worlds.' },
+    { id: 'com_fruit', name: 'Star Fruit', price: 150, type: 'food', description: 'Exotic alien produce. Known for its glowing skin and sweet taste.' },
+    { id: 'com_meat', name: 'Vat Meat', price: 200, type: 'food', description: 'Lab-grown protein slabs. Cruelty-free and efficient.' },
+    { id: 'com_spice', name: 'Nebula Spice', price: 800, type: 'food', description: 'Rare flavor enhancer harvested from nebula gas clouds. Highly valuable.' }, 
 
     // GOODS / COMMERCE
-    { id: 'com_drugs', name: 'Stardust Stim', price: 3000, type: 'drug' },
-    { id: 'com_meds', name: 'Medkit', price: 500, type: 'medicine' },
-    { id: 'com_air', name: 'O2 Scrubber', price: 800, type: 'equipment' },
-    { id: 'com_suit', name: 'EVA Suit', price: 1200, type: 'equipment' },
-    { id: 'com_pistol', name: 'Blaster Pistol', price: 1500, type: 'gun' }, 
+    { id: 'com_drugs', name: 'Stardust Stim', price: 3000, type: 'drug', description: 'Illegal combat stimulant. Increases reaction time. Contraband in most sectors.' },
+    { id: 'com_meds', name: 'Medkit', price: 500, type: 'medicine', description: 'Standard medical supplies. Bandages, antiseptics, and painkillers.' },
+    { id: 'com_air', name: 'O2 Scrubber', price: 800, type: 'equipment', description: 'Life support component. Filters carbon dioxide from cabin air.' },
+    { id: 'com_suit', name: 'EVA Suit', price: 1200, type: 'equipment', description: 'Vacuum protection gear. Necessary for extra-vehicular activities.' },
+    { id: 'com_pistol', name: 'Blaster Pistol', price: 1500, type: 'gun', description: 'Personal sidearm. Standard issue energy weapon for pilot self-defense.' }, 
 ];
 
 export const PLANETS: Planet[] = [

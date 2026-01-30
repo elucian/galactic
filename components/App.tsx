@@ -353,7 +353,8 @@ export default function App() {
                   name: o.name,
                   quantity: qty,
                   weight: 1,
-                  price: o.price
+                  price: o.price,
+                  description: (o as any).description
               });
           }
       });
@@ -400,7 +401,7 @@ export default function App() {
                   quantity: qty,
                   weight: 1,
                   price: Math.floor(g.price * priceMult),
-                  description: 'Defense System'
+                  description: (g as any).description || 'Defense System'
               });
           }
       });
@@ -423,7 +424,8 @@ export default function App() {
                   name: e.name,
                   quantity: isTestMode ? 10 : 1,
                   weight: 1,
-                  price: e.price
+                  price: e.price,
+                  description: (e as any).description || 'Exotic Technology'
               });
           }
       });
@@ -455,15 +457,11 @@ export default function App() {
 
   const startNewGame = () => {
       const newState = createInitialState();
-      // PRESERVE SETTINGS from current state (including music/sfx preference)
       newState.settings = { ...gameState.settings };
-      // Preserve Leaderboard
       newState.leaderboard = [...gameState.leaderboard];
-      // Reuse Identity
       newState.pilotName = gameState.pilotName;
       newState.pilotAvatar = gameState.pilotAvatar;
       newState.pilotZoom = gameState.pilotZoom;
-      
       setGameState(newState);
       setScreen('hangar');
       audioService.playTrack('command');
@@ -512,8 +510,6 @@ export default function App() {
   const dockedPlanet = PLANETS.find(p => p.id === dockedId);
   const currentReserves = useMemo(() => gameState.reserveByPlanet[dockedId] || [], [gameState.reserveByPlanet, dockedId]);
 
-  // ... (Rest of component remains largely the same, imports and useEffects omitted for brevity where unchanged) ...
-  // Full App.tsx rendering logic follows
   useEffect(() => {
       backendService.getLeaderboard().then(lb => {
           setGameState(p => ({ ...p, leaderboard: lb }));
@@ -753,7 +749,15 @@ export default function App() {
                   if (existingIdx >= 0) { 
                       newCargo[existingIdx] = { ...newCargo[existingIdx], quantity: newCargo[existingIdx].quantity + toCargo }; 
                   } else { 
-                      newCargo.push({ instanceId: `buy_${Date.now()}_${item.id}`, type: itemType as any, id: item.id, name: item.name, weight: 1, quantity: toCargo }); 
+                      newCargo.push({ 
+                          instanceId: `buy_${Date.now()}_${item.id}`, 
+                          type: itemType as any, 
+                          id: item.id, 
+                          name: item.name, 
+                          weight: 1, 
+                          quantity: toCargo,
+                          description: item.description 
+                      }); 
                   }
                   updatedFit.cargo = newCargo;
                   purchased = true;
@@ -1101,7 +1105,7 @@ export default function App() {
                       if (type === 'weapon') {
                           const w = newFit.weapons[slotIdx];
                           if (w) {
-                              newCargo.push({ instanceId: `unmount_${Date.now()}`, type: 'weapon', id: w.id, name: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id)?.name || 'Weapon'), weight: 1, quantity: 1 });
+                              newCargo.push({ instanceId: `unmount_${Date.now()}`, type: 'weapon', id: w.id, name: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id)?.name || 'Weapon'), weight: 1, quantity: 1, description: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id)?.description) });
                               newFit.weapons[slotIdx] = null;
                           }
                       } else {
@@ -1109,7 +1113,7 @@ export default function App() {
                           if (sIdVal) {
                               if (sIdVal !== 'dev_god_mode') {
                                   const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === sIdVal);
-                                  newCargo.push({ instanceId: `unmount_${Date.now()}`, type: 'shield', id: sIdVal, name: sDef?.name || 'Shield', weight: 1, quantity: 1 });
+                                  newCargo.push({ instanceId: `unmount_${Date.now()}`, type: 'shield', id: sIdVal, name: sDef?.name || 'Shield', weight: 1, quantity: 1, description: sDef?.description });
                               }
                               if (slotIdx === 0) newFit.shieldId = null; else newFit.secondShieldId = null;
                           }
@@ -1129,13 +1133,13 @@ export default function App() {
                       
                       if (type === 'weapon') {
                           const oldW = newFit.weapons[slotIdx];
-                          if (oldW) newCargo.push({ instanceId: `swap_${Date.now()}`, type: 'weapon', id: oldW.id, name: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === oldW.id)?.name || 'Weapon'), weight: 1, quantity: 1 });
+                          if (oldW) newCargo.push({ instanceId: `swap_${Date.now()}`, type: 'weapon', id: oldW.id, name: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === oldW.id)?.name || 'Weapon'), weight: 1, quantity: 1, description: ([...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === oldW.id)?.description) });
                           newFit.weapons[slotIdx] = { id: item.id!, count: 1 };
                       } else {
                           const oldS = slotIdx === 0 ? newFit.shieldId : newFit.secondShieldId;
                           if (oldS && oldS !== 'dev_god_mode') {
                               const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === oldS);
-                              newCargo.push({ instanceId: `swap_${Date.now()}`, type: 'shield', id: oldS, name: sDef?.name || 'Shield', weight: 1, quantity: 1 });
+                              newCargo.push({ instanceId: `swap_${Date.now()}`, type: 'shield', id: oldS, name: sDef?.name || 'Shield', weight: 1, quantity: 1, description: sDef?.description });
                           }
                           if (slotIdx === 0) newFit.shieldId = item.id || null; else newFit.secondShieldId = item.id || null;
                       }

@@ -100,8 +100,11 @@ const getItemStats = (item: any) => {
 
 // HELPER: Price Level
 const getPriceLevel = (item: any) => {
-    const baseDef = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS, ...AMMO_MARKET_ITEMS].find(x => x.id === item.id);
-    if (!baseDef) return { label: 'UNKNOWN', color: '#9ca3af', val: 0 };
+    const allDefs = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS, ...AMMO_MARKET_ITEMS];
+    const baseDef = allDefs.find(x => x.id === item.id);
+    
+    // Fallback if def not found (shouldn't happen with correct constants)
+    if (!baseDef) return { label: 'MARKET', color: '#9ca3af', val: 3 };
     
     const base = baseDef.price;
     const current = item.price || base;
@@ -113,6 +116,20 @@ const getPriceLevel = (item: any) => {
     if (ratio <= 1.5) return { label: 'HIGH', color: '#f87171', val: 4 };
     return { label: 'INFLATED', color: '#ef4444', val: 5 };
 };
+
+const getDescription = (item: any) => {
+    // Priority: Definition from constants (Source of Truth)
+    const allDefs = [...WEAPONS, ...SHIELDS, ...EXPLODING_ORDNANCE, ...COMMODITIES, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS, ...AMMO_MARKET_ITEMS];
+    const def = allDefs.find(x => x.id === item.id);
+    
+    if (def && (def as any).description) return (def as any).description;
+    
+    // Fallback: Instance description (legacy save data)
+    if (item.description) return item.description;
+    
+    // Error state as requested
+    return "Error, description missing. Unknown item";
+}
 
 export const MarketDialog: React.FC<MarketDialogProps> = ({
   isOpen, onClose, marketTab, setMarketTab, currentReserves, credits, testMode, marketBuy, marketSell, fontSize, currentPlanet, marketListings = [], shipFitting, shipConfig
@@ -643,7 +660,7 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                                 <div className="mb-6 bg-zinc-900/30 p-4 rounded-lg border border-zinc-800/50 relative">
                                      <div className="absolute top-0 left-0 w-1 h-full bg-zinc-700 rounded-l-lg" />
                                      <p className={`${descSize} text-zinc-400 font-mono leading-relaxed italic pl-2`}>
-                                        "{selectedItem.description || "Standard issue galactic commodity. Used in various industrial and survival applications."}"
+                                        "{getDescription(selectedItem)}"
                                     </p>
                                 </div>
 
