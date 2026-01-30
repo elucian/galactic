@@ -126,32 +126,24 @@ export const drawPlatform = (ctx: CanvasRenderingContext2D, x: number, y: number
     ctx.restore();
 };
 
-// DIFFUSE CLOUD RENDERER
 export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, alpha: number, color: string = '#ffffff', puffs: any[] = [], vStretch: number = 1.0) => {
     ctx.save();
     ctx.translate(x, y);
     
-    // NOTE: vStretch is purposely ignored to prevent elongation during ascent/descent
-    
     const rgb = hexToRgb(color);
     const baseColor = `${rgb.r},${rgb.g},${rgb.b}`;
 
-    // Render soft puffs
     if (puffs && puffs.length > 0) {
         for (const p of puffs) {
-            // Radial Gradient for Soft/Diffuse look
-            // x,y are relative to cloud center
             const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
             grad.addColorStop(0, `rgba(${baseColor}, ${alpha * p.a})`);
             grad.addColorStop(1, `rgba(${baseColor}, 0)`);
-            
             ctx.fillStyle = grad;
             ctx.beginPath();
             ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
             ctx.fill();
         }
     } else {
-        // Fallback
         const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, w/2);
         grad.addColorStop(0, `rgba(${baseColor}, ${alpha})`);
         grad.addColorStop(1, `rgba(${baseColor}, 0)`);
@@ -164,7 +156,6 @@ export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w
     ctx.restore();
 };
 
-// ... existing helpers ...
 export const drawBoulder = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string) => {
     ctx.save();
     ctx.translate(x, y);
@@ -253,7 +244,6 @@ export const drawLightning = (ctx: CanvasRenderingContext2D, x: number, y: numbe
         curX += (Math.random() - 0.5) * 40;
         curY += segH;
         ctx.lineTo(curX, curY);
-        // Chance for a branch
         if (Math.random() > 0.7 && i < segments - 2) {
             ctx.save();
             ctx.lineWidth = 1;
@@ -273,22 +263,17 @@ export const drawWindmill = (ctx: CanvasRenderingContext2D, x: number, y: number
     ctx.translate(x, y);
     ctx.scale(scale, scale);
     
-    // Pole
     ctx.fillStyle = '#cbd5e1'; 
     ctx.beginPath();
     ctx.moveTo(-2, 0); ctx.lineTo(-1, -60); ctx.lineTo(1, -60); ctx.lineTo(2, 0);
     ctx.fill();
     
     const time = Date.now() * 0.002;
-    
     ctx.translate(0, -60);
     
     if (type === 'classic') {
-        // Hub
         ctx.fillStyle = '#475569';
         ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI*2); ctx.fill();
-        
-        // Blades
         ctx.rotate(time);
         ctx.fillStyle = '#f1f5f9'; 
         for(let i=0; i<3; i++) {
@@ -300,36 +285,28 @@ export const drawWindmill = (ctx: CanvasRenderingContext2D, x: number, y: number
             ctx.rotate((Math.PI*2)/3);
         }
     } else {
-        // Helical (Vertical Axis)
         ctx.fillStyle = '#475569';
         ctx.fillRect(-1, -20, 2, 40);
-        
         const rotation = time * 2;
         const width = 15;
         const height = 30;
-        
         ctx.lineWidth = 2;
         ctx.strokeStyle = '#f1f5f9';
-        
         ctx.beginPath();
         for(let i=0; i<=height; i+=2) {
             const yPos = i - (height/2);
             const xPos = Math.sin((i * 0.2) + rotation) * width;
-            if (i===0) ctx.moveTo(xPos, yPos);
-            else ctx.lineTo(xPos, yPos);
+            if (i===0) ctx.moveTo(xPos, yPos); else ctx.lineTo(xPos, yPos);
         }
         ctx.stroke();
-        
         ctx.beginPath();
         for(let i=0; i<=height; i+=2) {
             const yPos = i - (height/2);
             const xPos = Math.sin((i * 0.2) + rotation + Math.PI) * width;
-            if (i===0) ctx.moveTo(xPos, yPos);
-            else ctx.lineTo(xPos, yPos);
+            if (i===0) ctx.moveTo(xPos, yPos); else ctx.lineTo(xPos, yPos);
         }
         ctx.stroke();
     }
-    
     ctx.restore();
 };
 
@@ -352,147 +329,38 @@ export const drawBuilding = (ctx: CanvasRenderingContext2D, props: any, isDay: b
         if (isCactus) {
             ctx.fillStyle = '#166534';
             const stemW = Math.max(4, w * 0.5);
-            if(ctx.roundRect) {
-                ctx.beginPath(); ctx.roundRect(-stemW/2, -h, stemW, h, stemW/2); ctx.fill();
-            } else {
-                ctx.fillRect(-stemW/2, -h, stemW, h);
-            }
-            ctx.beginPath();
-            ctx.moveTo(-stemW/2, -h*0.4);
-            ctx.quadraticCurveTo(-stemW*3, -h*0.4, -stemW*3, -h*0.7);
-            ctx.lineTo(-stemW*3 + stemW, -h*0.7);
-            ctx.quadraticCurveTo(-stemW*3 + stemW, -h*0.5, -stemW/2, -h*0.3);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(stemW/2, -h*0.6);
-            ctx.quadraticCurveTo(stemW*3, -h*0.6, stemW*3, -h*0.8);
-            ctx.lineTo(stemW*3 - stemW, -h*0.8);
-            ctx.quadraticCurveTo(stemW*3 - stemW, -h*0.65, stemW/2, -h*0.5);
-            ctx.fill();
-
+            if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-stemW/2, -h, stemW, h, stemW/2); ctx.fill(); } else { ctx.fillRect(-stemW/2, -h, stemW, h); }
+            ctx.beginPath(); ctx.moveTo(-stemW/2, -h*0.4); ctx.quadraticCurveTo(-stemW*3, -h*0.4, -stemW*3, -h*0.7); ctx.lineTo(-stemW*3 + stemW, -h*0.7); ctx.quadraticCurveTo(-stemW*3 + stemW, -h*0.5, -stemW/2, -h*0.3); ctx.fill();
+            ctx.beginPath(); ctx.moveTo(stemW/2, -h*0.6); ctx.quadraticCurveTo(stemW*3, -h*0.6, stemW*3, -h*0.8); ctx.lineTo(stemW*3 - stemW, -h*0.8); ctx.quadraticCurveTo(stemW*3 - stemW, -h*0.65, stemW/2, -h*0.5); ctx.fill();
         } else if (isTri) {
-            ctx.fillStyle = trunkColor || '#451a03';
-            const trunkW = Math.max(2, w * 0.4);
-            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.2); 
-            ctx.fillStyle = color || '#166534';
-            
-            const topY = -h;
-            const bottomY = -h*0.2;
-            const halfBase = w;
-            const r = 3; 
-            
-            ctx.beginPath();
-            ctx.moveTo(0, topY + r);
-            ctx.quadraticCurveTo(0, topY, r, topY + r*2); 
-            ctx.lineTo(halfBase - r, bottomY - r);
-            ctx.quadraticCurveTo(halfBase, bottomY, halfBase - r*2, bottomY);
-            ctx.lineTo(-halfBase + r*2, bottomY);
-            ctx.quadraticCurveTo(-halfBase, bottomY, -halfBase + r, bottomY - r);
-            ctx.lineTo(-r, topY + r*2);
-            ctx.quadraticCurveTo(0, topY, 0, topY + r);
-            ctx.fill();
-
+            ctx.fillStyle = trunkColor || '#451a03'; const trunkW = Math.max(2, w * 0.4); ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.2); 
+            ctx.fillStyle = color || '#166534'; const topY = -h; const bottomY = -h*0.2; const halfBase = w; const r = 3; 
+            ctx.beginPath(); ctx.moveTo(0, topY + r); ctx.quadraticCurveTo(0, topY, r, topY + r*2); ctx.lineTo(halfBase - r, bottomY - r); ctx.quadraticCurveTo(halfBase, bottomY, halfBase - r*2, bottomY); ctx.lineTo(-halfBase + r*2, bottomY); ctx.quadraticCurveTo(-halfBase, bottomY, -halfBase + r, bottomY - r); ctx.lineTo(-r, topY + r*2); ctx.quadraticCurveTo(0, topY, 0, topY + r); ctx.fill();
         } else if (isPalm) {
-             ctx.strokeStyle = trunkColor || '#a16207';
-             ctx.lineWidth = Math.max(2, w * 0.3);
-             ctx.lineCap = 'round';
-             ctx.beginPath();
-             ctx.moveTo(0, 0);
-             ctx.quadraticCurveTo(w, -h*0.5, 0, -h);
-             ctx.stroke();
-             
-             ctx.fillStyle = color || '#15803d';
-             for(let i=0; i<5; i++) {
-                 ctx.beginPath();
-                 const angle = (i * Math.PI*2/5) - Math.PI/2;
-                 const lx = Math.cos(angle) * w * 2;
-                 const ly = Math.sin(angle) * w;
-                 ctx.ellipse(0 + lx/2, -h + ly/2, w*1.5, w/2, angle, 0, Math.PI*2);
-                 ctx.fill();
-             }
+             ctx.strokeStyle = trunkColor || '#a16207'; ctx.lineWidth = Math.max(2, w * 0.3); ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(w, -h*0.5, 0, -h); ctx.stroke();
+             ctx.fillStyle = color || '#15803d'; for(let i=0; i<5; i++) { ctx.beginPath(); const angle = (i * Math.PI*2/5) - Math.PI/2; const lx = Math.cos(angle) * w * 2; const ly = Math.sin(angle) * w; ctx.ellipse(0 + lx/2, -h + ly/2, w*1.5, w/2, angle, 0, Math.PI*2); ctx.fill(); }
         } else if (isOval) {
-            ctx.fillStyle = trunkColor || '#451a03';
-            const trunkW = Math.max(2, w * 0.3);
-            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
-            ctx.fillStyle = color || '#16a34a';
-            ctx.beginPath();
-            ctx.ellipse(0, -h*0.65, w, h*0.45, 0, 0, Math.PI*2);
-            ctx.fill();
+            ctx.fillStyle = trunkColor || '#451a03'; const trunkW = Math.max(2, w * 0.3); ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
+            ctx.fillStyle = color || '#16a34a'; ctx.beginPath(); ctx.ellipse(0, -h*0.65, w, h*0.45, 0, 0, Math.PI*2); ctx.fill();
         } else {
-            ctx.fillStyle = trunkColor || '#451a03';
-            const trunkW = Math.max(2, w * 0.4);
-            ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
-            ctx.fillStyle = color || '#16a34a';
-            ctx.beginPath();
-            ctx.arc(0, -h*0.6, w, 0, Math.PI*2);
-            ctx.fill();
+            ctx.fillStyle = trunkColor || '#451a03'; const trunkW = Math.max(2, w * 0.4); ctx.fillRect(-trunkW/2, 0, trunkW, -h*0.4);
+            ctx.fillStyle = color || '#16a34a'; ctx.beginPath(); ctx.arc(0, -h*0.6, w, 0, Math.PI*2); ctx.fill();
         }
     } else if (type === 'building_std') {
-        if (drawFoundation) {
-             ctx.fillStyle = '#334155';
-             ctx.fillRect(-w/2 - 2, 0, w + 4, 6);
-        }
-        ctx.fillStyle = color || '#475569';
-        ctx.fillRect(-w/2, -h, w, h);
-        
+        if (drawFoundation) { ctx.fillStyle = '#334155'; ctx.fillRect(-w/2 - 2, 0, w + 4, 6); }
+        ctx.fillStyle = color || '#475569'; ctx.fillRect(-w/2, -h, w, h);
         if (windowData) {
             ctx.fillStyle = isDay ? '#0ea5e9' : '#facc15';
-            windowData.forEach((wd: any) => {
-                const wx = -w/2 + wd.x;
-                const wy = -h + wd.y;
-                if (isDay || wd.isLit) {
-                    ctx.fillRect(wx, wy, windowW || 3, windowH || 5);
-                } else {
-                    ctx.fillStyle = '#1e293b';
-                    ctx.fillRect(wx, wy, windowW || 3, windowH || 5);
-                    ctx.fillStyle = isDay ? '#0ea5e9' : '#facc15'; 
-                }
-            });
+            windowData.forEach((wd: any) => { const wx = -w/2 + wd.x; const wy = -h + wd.y; if (isDay || wd.isLit) { ctx.fillRect(wx, wy, windowW || 3, windowH || 5); } else { ctx.fillStyle = '#1e293b'; ctx.fillRect(wx, wy, windowW || 3, windowH || 5); ctx.fillStyle = isDay ? '#0ea5e9' : '#facc15'; } });
         }
-        
-        if (acUnits) {
-            ctx.fillStyle = '#94a3b8';
-            acUnits.forEach((ac: any) => {
-                ctx.fillRect(-w/2 + ac.x, -h - ac.h, ac.w, ac.h);
-            });
-        }
-
-        if (hasRedRoof) {
-            ctx.fillStyle = '#991b1b';
-            ctx.beginPath();
-            ctx.moveTo(-w/2 - 2, -h);
-            ctx.lineTo(0, -h - 10);
-            ctx.lineTo(w/2 + 2, -h);
-            ctx.fill();
-        }
-        
-        if (hasBalcony) {
-             ctx.fillStyle = '#334155';
-             ctx.fillRect(-w/2 - 2, -h/2, w + 4, 4);
-        }
-
+        if (acUnits) { ctx.fillStyle = '#94a3b8'; acUnits.forEach((ac: any) => { ctx.fillRect(-w/2 + ac.x, -h - ac.h, ac.w, ac.h); }); }
+        if (hasRedRoof) { ctx.fillStyle = '#991b1b'; ctx.beginPath(); ctx.moveTo(-w/2 - 2, -h); ctx.lineTo(0, -h - 10); ctx.lineTo(w/2 + 2, -h); ctx.fill(); }
+        if (hasBalcony) { ctx.fillStyle = '#334155'; ctx.fillRect(-w/2 - 2, -h/2, w + 4, 4); }
     } else if (type === 'power_pole') {
-        const ph = h || 100;
-        ctx.strokeStyle = '#52525b';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(0, 0); ctx.lineTo(0, -ph);
-        const cw = isHighVoltage ? 30 : 20;
-        ctx.moveTo(-cw/2, -ph + 10); ctx.lineTo(cw/2, -ph + 10);
-        ctx.stroke();
+        const ph = h || 100; ctx.strokeStyle = '#52525b'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -ph); const cw = isHighVoltage ? 30 : 20; ctx.moveTo(-cw/2, -ph + 10); ctx.lineTo(cw/2, -ph + 10); ctx.stroke();
     } else if (type === 'hangar') {
-        const hw = w || 60;
-        const hh = h || 30;
-        ctx.fillStyle = '#334155';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, hw/2, hh, 0, Math.PI, 0);
-        ctx.fill();
-        ctx.fillStyle = '#0f172a';
-        ctx.beginPath();
-        ctx.ellipse(0, 0, hw/3, hh*0.8, 0, Math.PI, 0);
-        ctx.fill();
+        const hw = w || 60; const hh = h || 30; ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.ellipse(0, 0, hw/2, hh, 0, Math.PI, 0); ctx.fill(); ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.ellipse(0, 0, hw/3, hh*0.8, 0, Math.PI, 0); ctx.fill();
     }
-
     ctx.restore();
 };
 
@@ -506,8 +374,7 @@ export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f:
     ctx.translate(x, y);
     ctx.scale(scale, scale); 
 
-    ctx.fillStyle = '#334155';
-    ctx.beginPath(); ctx.moveTo(-r - 5, 0); ctx.lineTo(r + 5, 0); ctx.lineTo(r + 10, 40); ctx.lineTo(-r - 10, 40); ctx.fill();
+    ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.moveTo(-r - 5, 0); ctx.lineTo(r + 5, 0); ctx.lineTo(r + 10, 40); ctx.lineTo(-r - 10, 40); ctx.fill();
     ctx.fillStyle = '#475569'; ctx.fillRect(-r - 5, -5, (r * 2) + 10, 10);
 
     ctx.save();
@@ -519,54 +386,33 @@ export const drawDome = (ctx: CanvasRenderingContext2D, x: number, y: number, f:
         f.contents.forEach((c: any, cIdx: number) => {
             if (c.type === 'dome_building') {
                 ctx.fillStyle = c.color || '#94a3b8'; 
-                const safeR = r - 8; 
-                const bLeft = c.x - c.w/2;
-                const bRight = c.x + c.w/2;
-                let limitY_L = -10; 
-                let limitY_R = -10;
+                const safeR = r - 8; const bLeft = c.x - c.w/2; const bRight = c.x + c.w/2; let limitY_L = -10; let limitY_R = -10;
                 if (Math.abs(bLeft) < safeR) { limitY_L = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bLeft, 2)); }
                 if (Math.abs(bRight) < safeR) { limitY_R = -Math.sqrt(Math.pow(safeR, 2) - Math.pow(bRight, 2)); }
-                const targetH = -c.h;
-                const yL = Math.max(targetH, limitY_L);
-                const yR = Math.max(targetH, limitY_R);
+                const targetH = -c.h; const yL = Math.max(targetH, limitY_L); const yR = Math.max(targetH, limitY_R);
                 ctx.beginPath(); ctx.moveTo(bLeft, 0); ctx.lineTo(bRight, 0); ctx.lineTo(bRight, yR); ctx.lineTo(bLeft, yL); ctx.closePath(); ctx.fill();
                 ctx.fillStyle = '#fef08a'; 
                 const winRows = Math.floor(c.h / 6); const winCols = Math.floor(c.w / 5); const winW = scale > 1.2 ? 3 : 2; const winH = scale > 1.2 ? 4 : 3;
                 const slope = (yR - yL) / (bRight - bLeft); const k = yL - (slope * bLeft);
                 for(let i=0; i<winRows; i++) { 
                     for(let j=0; j<winCols; j++) { 
-                        const wx = bLeft + 2 + (j*5);
-                        const wy = -c.h + 2 + (i*6);
-                        const cutY = (slope * wx) + k;
+                        const wx = bLeft + 2 + (j*5); const wy = -c.h + 2 + (i*6); const cutY = (slope * wx) + k;
                         if (wy > cutY + 2) { 
-                            const seed = (cIdx * 100) + (i * 10) + j + slowTime; 
-                            const pseudoRand = Math.abs(Math.sin(seed * 12.9898)); 
+                            const seed = (cIdx * 100) + (i * 10) + j + slowTime; const pseudoRand = Math.abs(Math.sin(seed * 12.9898)); 
                             if (pseudoRand > 0.4) { ctx.fillRect(wx, wy, winW, winH); } 
                         }
                     } 
                 }
-            } else if (c.type === 'tree') {
-                drawBuilding(ctx, { x: c.x, y: 0, type: 'tree_round', w: c.w, h: c.h, color: '#16a34a', trunkColor: '#78350f' }, true, false);
-            } else if (c.type === 'bush') {
-                ctx.fillStyle = '#15803d'; ctx.beginPath(); ctx.arc(c.x, 0, c.w, Math.PI, 0); ctx.fill();
-                if(c.flowers) { ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(c.x-2, -2, 1.5, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(c.x+2, -3, 1.5, 0, Math.PI*2); ctx.fill(); }
-            } else if (c.type === 'flower') {
-                ctx.fillStyle = cIdx % 2 === 0 ? '#ef4444' : '#facc15'; ctx.beginPath(); ctx.arc(c.x, -2, 1.5, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = '#166534'; ctx.fillRect(c.x-0.5, -2, 1, 2);
-            } else if (c.type === 'bird') {
-                drawBird(ctx, c.x + Math.sin(time * 0.002 + cIdx) * 10, c.y + Math.cos(time * 0.003 + cIdx) * 3, 2, Math.sin(time*0.02 + cIdx));
-            } else if (c.type === 'butterfly') {
-                const bx = c.x + Math.sin(time * 0.005 + cIdx) * 15; const by = c.y - Math.abs(Math.sin(time * 0.01)) * 10;
-                ctx.fillStyle = cIdx % 2 === 0 ? '#3b82f6' : '#d946ef'; ctx.beginPath(); ctx.arc(bx, by, 1.5, 0, Math.PI*2); ctx.fill();
-            }
+            } else if (c.type === 'tree') { drawBuilding(ctx, { x: c.x, y: 0, type: 'tree_round', w: c.w, h: c.h, color: '#16a34a', trunkColor: '#78350f' }, true, false); } 
+            else if (c.type === 'bush') { ctx.fillStyle = '#15803d'; ctx.beginPath(); ctx.arc(c.x, 0, c.w, Math.PI, 0); ctx.fill(); if(c.flowers) { ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(c.x-2, -2, 1.5, 0, Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(c.x+2, -3, 1.5, 0, Math.PI*2); ctx.fill(); } } 
+            else if (c.type === 'flower') { ctx.fillStyle = cIdx % 2 === 0 ? '#ef4444' : '#facc15'; ctx.beginPath(); ctx.arc(c.x, -2, 1.5, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#166534'; ctx.fillRect(c.x-0.5, -2, 1, 2); } 
+            else if (c.type === 'bird') { drawBird(ctx, c.x + Math.sin(time * 0.002 + cIdx) * 10, c.y + Math.cos(time * 0.003 + cIdx) * 3, 2, Math.sin(time*0.02 + cIdx)); } 
+            else if (c.type === 'butterfly') { const bx = c.x + Math.sin(time * 0.005 + cIdx) * 15; const by = c.y - Math.abs(Math.sin(time * 0.01)) * 10; ctx.fillStyle = cIdx % 2 === 0 ? '#3b82f6' : '#d946ef'; ctx.beginPath(); ctx.arc(bx, by, 1.5, 0, Math.PI*2); ctx.fill(); }
         });
     }
     ctx.restore();
 
-    const glass = ctx.createRadialGradient(-r*0.3, -r*0.5, 5, 0, 0, r);
-    glass.addColorStop(0, 'rgba(255,255,255,0.4)'); glass.addColorStop(0.2, 'rgba(255,255,255,0.1)'); glass.addColorStop(1, 'rgba(255,255,255,0.0)');
-    ctx.fillStyle = glass; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.stroke();
+    const glass = ctx.createRadialGradient(-r*0.3, -r*0.5, 5, 0, 0, r); glass.addColorStop(0, 'rgba(255,255,255,0.4)'); glass.addColorStop(0.2, 'rgba(255,255,255,0.1)'); glass.addColorStop(1, 'rgba(255,255,255,0.0)'); ctx.fillStyle = glass; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r, Math.PI, 0); ctx.stroke();
     
     ctx.restore();
 };
@@ -592,24 +438,16 @@ export const drawPowerPlant = (ctx: CanvasRenderingContext2D, x: number, y: numb
     ctx.restore();
 };
 
-export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean, foundationHeight: number = 0) => {
+export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number = 1.0, isDay: boolean, foundationHeight: number = 0, seed: number = 0) => {
     ctx.save();
     ctx.translate(x, y);
     const distScale = scale * 0.8; ctx.scale(distScale, distScale);
     
     if (foundationHeight > 0) {
-        ctx.fillStyle = '#64748b'; 
-        ctx.fillRect(-32, 0, 64, foundationHeight);
-        
-        ctx.strokeStyle = '#475569'; 
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for(let fy = 0; fy <= foundationHeight; fy += 4) {
-            ctx.moveTo(-32, fy); ctx.lineTo(32, fy);
-        }
-        for(let fx = -32; fx <= 32; fx += 8) {
-            ctx.moveTo(fx, 0); ctx.lineTo(fx, foundationHeight);
-        }
+        ctx.fillStyle = '#64748b'; ctx.fillRect(-32, 0, 64, foundationHeight);
+        ctx.strokeStyle = '#475569'; ctx.lineWidth = 1; ctx.beginPath();
+        for(let fy = 0; fy <= foundationHeight; fy += 4) { ctx.moveTo(-32, fy); ctx.lineTo(32, fy); }
+        for(let fx = -32; fx <= 32; fx += 8) { ctx.moveTo(fx, 0); ctx.lineTo(fx, foundationHeight); }
         ctx.stroke();
     }
 
@@ -619,19 +457,29 @@ export const drawResort = (ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.beginPath(); ctx.moveTo(-47, -30); ctx.lineTo(-37, -38); ctx.lineTo(-28, -30); ctx.fill();
     ctx.beginPath(); ctx.moveTo(28, -30); ctx.lineTo(37, -38); ctx.lineTo(47, -30); ctx.fill();
 
+    const pseudoRandom = (input: number) => {
+        const x = Math.sin(input) * 10000;
+        return x - Math.floor(x);
+    };
+
     ctx.fillStyle = isDay ? '#38bdf8' : '#facc15';
-    for(let r=0; r<4; r++) { for(let c=0; c<5; c++) { const isLit = isDay ? true : Math.random() > 0.4; ctx.fillStyle = isLit ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(-25 + (c*11), -35 + (r*9), 4, 5); } }
-    for(let r=0; r<3; r++) { const isLitL = isDay ? true : Math.random() > 0.4; const isLitR = isDay ? true : Math.random() > 0.4; ctx.fillStyle = isLitL ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(-40, -25 + (r*9), 4, 5); ctx.fillStyle = isLitR ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(35, -25 + (r*9), 4, 5); }
+    for(let r=0; r<4; r++) { for(let c=0; c<5; c++) { 
+        const lightSeed = seed + (r * 10) + c;
+        const isLit = isDay ? true : pseudoRandom(lightSeed) > 0.4; 
+        ctx.fillStyle = isLit ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(-25 + (c*11), -35 + (r*9), 4, 5); 
+    } }
+    for(let r=0; r<3; r++) { 
+        const lightSeedL = seed + 100 + (r * 10);
+        const lightSeedR = seed + 200 + (r * 10);
+        const isLitL = isDay ? true : pseudoRandom(lightSeedL) > 0.4; 
+        const isLitR = isDay ? true : pseudoRandom(lightSeedR) > 0.4; 
+        ctx.fillStyle = isLitL ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(-40, -25 + (r*9), 4, 5); 
+        ctx.fillStyle = isLitR ? (isDay ? '#38bdf8' : '#facc15') : '#1e293b'; ctx.fillRect(35, -25 + (r*9), 4, 5); 
+    }
 
     ctx.fillStyle = '#475569'; ctx.fillRect(-45, 0, 90, 5);
     const drawSimplePine = (tx: number, th: number) => { 
-        ctx.fillStyle = '#166534'; 
-        ctx.beginPath(); 
-        ctx.moveTo(tx, 5 - th);
-        ctx.quadraticCurveTo(tx+2, 5-th+2, tx + 4, 5); 
-        ctx.lineTo(tx - 4, 5); 
-        ctx.quadraticCurveTo(tx-2, 5-th+2, tx, 5 - th);
-        ctx.fill(); 
+        ctx.fillStyle = '#166534'; ctx.beginPath(); ctx.moveTo(tx, 5 - th); ctx.quadraticCurveTo(tx+2, 5-th+2, tx + 4, 5); ctx.lineTo(tx - 4, 5); ctx.quadraticCurveTo(tx-2, 5-th+2, tx, 5 - th); ctx.fill(); 
     };
     drawSimplePine(-35, 15); drawSimplePine(-20, 12); drawSimplePine(20, 14); drawSimplePine(35, 16);
     ctx.restore();
@@ -680,45 +528,22 @@ export const drawTower = (ctx: CanvasRenderingContext2D, x: number, y: number, f
 
 const generateDomeContents = (rng: () => number) => {
     const contents: any[] = [];
-    const r = 70; // safe radius
-    
-    // Background buildings
+    const r = 70; 
     const bCount = 2 + Math.floor(rng() * 3);
     for(let i=0; i<bCount; i++) {
-        contents.push({
-            type: 'dome_building',
-            x: (rng() - 0.5) * r * 1.5,
-            w: 15 + rng() * 15,
-            h: 20 + rng() * 30,
-            color: rng() > 0.5 ? '#cbd5e1' : '#94a3b8'
-        });
+        contents.push({ type: 'dome_building', x: (rng() - 0.5) * r * 1.5, w: 15 + rng() * 15, h: 20 + rng() * 30, color: rng() > 0.5 ? '#cbd5e1' : '#94a3b8' });
     }
-    
-    // Vegetation
     const vCount = 3 + Math.floor(rng() * 5);
     for(let i=0; i<vCount; i++) {
         const type = rng() > 0.6 ? 'tree' : (rng() > 0.3 ? 'bush' : 'flower');
-        contents.push({
-            type,
-            x: (rng() - 0.5) * r * 1.8,
-            w: 3 + rng() * 3,
-            h: 10 + rng() * 10,
-            flowers: rng() > 0.5
-        });
+        contents.push({ type, x: (rng() - 0.5) * r * 1.8, w: 3 + rng() * 3, h: 10 + rng() * 10, flowers: rng() > 0.5 });
     }
-    
-    // Life
     if (rng() > 0.3) {
         const lCount = 1 + Math.floor(rng() * 3);
         for(let i=0; i<lCount; i++) {
-            contents.push({
-                type: rng() > 0.5 ? 'bird' : 'butterfly',
-                x: (rng() - 0.5) * r,
-                y: -10 - (rng() * 30)
-            });
+            contents.push({ type: rng() > 0.5 ? 'bird' : 'butterfly', x: (rng() - 0.5) * r, y: -10 - (rng() * 30) });
         }
     }
-    
     return contents;
 };
 
@@ -742,13 +567,12 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const hasWindmills = isLush && rng() > 0.3;
     const hasHangars = (isBarren || isLush) && rng() > 0.6;
 
-    // Weather Effects Logic
-    const isRainy = isLush && rng() > 0.7; // 30% chance rain on lush
-    const isStormy = isRainy && rng() > 0.5; // 50% chance thunder if rain
-    const hasBirds = isLush && !isRainy && rng() > 0.2; // Birds only on lush, non-rainy days
+    const isRainy = isLush && rng() > 0.7; 
+    const isStormy = isRainy && rng() > 0.5; 
+    const hasBirds = isLush && !isRainy && rng() > 0.2; 
 
     let skyGradient = ['#000000', '#000000'];
-    let cloudColors = ['#ffffff']; // Default
+    let cloudColors = ['#ffffff']; 
     let sunColor = '#facc15';
     let atmosphereColor = '#000000';
 
@@ -769,26 +593,12 @@ export const generatePlanetEnvironment = (planet: Planet) => {
         atmosphereColor = '#27272a'; 
     }
 
-    // STRICT CLOUD COLOR RULES
-    if (isLush || isOcean || isBluish || isGreenish) {
-        // White and shades of gray
-        cloudColors = ['#ffffff', '#e5e7eb', '#d1d5db', '#9ca3af'];
-    } else if (isReddish || (isBarren && !isPurple)) {
-        // Yellow, Orange for desert
-        cloudColors = ['#fde047', '#fdba74', '#fbbf24', '#f87171'];
-    } else if (isPurple) {
-        // Pink and Green for poison
-        cloudColors = ['#f0abfc', '#86efac', '#d8b4fe', '#bef264'];
-    } else if (isWhite) {
-        cloudColors = ['#e0f2fe', '#ffffff'];
-    }
+    if (isLush || isOcean || isBluish || isGreenish) { cloudColors = ['#ffffff', '#e5e7eb', '#d1d5db', '#9ca3af']; } 
+    else if (isReddish || (isBarren && !isPurple)) { cloudColors = ['#fde047', '#fdba74', '#fbbf24', '#f87171']; } 
+    else if (isPurple) { cloudColors = ['#f0abfc', '#86efac', '#d8b4fe', '#bef264']; } 
+    else if (isWhite) { cloudColors = ['#e0f2fe', '#ffffff']; }
 
-    // Rain Override for Sky
-    if (isRainy) {
-        skyGradient[0] = mixColor(skyGradient[0], '#1f2937', 0.6); // Darker top
-        cloudColors = ['#6b7280', '#4b5563', '#9ca3af']; // Grey storm clouds
-        sunColor = '#9ca3af'; // Dim sun
-    }
+    if (isRainy) { skyGradient[0] = mixColor(skyGradient[0], '#1f2937', 0.6); cloudColors = ['#6b7280', '#4b5563', '#9ca3af']; sunColor = '#9ca3af'; }
 
     let groundColor = planet.color; 
     let hillColors: string[] = [];
@@ -804,316 +614,105 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     const stars = Array.from({ length: isDay ? 60 : 250 }).map(() => ({ x: rng(), y: rng(), size: rng() * 0.8 + 0.2, alpha: isDay ? 0.4 : (rng() * 0.5 + 0.5) }));
     
-    // CLOUDS - SLOW DIFFUSE
     const clouds: any[] = [];
     const windDir = rng() > 0.5 ? 1 : -1;
-    
     const layerScales = [0.5, 0.8, 1.2]; 
     const layerAlphas = [0.8, 0.6, 0.4];
     const layerParallax = [-0.1, 0.05, 0.2]; 
-    
-    const minAltitude = 0;
-    const maxAltitude = 4000;
+    const minAltitude = 0; const maxAltitude = 4000;
 
     for (let l = 0; l < 3; l++) {
-        const scale = layerScales[l];
-        const parallax = layerParallax[l];
-        
-        // Significantly reduced speed for "majestic" feel
-        const speed = 0.02 + (l * 0.02);
-
-        const count = 6 + Math.floor(rng() * 4); 
-        
+        const scale = layerScales[l]; const parallax = layerParallax[l]; const speed = 0.02 + (l * 0.02); const count = 6 + Math.floor(rng() * 4); 
         for (let c = 0; c < count; c++) {
-             const color = cloudColors[Math.floor(rng() * cloudColors.length)];
-             const baseAlpha = layerAlphas[l];
-             
-             // Generate Fractal/Diffuse Puffs
-             const puffs = [];
-             const baseW = 200 + rng() * 150; 
-             const puffCount = 6 + Math.floor(rng() * 6);
-             
-             for(let p=0; p<puffCount; p++) {
-                 const px = (rng() - 0.5) * baseW * scale;
-                 const py = (rng() - 0.5) * (baseW * 0.4) * scale;
-                 const pr = (30 + rng() * 40) * scale;
-                 const pa = 0.4 + rng() * 0.4;
-                 puffs.push({x: px, y: py, r: pr, a: pa});
-             }
-
-             clouds.push({
-                 x: (rng() * 4000) - 2000,
-                 altitude: minAltitude + (rng() * (maxAltitude - minAltitude)), 
-                 w: baseW * scale, 
-                 baseAlpha: baseAlpha,
-                 speed: speed,
-                 direction: windDir,
-                 layer: l,
-                 color: color,
-                 id: c, 
-                 parallaxFactor: parallax,
-                 puffs: puffs
-             });
+             const color = cloudColors[Math.floor(rng() * cloudColors.length)]; const baseAlpha = layerAlphas[l];
+             const puffs = []; const baseW = 200 + rng() * 150; const puffCount = 6 + Math.floor(rng() * 6);
+             for(let p=0; p<puffCount; p++) { const px = (rng() - 0.5) * baseW * scale; const py = (rng() - 0.5) * (baseW * 0.4) * scale; const pr = (30 + rng() * 40) * scale; const pa = 0.4 + rng() * 0.4; puffs.push({x: px, y: py, r: pr, a: pa}); }
+             clouds.push({ x: (rng() * 4000) - 2000, altitude: minAltitude + (rng() * (maxAltitude - minAltitude)), w: baseW * scale, baseAlpha: baseAlpha, speed: speed, direction: windDir, layer: l, color: color, id: c, parallaxFactor: parallax, puffs: puffs });
         }
     }
 
-    // ... (rest of function remains same)
-    const hills = [];
-    const trains: any[] = [];
-    let domeCount = 0;
-    
-    const forceDome = isBarren;
-    let domePlaced = false;
+    const hills = []; const trains: any[] = []; let domeCount = 0; const forceDome = isBarren; let domePlaced = false;
     
     for(let i=0; i<(isOcean?0:6); i++) {
-        const points = [];
-        const isMountain = i < 2; 
-        const segments = isMountain ? 24 : 16; 
-        const hasRoad = i === 4; 
-        const hasTrainTrack = i === 3 && hasTrains;
-
+        const points = []; const isMountain = i < 2; const segments = isMountain ? 24 : 16; const hasRoad = i === 4; const hasTrainTrack = i === 3 && hasTrains;
         for(let j=0; j<=segments; j++) {
-            let minH = isMountain ? 0.4 : 0.15; 
-            let maxH = isMountain ? 0.8 : 0.45;
+            let minH = isMountain ? 0.4 : 0.15; let maxH = isMountain ? 0.8 : 0.45;
             if (!isMountain && i >= 3 && rng() > 0.6) minH = 0.02; 
-            const yVar = rng();
-            points.push({ xRatio: j/segments, heightRatio: minH + (yVar * (maxH - minH)) });
+            const yVar = rng(); points.push({ xRatio: j/segments, heightRatio: minH + (yVar * (maxH - minH)) });
         }
+        if (!isMountain) { for (let k = 0; k < 2; k++) { for (let j = 1; j < points.length - 1; j++) { points[j].heightRatio = (points[j-1].heightRatio + points[j].heightRatio + points[j+1].heightRatio) / 3; } } }
 
-        if (!isMountain) {
-            for (let k = 0; k < 2; k++) { 
-                for (let j = 1; j < points.length - 1; j++) {
-                    points[j].heightRatio = (points[j-1].heightRatio + points[j].heightRatio + points[j+1].heightRatio) / 3;
-                }
-            }
-        }
-
-        const trees: any[] = [];
-        const snowCaps: any[] = [];
-        const cityBuildings: any[] = [];
-        const roadBuildingsBack: any[] = [];
-        const roadBuildingsFront: any[] = [];
-        const nearbyBuildings: any[] = [];
+        const trees: any[] = []; const snowCaps: any[] = []; const cityBuildings: any[] = []; const roadBuildingsBack: any[] = []; const roadBuildingsFront: any[] = []; const nearbyBuildings: any[] = [];
         
         if (isMountain && rng() < 0.7) { 
             const numFeatures = 2 + Math.floor(rng() * 2);
             for(let k=0; k<numFeatures; k++) {
-                const idx = Math.floor(rng() * (segments - 2)) + 1;
-                const p = points[idx];
-                const pNext = points[idx+1];
-                
+                const idx = Math.floor(rng() * (segments - 2)) + 1; const p = points[idx]; const pNext = points[idx+1];
                 if (p.heightRatio > 0.4) {
                     if (isLush) {
                         trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'resort', scale: 0.7 + rng()*0.5 });
-                        
-                        const treeType = 'tree_tri'; // Mountains prefer triangular trees
-                        trees.push({ segIdx: idx, offset: 0.4, w: 4, h: 10, type: treeType, color: '#166534' });
-                        trees.push({ segIdx: idx, offset: 0.6, w: 4, h: 12, type: treeType, color: '#166534' });
-                    } else if (isBarren) {
-                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'mining', scale: 0.8 + rng()*0.4 });
-                    }
+                        const treeType = 'tree_tri'; trees.push({ segIdx: idx, offset: 0.4, w: 4, h: 10, type: treeType, color: '#166534' }); trees.push({ segIdx: idx, offset: 0.6, w: 4, h: 12, type: treeType, color: '#166534' });
+                    } else if (isBarren) { trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'mining', scale: 0.8 + rng()*0.4 }); }
                 }
-                
-                // Add Windmills on Lush Hills (Slope Check)
-                if (hasWindmills && !isMountain && i > 2) {
-                    const slope = Math.abs(p.heightRatio - pNext.heightRatio);
-                    if (slope > 0.05 && rng() > 0.6) {
-                        trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'windmill', scale: 0.8 + rng()*0.4, windmillType: rng() > 0.5 ? 'classic' : 'helical' });
-                    }
-                }
+                if (hasWindmills && !isMountain && i > 2) { const slope = Math.abs(p.heightRatio - pNext.heightRatio); if (slope > 0.05 && rng() > 0.6) { trees.push({ segIdx: idx, offset: 0.5, w: 0, h: 0, type: 'windmill', scale: 0.8 + rng()*0.4, windmillType: rng() > 0.5 ? 'classic' : 'helical' }); } }
             }
         }
 
         if (isLush || isBarren) {
             for(let j=0; j<segments; j++) {
-                // Adjust density based on terrain
                 const densityChance = isLush ? 0.4 : 0.1;
                 if (rng() < densityChance) {
                     const clusterSize = 2 + Math.floor(rng() * 3);
                     for(let k=0; k<clusterSize; k++) {
-                        let treeType = 'tree_round'; // Default
-                        
-                        if (isLush) {
-                            if (isMountain) treeType = 'tree_tri'; // Triangular on lush mountains
-                            else {
-                                // Hills: Round or Oval
-                                treeType = rng() > 0.5 ? 'tree_round' : 'tree_oval';
-                            }
-                            // Snow/White special case
-                            if (isWhite) treeType = 'pine';
-                        } else if (isBarren) {
-                            // Desert/Barren: Cactus or Palm
-                            treeType = rng() > 0.6 ? 'cactus' : 'palm';
-                        }
-
-                        trees.push({ 
-                            segIdx: j, 
-                            offset: rng(), 
-                            w: 4 + rng() * 4, 
-                            h: 10 + rng() * 20, 
-                            color: isLush ? '#166534' : '#15803d', 
-                            trunkColor: '#78350f', 
-                            type: treeType 
-                        });
+                        let treeType = 'tree_round'; 
+                        if (isLush) { if (isMountain) treeType = 'tree_tri'; else { treeType = rng() > 0.5 ? 'tree_round' : 'tree_oval'; } if (isWhite) treeType = 'pine'; } else if (isBarren) { treeType = rng() > 0.6 ? 'cactus' : 'palm'; }
+                        trees.push({ segIdx: j, offset: rng(), w: 4 + rng() * 4, h: 10 + rng() * 20, color: isLush ? '#166534' : '#15803d', trunkColor: '#78350f', type: treeType });
                     }
                 }
             }
         }
 
-        if (isMountain && (isBluish || isWhite)) {
-            for(let j=1; j<points.length-1; j++) {
-                if (points[j].heightRatio > 0.6) {
-                    snowCaps.push({ idx: j, h: points[j].heightRatio });
-                }
-            }
-        }
+        if (isMountain && (isBluish || isWhite)) { for(let j=1; j<points.length-1; j++) { if (points[j].heightRatio > 0.6) { snowCaps.push({ idx: j, h: points[j].heightRatio }); } } }
 
         if (hasRoad) {
-            const cityStart = 0.2 + (rng() * 0.1); 
-            const density = 20; 
+            const cityStart = 0.2 + (rng() * 0.1); const density = 20; 
             for(let k=0; k<density; k++) {
                 if (rng() > 0.4) {
-                    const xRatio = cityStart + (k/density * 0.6) + (rng() * 0.02);
-                    const segIdx = Math.floor(xRatio * segments);
-                    const p1 = points[segIdx] || points[points.length-1];
-                    const p2 = points[segIdx+1] || p1;
-                    const sub = (xRatio * segments) - segIdx;
-                    const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
-
-                    if (hasDomes && (domeCount < 3 && (rng() > 0.8 || (forceDome && !domePlaced && k > 15)))) {
-                        domeCount++;
-                        domePlaced = true;
-                        const domeContents = generateDomeContents(rng);
-                        roadBuildingsBack.push({ xRatio, yBase, yOffset: 2, type: 'dome_std', scale: 0.7 + rng() * 0.3, contents: domeContents });
-                    } else if (isLush) {
-                        const w = 15 + rng() * 15; const h = 30 + rng() * 30; const winData = [];
-                        const rows = Math.floor(h/8); const cols = Math.floor(w/6);
-                        for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 2 + c*5, y: 4 + r*7, isLit: rng()>0.5}); } }
-                        roadBuildingsBack.push({ xRatio, yBase, yOffset: -2, w, h, color: '#475569', type: 'building_std', drawFoundation: true, windowData: winData, windowW: 3, windowH: 5 });
-                    } else if (hasHangars && rng() > 0.9) {
-                        // Rare hangar in background
-                        roadBuildingsBack.push({ xRatio, yBase, yOffset: 0, type: 'hangar', w: 50, h: 25 });
-                    }
+                    const xRatio = cityStart + (k/density * 0.6) + (rng() * 0.02); const segIdx = Math.floor(xRatio * segments); const p1 = points[segIdx] || points[points.length-1]; const p2 = points[segIdx+1] || p1; const sub = (xRatio * segments) - segIdx; const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
+                    if (hasDomes && (domeCount < 3 && (rng() > 0.8 || (forceDome && !domePlaced && k > 15)))) { domeCount++; domePlaced = true; const domeContents = generateDomeContents(rng); roadBuildingsBack.push({ xRatio, yBase, yOffset: 2, type: 'dome_std', scale: 0.7 + rng() * 0.3, contents: domeContents }); } 
+                    else if (isLush) { const w = 15 + rng() * 15; const h = 30 + rng() * 30; const winData = []; const rows = Math.floor(h/8); const cols = Math.floor(w/6); for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 2 + c*5, y: 4 + r*7, isLit: rng()>0.5}); } } roadBuildingsBack.push({ xRatio, yBase, yOffset: -2, w, h, color: '#475569', type: 'building_std', drawFoundation: true, windowData: winData, windowW: 3, windowH: 5 }); } 
+                    else if (hasHangars && rng() > 0.9) { roadBuildingsBack.push({ xRatio, yBase, yOffset: 0, type: 'hangar', w: 50, h: 25 }); }
                 }
             }
             for(let k=0; k<15; k++) {
                 if (rng() > 0.3) { 
-                    const xRatio = cityStart + (k/15 * 0.6);
-                    const segIdx = Math.floor(xRatio * segments);
-                    const p1 = points[segIdx] || points[points.length-1];
-                    const p2 = points[segIdx+1] || p1;
-                    const sub = (xRatio * segments) - segIdx;
-                    const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
-
-                    if (hasDomes && (domeCount < 3 && rng() > 0.8)) {
-                         domeCount++;
-                         const domeContents = generateDomeContents(rng);
-                         roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, type: 'dome_std', scale: 1.0 + rng() * 0.4, contents: domeContents });
-                    } else if (isLush) {
-                        const w = 30 + rng() * 20; const h = 50 + rng() * 30; const winData = [];
-                        const rows = Math.floor(h/10); const cols = Math.floor(w/8);
-                        for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 4 + c*7, y: 6 + r*9, isLit: rng()>0.5}); } }
-                        roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, w, h, color: '#64748b', type: 'building_std', windowData: winData, windowW: 4, windowH: 6, acUnits: rng()>0.5 ? [{x: 5, w: 8, h: 4}] : [] });
-                    } else if (hasHangars && rng() > 0.85) {
-                        // Foreground Hangar
-                        roadBuildingsFront.push({ xRatio, yBase, yOffset: 10, type: 'hangar', w: 80, h: 40 });
-                    }
+                    const xRatio = cityStart + (k/15 * 0.6); const segIdx = Math.floor(xRatio * segments); const p1 = points[segIdx] || points[points.length-1]; const p2 = points[segIdx+1] || p1; const sub = (xRatio * segments) - segIdx; const yBase = p1.heightRatio + (p2.heightRatio - p1.heightRatio) * sub;
+                    if (hasDomes && (domeCount < 3 && rng() > 0.8)) { domeCount++; const domeContents = generateDomeContents(rng); roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, type: 'dome_std', scale: 1.0 + rng() * 0.4, contents: domeContents }); } 
+                    else if (isLush) { const w = 30 + rng() * 20; const h = 50 + rng() * 30; const winData = []; const rows = Math.floor(h/10); const cols = Math.floor(w/8); for(let r=0; r<rows; r++) { for(let c=0; c<cols; c++) { if(rng()>0.3) winData.push({x: 4 + c*7, y: 6 + r*9, isLit: rng()>0.5}); } } roadBuildingsFront.push({ xRatio, yBase, yOffset: 15, w, h, color: '#64748b', type: 'building_std', windowData: winData, windowW: 4, windowH: 6, acUnits: rng()>0.5 ? [{x: 5, w: 8, h: 4}] : [] }); } 
+                    else if (hasHangars && rng() > 0.85) { roadBuildingsFront.push({ xRatio, yBase, yOffset: 10, type: 'hangar', w: 80, h: 40 }); }
                 }
             }
         }
 
-        if (hasTrainTrack) { 
-            trains.push({ layer: i, progress: rng(), speed: 0.0005 + (rng() * 0.0005), cars: 4 + Math.floor(rng() * 3), color: '#ef4444', dir: rng() > 0.5 ? 1 : -1 }); 
-        }
-
+        if (hasTrainTrack) { trains.push({ layer: i, progress: rng(), speed: 0.0005 + (rng() * 0.0005), cars: 4 + Math.floor(rng() * 3), color: '#ef4444', dir: rng() > 0.5 ? 1 : -1 }); }
         hills.push({ layer: i, type: isMountain ? 'mountain' : 'hill', color: hillColors[i], points, trees, snowCaps, roadBuildingsBack, roadBuildingsFront, nearbyBuildings, cityBuildings, hasRoad, hasTrainTrack, parallaxFactor: 0.1 + (i * 0.15) });
     }
 
-    // Force dome if still not placed on a barren world (foreground backup)
-    if (forceDome && !domePlaced) {
-        // Place one in features
-        const domeX = (rng() - 0.5) * 600;
-        const domeContents = generateDomeContents(rng);
-        hills[4].nearbyBuildings.push({ xRatio: 0.5, yBase: 0.2, yOffset: 10, type: 'dome_std', scale: 1.5, contents: domeContents });
+    if (forceDome && !domePlaced) { const domeContents = generateDomeContents(rng); hills[4].nearbyBuildings.push({ xRatio: 0.5, yBase: 0.2, yOffset: 10, type: 'dome_std', scale: 1.5, contents: domeContents }); }
+
+    const features: any[] = []; const powerLines: any[] = [];
+    const towerX = (rng()>0.5?1:-1) * 180; features.push({ x: towerX, type: 'tower', h: 160, w: 42, color: '#e2e8f0', yOff: 0, arms: [-130, -50] });
+    if (hasDomes && !isOcean && rng() > 0.5) { const domeX = -towerX * 0.8; const domeContents = generateDomeContents(rng); features.push({ x: domeX, yOff: 20, type: 'dome_std', scale: 2.5, contents: domeContents, isForeground: true }); }
+    if (isOcean) { for(let i=0; i<3; i++) { const domeContents = generateDomeContents(rng); const isNearCenter = i === 0 || i === 1; features.push({ x: (i%2===0?1:-1)*(400 + i*250), type: 'dome_std', scale: 1.3, contents: domeContents, isForeground: isNearCenter }); } } 
+    else {
+        const plantX = -towerX * 1.5; features.push({ x: plantX, type: 'power_plant', scale: 1.0, isUnderground: !isGreenish });
+        const poleX = plantX + (plantX>0?80:-80); features.push({ x: poleX, type: 'power_pole', h: 140, isHighVoltage: true });
+        const chain = []; const dist = Math.abs(poleX - towerX); const steps = Math.floor(dist/200); for(let k=0; k<=steps; k++) { const tx = towerX + (k * (poleX-towerX)/steps); if (k > 0 && k < steps) features.push({ x: tx, type: 'power_pole', h: 100 }); chain.push({ x: tx, yOff: 0, h: k===0 || k===steps ? 120 : 100 }); } powerLines.push(chain);
     }
 
-    const features: any[] = [];
-    const powerLines: any[] = [];
-    
-    const towerX = (rng()>0.5?1:-1) * 180; 
-    features.push({ x: towerX, type: 'tower', h: 160, w: 42, color: '#e2e8f0', yOff: 0, arms: [-130, -50] });
+    const cars: any[] = []; if (hills[4]?.hasRoad) { for(let i=0; i<5; i++) cars.push({ type: 'car', progress: rng(), speed: 0.0003, color: '#ef4444', dir: rng()>0.5?1:-1 }); }
+    const wanderers: {x: number, y: number, size: number, color: string}[] = []; if (!isDay && rng() > 0.5) { const wCount = 1 + Math.floor(rng() * 2); for(let i=0; i<wCount; i++) { wanderers.push({ x: rng(), y: rng() * 0.4, size: 1 + rng() * 2, color: '#94a3b8' }); } }
+    const streetLights: {x: number, h: number}[] = []; if (hills[4]?.hasRoad) { for(let k=0; k<15; k++) { streetLights.push({ x: -1400 + (k * 200) + (rng() * 20), h: 25 }); } }
 
-    if (hasDomes && !isOcean && rng() > 0.5) {
-        const domeX = -towerX * 0.8; 
-        const domeContents = generateDomeContents(rng);
-        // Mark as foreground for closer domes
-        features.push({ x: domeX, yOff: 20, type: 'dome_std', scale: 2.5, contents: domeContents, isForeground: true });
-    }
-
-    if (isOcean) {
-        for(let i=0; i<3; i++) {
-            const domeContents = generateDomeContents(rng);
-            const isNearCenter = i === 0 || i === 1; 
-            features.push({ 
-                x: (i%2===0?1:-1)*(400 + i*250), 
-                type: 'dome_std', 
-                scale: 1.3, 
-                contents: domeContents,
-                isForeground: isNearCenter
-            });
-        }
-    } else {
-        const plantX = -towerX * 1.5; 
-        features.push({ x: plantX, type: 'power_plant', scale: 1.0, isUnderground: !isGreenish });
-        const poleX = plantX + (plantX>0?80:-80);
-        features.push({ x: poleX, type: 'power_pole', h: 140, isHighVoltage: true });
-        
-        const chain = [];
-        const dist = Math.abs(poleX - towerX); const steps = Math.floor(dist/200);
-        for(let k=0; k<=steps; k++) {
-            const tx = towerX + (k * (poleX-towerX)/steps);
-            if (k > 0 && k < steps) features.push({ x: tx, type: 'power_pole', h: 100 });
-            chain.push({ x: tx, yOff: 0, h: k===0 || k===steps ? 120 : 100 });
-        }
-        powerLines.push(chain);
-    }
-
-    const cars: any[] = [];
-    if (hills[4]?.hasRoad) {
-        for(let i=0; i<5; i++) cars.push({ type: 'car', progress: rng(), speed: 0.0003, color: '#ef4444', dir: rng()>0.5?1:-1 });
-    }
-
-    const wanderers: {x: number, y: number, size: number, color: string}[] = [];
-    if (!isDay && rng() > 0.5) {
-        const wCount = 1 + Math.floor(rng() * 2);
-        for(let i=0; i<wCount; i++) {
-            wanderers.push({
-                x: rng(),
-                y: rng() * 0.4,
-                size: 1 + rng() * 2,
-                color: '#94a3b8'
-            });
-        }
-    }
-
-    const streetLights: {x: number, h: number}[] = [];
-    if (hills[4]?.hasRoad) {
-        for(let k=0; k<15; k++) {
-             streetLights.push({ x: -1400 + (k * 200) + (rng() * 20), h: 25 });
-        }
-    }
-
-    return {
-        isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush,
-        sunColor, skyGradient, cloudColor: cloudColors[0], // Keep for backward compat
-        cloudColors, // New array for variety
-        hillColors,
-        stars, clouds, hills, features, cars, trains,
-        groundColor, powerLines,
-        quadrant: planet.quadrant,
-        weather: { isRainy, isStormy },
-        hasBirds,
-        wanderers,
-        streetLights
-    };
+    return { isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush, sunColor, skyGradient, cloudColor: cloudColors[0], cloudColors, hillColors, stars, clouds, hills, features, cars, trains, groundColor, powerLines, quadrant: planet.quadrant, weather: { isRainy, isStormy }, hasBirds, wanderers, streetLights };
 };

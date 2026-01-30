@@ -100,7 +100,9 @@ export const SequenceStatusBar: React.FC<SequenceStatusBarProps> = ({ altitude, 
                 
                 {/* RIGHT: SKIP BUTTON */}
                 <button 
-                    onClick={onSkip} 
+                    onClick={onSkip}
+                    tabIndex={-1}
+                    onFocus={(e) => e.target.blur()}
                     className="h-10 px-6 bg-zinc-900 border border-zinc-700 hover:border-emerald-500 hover:text-emerald-400 text-zinc-400 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 flex items-center gap-3 shadow-lg group"
                 >
                     SKIP SEQ

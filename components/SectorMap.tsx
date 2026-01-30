@@ -117,25 +117,40 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
 
       const planetRadius = planetSizePx / 2;
 
-      // Moon Count Logic: Use data if present, otherwise default to procedural except for specific overrides
-      let moonCount = 0;
-      if (p.moons && p.moons.length > 0) {
-          moonCount = p.moons.length;
-      } else if (p.id === 'p3' || (p.id === 'p9' && p.moons.length === 0)) {
-          // Explicitly 0 for Red Planet (Vulcan Forge) and Red Planet (Neon Outpost) if emptied
-          moonCount = 0; 
-      } else {
-          moonCount = Math.floor(Math.random() * 3) + (i > 1 ? 1 : 0);
-      }
+      // Moon Generation Logic
+      let visualMoons: { dist: number, speed: number, offset: number, direction: number, size: number }[] = [];
 
-      // Generate Visual Moons
-      const visualMoons = Array.from({ length: moonCount }).map((_, mi) => ({
-          dist: planetRadius + 18 + (mi * 18), // Tighter moon spacing
-          speed: 0.02 + (Math.random() * 0.02),
-          offset: Math.random() * Math.PI * 2,
-          direction: Math.random() > 0.5 ? 1 : -1,
-          size: 5 + Math.random() * 4 
-      }));
+      if (activeQuadrant === QuadrantType.DELTA) {
+          // DELTA SECTOR: Specific fixed moon configuration
+          if (i === 0) { // Planet 1
+              visualMoons.push({ dist: planetRadius + 15, speed: 0.03, offset: Math.random() * 6, direction: 1, size: 4 });
+          } else if (i === 1) { // Planet 2
+              visualMoons.push({ dist: planetRadius + 18, speed: 0.025, offset: Math.random() * 6, direction: -1, size: 5 });
+          } else if (i === 2) { // Planet 3
+              // 2 moons, same direction, different speeds. Closer is bigger (double).
+              visualMoons.push({ dist: planetRadius + 22, speed: 0.04, offset: 0, direction: 1, size: 8 }); // Closer, Big
+              visualMoons.push({ dist: planetRadius + 45, speed: 0.02, offset: 2, direction: 1, size: 4 }); // Farther, Small
+          }
+      } else {
+          // STANDARD PROCEDURAL LOGIC FOR OTHER SECTORS
+          let moonCount = 0;
+          if (p.moons && p.moons.length > 0) {
+              moonCount = p.moons.length;
+          } else if (p.id === 'p3' || (p.id === 'p9' && p.moons.length === 0)) {
+              // Explicitly 0 for Red Planet (Vulcan Forge) and Red Planet (Neon Outpost) if emptied
+              moonCount = 0; 
+          } else {
+              moonCount = Math.floor(Math.random() * 3) + (i > 1 ? 1 : 0);
+          }
+
+          visualMoons = Array.from({ length: moonCount }).map((_, mi) => ({
+              dist: planetRadius + 18 + (mi * 18), // Tighter moon spacing
+              speed: 0.02 + (Math.random() * 0.02),
+              offset: Math.random() * Math.PI * 2,
+              direction: Math.random() > 0.5 ? 1 : -1,
+              size: 5 + Math.random() * 4 
+          }));
+      }
 
       // Calculate System Radius to ensure clearance
       const maxMoonDist = visualMoons.length > 0 ? visualMoons[visualMoons.length - 1].dist : 0;

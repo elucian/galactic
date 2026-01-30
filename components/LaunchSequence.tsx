@@ -150,8 +150,14 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
 
   useEffect(() => {
       audioService.stop();
+      
+      // Safety delay to prevent accidental skip from previous screen (e.g. holding Space)
+      let canSkip = false;
+      const timer = setTimeout(() => { canSkip = true; }, 1500);
+
       const handleKeyDown = (e: KeyboardEvent) => { 
           if (e.code === 'Space') { 
+              if (!canSkip) return;
               e.preventDefault(); 
               audioService.stopLaunchSequence();
               audioService.stop();
@@ -159,7 +165,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           }
       };
       window.addEventListener('keydown', handleKeyDown);
-      return () => window.removeEventListener('keydown', handleKeyDown);
+      return () => { clearTimeout(timer); window.removeEventListener('keydown', handleKeyDown); };
   }, []);
 
   useEffect(() => {
@@ -308,13 +314,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               
               if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
               
-              // Star Visibility in Delta: Show ONLY during eclipse (when Red Dwarf is behind)
-              // Atmospheric fade still applies, but base visibility is toggled by eclipse
-              // Also ensure stars are visible in deep space (spaceRatio > 0.8) regardless? No, user said "dissapear again when red dwarf appear".
-              // So, strictly eclipse based.
               const eclipseFactor = isBehind ? 1.0 : 0.0;
-              // Combine with altitude fade: Stars appear in space OR during night/eclipse on ground
-              // But user emphasizes the cycle.
               starVis = eclipseFactor * (0.8 + (spaceRatio * 0.2)); 
 
               // Render Stars with new visibility
@@ -365,7 +365,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               
               if (isBehind) { 
                   drawDwarf(); 
-                  drawJets(); // Jets behind BH? Maybe inside/behind accretion disk but visible
+                  drawJets(); 
                   drawBlackHole(); 
               } else { 
                   drawJets();
@@ -493,7 +493,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       }
                   }
 
-                  if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits }, env.isDay, false); } }); }
+                  if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, hasBalcony: b.hasBalcony }, env.isDay, false); } }); }
 
                   if (hill.trees) {
                       hill.trees.forEach((t: any, tIdx: number) => {
