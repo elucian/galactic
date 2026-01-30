@@ -194,34 +194,48 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
 
           if (env.wanderers && env.wanderers.length > 0 && starVis > 0.3) { env.wanderers.forEach(wd => { const wx = (wd.x * w + s.startTime * 0.005) % (w + 100) - 50; const wy = wd.y * h; ctx.fillStyle = wd.color || '#e5e7eb'; ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 2; ctx.globalAlpha = starVis; ctx.beginPath(); ctx.arc(wx, wy, Math.min(2.5, wd.size), 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; }); }
 
+          // UPDATED: Draw Clouds with Wrapping & Stretching
           const drawCloudsByLayer = (targetLayer: number, targetCtx: CanvasRenderingContext2D) => {
               if (env.clouds && env.clouds.length > 0) {
-                  // Only draw if we are close enough to ground (clouds shouldn't exist in space)
-                  if (s.viewY > 2500) return; 
-
-                  // Fade out clouds as we go higher
-                  const altitudeFade = Math.min(1, Math.max(0, 1 - (s.viewY / 2000)));
+                  // Stretch disabled for descent
+                  const stretchFactor = 1.0;
                   
+                  // Strict fade in for atmosphere boundary
+                  const spaceStart = 8000;
+                  const spaceEnd = 12000;
+                  let altitudeVisibility = 1.0;
+                  
+                  if (s.viewY > spaceStart) {
+                      altitudeVisibility = 1.0 - Math.min(1, (s.viewY - spaceStart) / (spaceEnd - spaceStart));
+                  }
+                  
+                  if (altitudeVisibility <= 0) return; // Don't draw if fully in space
+
+                  const wrapWidth = w + 1000;
+                  const wrapOffset = 500;
+                  const verticalSpan = 5000;
+
                   env.clouds.forEach((c: any) => {
                       if (c.layer !== targetLayer) return;
                       
-                      // PARALLAX FIX:
-                      // Use parallaxFactor to determine position relative to ground.
-                      // c.altitude is negative height above ground (ScreenY logic).
-                      // groundY + s.viewY is the WorldY of ground in the translated context.
-                      // Relative Y = -c.altitude + (s.viewY * (c.parallaxFactor - 1))
-                      // This ensures Layer 0 moves slower, Layer 2 moves faster than ground.
-                      const relativeY = -c.altitude + (s.viewY * (c.parallaxFactor - 1));
-                      const cloudY = relativeY; 
+                      const loopH = h + 800;
+                      let progress = (c.altitude + s.viewY * (1 + c.parallaxFactor)) % loopH;
+                      if (progress < 0) progress += loopH;
                       
-                      const cloudX = (c.x + (s.frame * c.speed * c.direction)) % (w + 800) - 400;
+                      const drawY = -s.viewY + progress - 400; // Centered
                       
-                      // Opacity Pulse
+                      // Horizontal Wrapping
+                      let distMoved = s.frame * c.speed * c.direction;
+                      let rawX = (c.x + distMoved) % wrapWidth;
+                      if (rawX < 0) rawX += wrapWidth;
+                      const cloudX = rawX - wrapOffset;
+                      
                       const pulse = Math.sin((s.frame * 0.01) + (c.id || 0));
-                      const opacity = Math.max(0, Math.min(1, c.baseAlpha * (0.8 + 0.2 * pulse))) * altitudeFade;
+                      // Combine pulse opacity with altitude visibility
+                      const opacity = Math.max(0, Math.min(1, c.baseAlpha * (0.8 + 0.2 * pulse))) * altitudeVisibility;
 
-                      if (cloudY > -2000 && cloudY < 2000) {
-                          drawCloud(targetCtx, cloudX, cloudY, c.w, opacity, c.color);
+                      if (drawY > -s.viewY - 2000 && drawY < -s.viewY + 2000 && opacity > 0.01) {
+                          drawCloud(targetCtx, cloudX, drawY, c.w, opacity, c.color, c.puffs, stretchFactor);
                       }
                   });
               }
@@ -287,8 +301,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   }
               }
 
-              if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits }, env.isDay, false); } }); }
-              if (hill.nearbyBuildings) { hill.nearbyBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, hasBalcony: b.hasBalcony }, env.isDay, false); } }); }
+              if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, hasBalcony: b.hasBalcony }, env.isDay, false); } }); }
 
               if (hill.trees) {
                   hill.trees.forEach((t: any, tIdx: number) => {
@@ -317,7 +330,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                       }
                   });
               }
-              if (hill.cityBuildings) { hill.cityBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff; drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color }, env.isDay, false); }); }
+              if (hill.cityBuildings) { hill.cityBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff; drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h }, env.isDay, false); }); }
           };
 
           // LAYER 0 (DISTANT) - BEFORE HILLS

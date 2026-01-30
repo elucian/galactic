@@ -26,6 +26,15 @@ const mixColor = (c1: string, c2: string, weight: number) => {
     return `rgb(${r},${g},${b})`;
 };
 
+const hexToRgbaStr = (hex: string, alpha: number) => {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    if (!result) return `rgba(255,255,255,${alpha})`;
+    const r = parseInt(result[1], 16);
+    const g = parseInt(result[2], 16);
+    const b = parseInt(result[3], 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
 export const getShipHullWidths = (config: ExtendedShipConfig) => {
     let top = 20;
     let bot = 35;
@@ -117,6 +126,45 @@ export const drawPlatform = (ctx: CanvasRenderingContext2D, x: number, y: number
     ctx.restore();
 };
 
+// DIFFUSE CLOUD RENDERER
+export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, alpha: number, color: string = '#ffffff', puffs: any[] = [], vStretch: number = 1.0) => {
+    ctx.save();
+    ctx.translate(x, y);
+    
+    // NOTE: vStretch is purposely ignored to prevent elongation during ascent/descent
+    
+    const rgb = hexToRgb(color);
+    const baseColor = `${rgb.r},${rgb.g},${rgb.b}`;
+
+    // Render soft puffs
+    if (puffs && puffs.length > 0) {
+        for (const p of puffs) {
+            // Radial Gradient for Soft/Diffuse look
+            // x,y are relative to cloud center
+            const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+            grad.addColorStop(0, `rgba(${baseColor}, ${alpha * p.a})`);
+            grad.addColorStop(1, `rgba(${baseColor}, 0)`);
+            
+            ctx.fillStyle = grad;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    } else {
+        // Fallback
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, w/2);
+        grad.addColorStop(0, `rgba(${baseColor}, ${alpha})`);
+        grad.addColorStop(1, `rgba(${baseColor}, 0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, w/2, 0, Math.PI*2);
+        ctx.fill();
+    }
+    
+    ctx.restore();
+};
+
+// ... existing helpers ...
 export const drawBoulder = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string) => {
     ctx.save();
     ctx.translate(x, y);
@@ -172,20 +220,6 @@ export const drawVehicle = (ctx: CanvasRenderingContext2D, x: number, y: number,
         if (!isDay) { ctx.fillStyle = '#fef08a'; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.moveTo(14, -4); ctx.lineTo(40, -10); ctx.lineTo(40, 5); ctx.fill(); ctx.globalAlpha = 1; }
         ctx.fillStyle = '#ef4444'; ctx.fillRect(-14, -5, 2, 3);
     }
-    ctx.restore();
-};
-
-export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, alpha: number, color: string = '#ffffff') => {
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    const r = w / 3;
-    ctx.arc(x, y, r, Math.PI * 0.5, Math.PI * 1.5);
-    ctx.arc(x + r, y - r * 0.6, r * 1.2, Math.PI * 1, Math.PI * 2);
-    ctx.arc(x + r * 2, y, r, Math.PI * 1.5, Math.PI * 0.5);
-    ctx.closePath();
-    ctx.fill();
     ctx.restore();
 };
 
@@ -714,24 +748,47 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const hasBirds = isLush && !isRainy && rng() > 0.2; // Birds only on lush, non-rainy days
 
     let skyGradient = ['#000000', '#000000'];
-    let cloudColor = '#ffffff';
+    let cloudColors = ['#ffffff']; // Default
     let sunColor = '#facc15';
     let atmosphereColor = '#000000';
 
-    if (isReddish) { if (isDay) skyGradient = ['#7f1d1d', '#ef4444']; else skyGradient = ['#1a0505', '#450a0a']; cloudColor = '#fca5a5'; sunColor = '#fb923c'; atmosphereColor = '#7f1d1d'; } 
-    else if (isBluish) { if (isDay) skyGradient = ['#2563eb', '#bfdbfe']; else skyGradient = ['#020617', '#172554']; cloudColor = '#dbeafe'; sunColor = '#ffffff'; atmosphereColor = '#1e3a8a'; } 
-    else if (isGreenish) { if (isDay) skyGradient = ['#0ea5e9', '#e0f2fe']; else skyGradient = ['#020617', '#0f172a']; cloudColor = '#ecfdf5'; sunColor = '#fef08a'; atmosphereColor = '#064e3b'; } 
-    else if (isPurple) { if (isDay) skyGradient = ['#2e1065', '#a855f7']; else skyGradient = ['#0f0518', '#3b0764']; cloudColor = '#f3e8ff'; atmosphereColor = '#581c87'; } 
-    else { if (isDay) skyGradient = ['#3f3f46', '#a1a1aa']; else skyGradient = ['#09090b', '#27272a']; atmosphereColor = '#27272a'; }
+    if (isReddish) { 
+        if (isDay) skyGradient = ['#7f1d1d', '#ef4444']; else skyGradient = ['#1a0505', '#450a0a']; 
+        sunColor = '#fb923c'; atmosphereColor = '#7f1d1d'; 
+    } else if (isBluish) { 
+        if (isDay) skyGradient = ['#2563eb', '#bfdbfe']; else skyGradient = ['#020617', '#172554']; 
+        sunColor = '#ffffff'; atmosphereColor = '#1e3a8a'; 
+    } else if (isGreenish) { 
+        if (isDay) skyGradient = ['#0ea5e9', '#e0f2fe']; else skyGradient = ['#020617', '#0f172a']; 
+        sunColor = '#fef08a'; atmosphereColor = '#064e3b'; 
+    } else if (isPurple) { 
+        if (isDay) skyGradient = ['#2e1065', '#a855f7']; else skyGradient = ['#0f0518', '#3b0764']; 
+        sunColor = '#f3e8ff'; atmosphereColor = '#581c87'; 
+    } else { 
+        if (isDay) skyGradient = ['#3f3f46', '#a1a1aa']; else skyGradient = ['#09090b', '#27272a']; 
+        atmosphereColor = '#27272a'; 
+    }
+
+    // STRICT CLOUD COLOR RULES
+    if (isLush || isOcean || isBluish || isGreenish) {
+        // White and shades of gray
+        cloudColors = ['#ffffff', '#e5e7eb', '#d1d5db', '#9ca3af'];
+    } else if (isReddish || (isBarren && !isPurple)) {
+        // Yellow, Orange for desert
+        cloudColors = ['#fde047', '#fdba74', '#fbbf24', '#f87171'];
+    } else if (isPurple) {
+        // Pink and Green for poison
+        cloudColors = ['#f0abfc', '#86efac', '#d8b4fe', '#bef264'];
+    } else if (isWhite) {
+        cloudColors = ['#e0f2fe', '#ffffff'];
+    }
 
     // Rain Override for Sky
     if (isRainy) {
         skyGradient[0] = mixColor(skyGradient[0], '#1f2937', 0.6); // Darker top
-        cloudColor = mixColor(cloudColor, '#4b5563', 0.5); // Grey clouds
+        cloudColors = ['#6b7280', '#4b5563', '#9ca3af']; // Grey storm clouds
         sunColor = '#9ca3af'; // Dim sun
     }
-
-    if (isBarren && !isReddish) { const toxicColors = ['#fbcfe8', '#9ca3af', '#bef264']; cloudColor = toxicColors[Math.floor(rng() * toxicColors.length)]; }
 
     let groundColor = planet.color; 
     let hillColors: string[] = [];
@@ -747,55 +804,64 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     const stars = Array.from({ length: isDay ? 60 : 250 }).map(() => ({ x: rng(), y: rng(), size: rng() * 0.8 + 0.2, alpha: isDay ? 0.4 : (rng() * 0.5 + 0.5) }));
     
-    // CLOUDS - IMPROVED GENERATION FOR PARALLAX
+    // CLOUDS - SLOW DIFFUSE
     const clouds: any[] = [];
     const windDir = rng() > 0.5 ? 1 : -1;
-    const layerScales = [0.4, 0.7, 1.2]; // Larger clouds for better visibility
-    const layerSpeeds = [0.05, 0.12, 0.25];
-    const layerAlphas = [0.9, 0.8, 0.6];
-    const layerParallax = [0.2, 0.5, 1.2]; // Specific Parallax Factors (0.2=Far Sky, 0.5=Mid, 1.2=Foreground Zoom)
     
-    // Altitude Range for Clouds (Screen Y when ViewY=0/Landed)
-    // 0 is Top of screen. H is ~900.
-    // We want clouds distributed from Sky (-400) to Horizon (500).
-    const rangeMin = -600;
-    const rangeMax = 400;
+    const layerScales = [0.5, 0.8, 1.2]; 
+    const layerAlphas = [0.8, 0.6, 0.4];
+    const layerParallax = [-0.1, 0.05, 0.2]; 
+    
+    const minAltitude = 0;
+    const maxAltitude = 4000;
 
     for (let l = 0; l < 3; l++) {
         const scale = layerScales[l];
-        const speed = layerSpeeds[l];
-        const dir = l === 0 ? (rng() > 0.5 ? 1 : -1) : windDir;
         const parallax = layerParallax[l];
+        
+        // Significantly reduced speed for "majestic" feel
+        const speed = 0.02 + (l * 0.02);
 
-        // INCREASED COUNT: 15-20 clouds per layer
-        const count = 15 + Math.floor(rng() * 5); 
+        const count = 6 + Math.floor(rng() * 4); 
+        
         for (let c = 0; c < count; c++) {
-             const color = l === 0 ? mixColor(cloudColor, planet.color, 0.2) : cloudColor;
-             const alpha = l === 2 ? (0.3 + rng() * 0.5) : layerAlphas[l];
+             const color = cloudColors[Math.floor(rng() * cloudColors.length)];
+             const baseAlpha = layerAlphas[l];
              
+             // Generate Fractal/Diffuse Puffs
+             const puffs = [];
+             const baseW = 200 + rng() * 150; 
+             const puffCount = 6 + Math.floor(rng() * 6);
+             
+             for(let p=0; p<puffCount; p++) {
+                 const px = (rng() - 0.5) * baseW * scale;
+                 const py = (rng() - 0.5) * (baseW * 0.4) * scale;
+                 const pr = (30 + rng() * 40) * scale;
+                 const pa = 0.4 + rng() * 0.4;
+                 puffs.push({x: px, y: py, r: pr, a: pa});
+             }
+
              clouds.push({
                  x: (rng() * 4000) - 2000,
-                 // Altitude replaces 'y'. It is the vertical position relative to the ground when landed.
-                 // Lower value = Higher in sky (negative). Higher value = Closer to horizon (positive).
-                 altitude: -(rangeMin + (rng() * (rangeMax - rangeMin))), 
-                 w: (150 + rng() * 100) * scale,
-                 baseAlpha: alpha,
-                 alpha: alpha,
+                 altitude: minAltitude + (rng() * (maxAltitude - minAltitude)), 
+                 w: baseW * scale, 
+                 baseAlpha: baseAlpha,
                  speed: speed,
-                 direction: dir,
+                 direction: windDir,
                  layer: l,
                  color: color,
-                 id: c, // For sin wave calculation
-                 parallaxFactor: parallax
+                 id: c, 
+                 parallaxFactor: parallax,
+                 puffs: puffs
              });
         }
     }
 
+    // ... (rest of function remains same)
     const hills = [];
     const trains: any[] = [];
     let domeCount = 0;
     
-    // Check if we need to force a dome on barren planets
     const forceDome = isBarren;
     let domePlaced = false;
     
@@ -1039,7 +1105,9 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     return {
         isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush,
-        sunColor, skyGradient, cloudColor, hillColors,
+        sunColor, skyGradient, cloudColor: cloudColors[0], // Keep for backward compat
+        cloudColors, // New array for variety
+        hillColors,
         stars, clouds, hills, features, cars, trains,
         groundColor, powerLines,
         quadrant: planet.quadrant,
