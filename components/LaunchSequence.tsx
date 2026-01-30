@@ -285,16 +285,97 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           const sky2 = mixColor(env.skyGradient[1], '#000000', spaceRatio);
           const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, sky1); grad.addColorStop(1, sky2); ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 
-          const baseStarVis = (!env.isDay ? 0.8 : 0); const starVis = Math.max(baseStarVis, Math.min(1, baseStarVis + (spaceRatio * 1.5)));
-          if (starVis > 0) { ctx.fillStyle = '#fff'; s.starScrollY += 0.002; env.stars.forEach(st => { ctx.globalAlpha = st.alpha * starVis; const sy = (st.y * h + s.viewY * 0.05) % h; ctx.beginPath(); ctx.arc(st.x * w, sy, st.size, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1; }
+          let starVis = (!env.isDay ? 0.8 : 0); 
+          starVis = Math.max(starVis, Math.min(1, starVis + (spaceRatio * 1.5)));
 
-          const celParallax = s.viewY * 0.006; const celX = s.celestialX * w; const celY = (s.celestialY * h) + celParallax; const celScale = 1 + (spaceRatio * 0.2); let dimFactor = 0;
+          const celParallax = s.viewY * 0.006; const celX = s.celestialX * w; const celY = (s.celestialY * h) + celParallax; const celScale = 1 + (spaceRatio * 0.2); 
+          let dimFactor = 0;
+
           if (env.quadrant === QuadrantType.DELTA) {
-              const time = Date.now(); const slowTime = time * 0.00025; const dwarfDist = 120 * celScale; const dwarfX = celX + Math.cos(slowTime) * dwarfDist; const dwarfY = celY + Math.sin(slowTime * 0.5) * 40; const dwarfR = 15 * celScale * 0.7; const zDepth = Math.sin(slowTime); const isBehind = zDepth < 0; if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
+              const time = Date.now();
+              // Cycle: 10s active, 25s inactive. Total 35s.
+              const cyclePos = time % 35000;
+              const jetsActive = cyclePos < 10000;
+              const jetFade = jetsActive ? (cyclePos < 1000 ? cyclePos/1000 : (cyclePos > 9000 ? (10000-cyclePos)/1000 : 1)) : 0;
+              
+              const slowTime = time * 0.00025; 
+              const dwarfDist = 120 * celScale; 
+              const dwarfX = celX + Math.cos(slowTime) * dwarfDist; 
+              const dwarfY = celY + Math.sin(slowTime * 0.5) * 40; 
+              const dwarfR = 15 * celScale * 0.7; 
+              const zDepth = Math.sin(slowTime); 
+              const isBehind = zDepth < 0; 
+              
+              if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
+              
+              // Star Visibility in Delta: Show ONLY during eclipse (when Red Dwarf is behind)
+              // Atmospheric fade still applies, but base visibility is toggled by eclipse
+              // Also ensure stars are visible in deep space (spaceRatio > 0.8) regardless? No, user said "dissapear again when red dwarf appear".
+              // So, strictly eclipse based.
+              const eclipseFactor = isBehind ? 1.0 : 0.0;
+              // Combine with altitude fade: Stars appear in space OR during night/eclipse on ground
+              // But user emphasizes the cycle.
+              starVis = eclipseFactor * (0.8 + (spaceRatio * 0.2)); 
+
+              // Render Stars with new visibility
+              if (starVis > 0) { 
+                  ctx.fillStyle = '#fff'; s.starScrollY += 0.002; 
+                  env.stars.forEach(st => { 
+                      ctx.globalAlpha = st.alpha * starVis; 
+                      const sy = (st.y * h + s.viewY * 0.05) % h; 
+                      ctx.beginPath(); ctx.arc(st.x * w, sy, st.size, 0, Math.PI*2); ctx.fill(); 
+                  }); 
+                  ctx.globalAlpha = 1; 
+              }
+
+              const drawJets = () => {
+                  if (jetFade <= 0) return;
+                  ctx.save();
+                  ctx.translate(celX, celY);
+                  // Oscillate 5 degrees
+                  const oscillation = Math.sin(time * 0.005) * (5 * Math.PI / 180);
+                  ctx.rotate(oscillation);
+                  
+                  const jetH = 600 * celScale;
+                  const jetW = 15 * celScale;
+                  
+                  // Top Jet
+                  const gTop = ctx.createLinearGradient(0, 0, 0, -jetH);
+                  gTop.addColorStop(0, `rgba(168, 85, 247, ${0.8 * jetFade})`);
+                  gTop.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = gTop;
+                  ctx.fillRect(-jetW/2, -jetH, jetW, jetH);
+                  
+                  // Bottom Jet
+                  const gBot = ctx.createLinearGradient(0, 0, 0, jetH);
+                  gBot.addColorStop(0, `rgba(168, 85, 247, ${0.8 * jetFade})`);
+                  gBot.addColorStop(1, 'rgba(0,0,0,0)');
+                  ctx.fillStyle = gBot;
+                  ctx.fillRect(-jetW/2, 0, jetW, jetH);
+                  
+                  // Core White
+                  ctx.fillStyle = `rgba(255,255,255, ${0.9 * jetFade})`;
+                  ctx.fillRect(-2, -jetH * 0.8, 4, jetH * 1.6); // Inner beam
+
+                  ctx.restore();
+              };
+
               const drawDwarf = () => { ctx.fillStyle = '#ef4444'; ctx.shadowColor = '#ef4444'; ctx.shadowBlur = 20; ctx.beginPath(); ctx.arc(dwarfX, dwarfY, dwarfR, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; };
               const drawBlackHole = () => { const bhRadius = 40 * celScale; const bhGrad = ctx.createRadialGradient(celX, celY, bhRadius*0.8, celX, celY, bhRadius*2.5); bhGrad.addColorStop(0, '#000000'); bhGrad.addColorStop(0.4, '#4c1d95'); bhGrad.addColorStop(0.6, '#a855f7'); bhGrad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = bhGrad; ctx.beginPath(); ctx.arc(celX, celY, bhRadius*2.5, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#000000'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(celX, celY, bhRadius, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; };
-              if (isBehind) { drawDwarf(); drawBlackHole(); } else { drawBlackHole(); drawDwarf(); }
+              
+              if (isBehind) { 
+                  drawDwarf(); 
+                  drawJets(); // Jets behind BH? Maybe inside/behind accretion disk but visible
+                  drawBlackHole(); 
+              } else { 
+                  drawJets();
+                  drawBlackHole(); 
+                  drawDwarf(); 
+              }
           } else {
+              // Standard System Rendering
+              if (starVis > 0) { ctx.fillStyle = '#fff'; s.starScrollY += 0.002; env.stars.forEach(st => { ctx.globalAlpha = st.alpha * starVis; const sy = (st.y * h + s.viewY * 0.05) % h; ctx.beginPath(); ctx.arc(st.x * w, sy, st.size, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1; }
+
               if (s.celestialY > -100 && env.isDay) { const sunR = 30 * celScale; const sGrad = ctx.createRadialGradient(celX, celY, sunR*0.2, celX, celY, sunR*2.5); sGrad.addColorStop(0, env.sunColor); sGrad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = sGrad; ctx.beginPath(); ctx.arc(celX, celY, sunR*2.5, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.8; ctx.beginPath(); ctx.arc(celX, celY, sunR*0.7, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1; }
               if (!env.isDay && s.celestialY > -100) { const moonR = 25 * celScale; ctx.fillStyle = '#fff'; ctx.shadowColor = '#fff'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.arc(celX, celY, moonR, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.beginPath(); ctx.arc(celX - (Math.cos(moonPhaseShift)*12*celScale), celY, moonR, 0, Math.PI*2); ctx.fill(); }
           }
