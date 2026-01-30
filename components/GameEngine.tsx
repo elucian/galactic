@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData, AmmoType } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
@@ -7,7 +6,7 @@ import { getEngineCoordinates, getWingMounts } from '../utils/drawingUtils.ts';
 
 // --- CONFIGURATION ---
 const ASTEROID_VARIANTS = [
-    { color: '#3b82f6', type: 'ice', loot: ['water', 'fuel'] }, // Removed 'energy'
+    { color: '#3b82f6', type: 'ice', loot: ['water', 'fuel'] }, 
     { color: '#e2e8f0', type: 'platinum', loot: ['platinum', 'titanium', 'silver'] }, 
     { color: '#6b7280', type: 'rock', loot: ['iron', 'copper', 'chromium', 'titanium'] }, 
     { color: '#78350f', type: 'copper', loot: ['copper', 'iron'] }, 
@@ -131,7 +130,6 @@ class Asteroid {
     const variant = ASTEROID_VARIANTS.find(v => v.type === selectedType) || ASTEROID_VARIANTS[2]; 
     this.color = variant.color;
 
-    // Drop Rate: 80%
     if (Math.random() > 0.8) {
         this.loot = null;
     } else {
@@ -144,7 +142,6 @@ class Asteroid {
         if (lootType === 'energy') { finalType = 'energy'; capType = 'Energy Cell'; }
 
         if (['water', 'fuel', 'gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium', 'energy'].includes(finalType)) {
-            // Special rules for blue (ice) asteroids
             let qty = 1;
             if (variant.type === 'ice' && finalType === 'water') qty = 5;
             if (variant.type === 'ice' && finalType === 'fuel') qty = 2;
@@ -189,7 +186,9 @@ interface ShieldLayer {
     max: number;
     current: number;
     rotation: number;
-    wobble: number; 
+    wobble: number;
+    type: 'full' | 'front' | 'tri' | 'hex';
+    rotSpeed: number;
 }
 
 class Enemy {
@@ -201,16 +200,40 @@ class Enemy {
   vibration: number = 0;
   stunnedUntil: number = 0;
   shieldDisabledUntil: number = 0;
+  tick: number = 0;
+  squadId: number = 0;
+  squadOffset: number = 0;
+  quadrant: QuadrantType;
+  baseX: number = 0;
+  movementPattern: 'sine' | 'z' | 'mirror_z' | 'cross_left' | 'cross_right' | 'avoid' | 'boss_trick';
 
-  constructor(x: number, y: number, type: 'scout' | 'fighter' | 'heavy' | 'boss', config: ExtendedShipConfig, diff: number, quadrant: QuadrantType) {
+  constructor(x: number, y: number, type: 'scout' | 'fighter' | 'heavy' | 'boss', config: ExtendedShipConfig, diff: number, quadrant: QuadrantType, squadId: number = 0, squadOffset: number = 0, pattern?: string) {
     const hpMult = type === 'boss' ? 5000 : (type === 'heavy' ? 400 : 150);
     this.x = x; this.y = y; this.z = type === 'boss' ? 0 : (Math.random() - 0.5) * 600;
+    this.baseX = x;
     this.hp = hpMult * (1 + diff * 0.3); this.maxHp = this.hp;
     this.type = type; 
+    this.quadrant = quadrant;
+    this.squadId = squadId;
+    this.squadOffset = squadOffset;
+    
+    // Assign Movement Pattern
+    if (pattern) {
+        this.movementPattern = pattern as any;
+    } else {
+        if (quadrant === QuadrantType.DELTA) {
+             this.movementPattern = Math.random() > 0.5 ? 'cross_left' : 'cross_right';
+        } else if (quadrant === QuadrantType.GAMA) {
+             this.movementPattern = Math.random() > 0.5 ? 'z' : 'mirror_z';
+        } else {
+             this.movementPattern = 'sine';
+        }
+    }
     
     this.config = { ...config };
 
     if (type === 'boss') {
+        this.movementPattern = 'boss_trick';
         this.config.isAlien = true;
         const weaponId = this.config.weaponId || EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)].id;
         
@@ -224,11 +247,33 @@ class Enemy {
         }
 
         if (addShields) {
+            // Boss Shield Configuration
+            let s1Type: 'full'|'front'|'tri'|'hex' = 'full';
+            let s1Rot = 0;
+            let s2Type: 'full'|'front'|'tri'|'hex' = 'full';
+            let s2Rot = 0.02;
+
+            if (diff >= 12 || quadrant === QuadrantType.DELTA) {
+                // Level 12 Boss / Delta: Hex Rotating + Full Continuous
+                s1Type = 'hex'; s1Rot = 0.05;
+                s2Type = 'full'; s2Rot = 0;
+            } else if (quadrant === QuadrantType.GAMA) {
+                // Gama Boss: Front Arc + Tri Rotating
+                s1Type = 'front'; s1Rot = 0;
+                s2Type = 'tri'; s2Rot = -0.03;
+            } else if (quadrant === QuadrantType.BETA) {
+                // Beta Boss: Front Arc + Front Arc
+                s1Type = 'front'; s1Rot = 0;
+                s2Type = 'front'; s2Rot = 0; 
+            }
+
             const shield1 = EXOTIC_SHIELDS[0];
-            this.shieldLayers.push({ color: shield1.color, max: shield1.capacity * (1 + diff * 0.1), current: shield1.capacity * (1 + diff * 0.1), rotation: 0, wobble: 0 });
-            
             const shield2 = EXOTIC_SHIELDS[1];
-            this.shieldLayers.push({ color: shield2.color, max: shield2.capacity * (1 + diff * 0.1), current: shield2.capacity * (1 + diff * 0.1), rotation: Math.PI / 2, wobble: 0 });
+
+            this.shieldLayers.push({ color: shield1.color, max: shield1.capacity * (1 + diff * 0.1), current: shield1.capacity * (1 + diff * 0.1), rotation: 0, wobble: 0, type: s1Type, rotSpeed: s1Rot });
+            if (s2Type !== s1Type || quadrant !== QuadrantType.BETA) {
+                this.shieldLayers.push({ color: shield2.color, max: shield2.capacity * (1 + diff * 0.1), current: shield2.capacity * (1 + diff * 0.1), rotation: Math.PI / 2, wobble: 0, type: s2Type, rotSpeed: s2Rot });
+            }
 
             this.shieldRegen = 2.0 + (diff * 0.2);
         } else {
@@ -236,8 +281,8 @@ class Enemy {
         }
 
     } else {
+        // Standard Enemy Config
         const standardEnergy = 'gun_pulse';
-        
         if (this.config.isAlien) {
             const wId = 'gun_photon'; 
             if (this.config.defaultGuns === 1) {
@@ -250,31 +295,47 @@ class Enemy {
             this.equippedWeapons[0] = { id: standardEnergy, count: 1 };
         }
 
-        let shieldCount = 0;
-        if (quadrant !== QuadrantType.ALFA) {
-            if (diff >= 4) shieldCount = 2;
-            else if (diff >= 2) shieldCount = 1;
-        }
-
-        if (shieldCount > 0) {
-            const baseShieldCap = 150 * diff;
-            const c1 = quadrant === QuadrantType.ALFA ? '#3b82f6' : (quadrant === QuadrantType.BETA ? '#f97316' : '#ef4444');
-            this.shieldLayers.push({ color: c1, max: baseShieldCap, current: baseShieldCap, rotation: Math.random() * Math.PI, wobble: 0 });
-            if (shieldCount > 1) {
-                const c2 = quadrant === QuadrantType.DELTA ? '#ffffff' : '#a855f7';
-                this.shieldLayers.push({ color: c2, max: baseShieldCap * 1.5, current: baseShieldCap * 1.5, rotation: Math.random() * Math.PI, wobble: 0 });
-            }
+        // Shield Logic by Quadrant
+        const baseShieldCap = 150 * diff;
+        
+        if (quadrant === QuadrantType.BETA) {
+            // Beta: Single Arc Shield in Front
+            const c1 = '#ef4444'; // Red
+            this.shieldLayers.push({ color: c1, max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'front', rotSpeed: 0 });
+        } else if (quadrant === QuadrantType.GAMA) {
+            // Gama: Arc Front + (Full OR Tri Rotating)
+            const c1 = '#3b82f6'; // Blue
+            const c2 = '#f97316'; // Orange
+            this.shieldLayers.push({ color: c1, max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'front', rotSpeed: 0 });
+            
+            const secondType = Math.random() > 0.5 ? 'full' : 'tri';
+            const rot = secondType === 'tri' ? 0.03 : 0;
+            this.shieldLayers.push({ color: c2, max: baseShieldCap * 0.8, current: baseShieldCap * 0.8, rotation: Math.random() * Math.PI, wobble: 0, type: secondType, rotSpeed: rot });
+        } else if (quadrant === QuadrantType.DELTA) {
+            // Delta: Two Rotating Shields (Tri+Tri or Tri+Hex)
+            const c1 = '#a855f7'; // Purple
+            const c2 = '#ffffff'; // White
+            
+            const type1 = Math.random() > 0.5 ? 'tri' : 'hex';
+            const type2 = Math.random() > 0.5 ? 'tri' : 'hex';
+            
+            this.shieldLayers.push({ color: c1, max: baseShieldCap * 1.5, current: baseShieldCap * 1.5, rotation: 0, wobble: 0, type: type1, rotSpeed: 0.04 });
+            this.shieldLayers.push({ color: c2, max: baseShieldCap * 1.2, current: baseShieldCap * 1.2, rotation: Math.PI/3, wobble: 0, type: type2, rotSpeed: -0.03 });
+        } else if (diff >= 4) {
+            // Alfa High Level fallback
+            this.shieldLayers.push({ color: '#3b82f6', max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'full', rotSpeed: 0 });
         }
     }
   }
 
-  update(px: number, py: number, w: number, h: number, incomingFire: Projectile[], worldSpeedFactor: number = 1.0) {
+  update(px: number, py: number, w: number, h: number, incomingFire: Projectile[], worldSpeedFactor: number = 1.0, bulletsRef: Projectile[], difficulty: number, otherEnemies: Enemy[]) {
+    this.tick++;
     if (this.vibration > 0) this.vibration = Math.max(0, this.vibration - 1);
     
     if (this.stunnedUntil > 0) this.stunnedUntil--;
     if (this.shieldDisabledUntil > 0) this.shieldDisabledUntil--;
 
-    const verticalSpeed = 2.8 * worldSpeedFactor;
+    const verticalSpeed = (this.quadrant === QuadrantType.DELTA && this.type !== 'boss' ? 1.8 : 2.8) * worldSpeedFactor;
 
     if (this.stunnedUntil > 0) {
         this.vx *= 0.9;
@@ -282,19 +343,101 @@ class Enemy {
         this.vy += 0.5 * worldSpeedFactor; 
     } else {
         if (this.type === 'boss') {
+            // ... existing Boss logic ...
             if (this.shieldLayers.length > 0 && this.shieldRegen > 0 && this.shieldDisabledUntil <= 0) {
                 const top = this.shieldLayers[0];
                 if (top.current < top.max) top.current = Math.min(top.max, top.current + this.shieldRegen);
             }
-            this.vx = (this.vx + (px - this.x) * 0.002) * 0.96;
-            this.vy = (this.vy + (150 - this.y) * 0.01) * 0.92;
+            if (this.quadrant === QuadrantType.ALFA) {
+                this.vx = (this.vx + (px - this.x) * 0.002) * 0.96;
+                this.vy = (this.vy + (150 - this.y) * 0.01) * 0.92;
+            } else if (this.quadrant === QuadrantType.BETA) {
+                const time = this.tick * 0.02;
+                const targetX = w/2 + Math.sin(time) * (w * 0.4);
+                this.vx = (targetX - this.x) * 0.03;
+                this.vy = (this.vy + (180 - this.y) * 0.01) * 0.92;
+            } else if (this.quadrant === QuadrantType.GAMA) {
+                if (this.tick % 120 < 60) { this.vx = (px - this.x) * 0.05; } else { this.vx *= 0.8; }
+                this.vy = (this.vy + (150 - this.y) * 0.01) * 0.92;
+            } else if (this.quadrant === QuadrantType.DELTA) {
+                const dx = px - this.x;
+                if (Math.abs(dx) < 100 && this.tick % 60 === 0) {
+                     this.vx = (Math.random() > 0.5 ? 8 : -8) * (Math.random() + 0.5);
+                } else if (this.tick % 90 === 0) {
+                     this.vx = (Math.random() - 0.5) * 12;
+                }
+                this.vx *= 0.96;
+                this.vy = (this.vy + (180 - this.y) * 0.05) * 0.9;
+            }
+            // Boss Shooting Logic
+            if (Math.random() < 0.02) { 
+                if (difficulty >= 8 && this.tick % 300 === 0) {
+                    bulletsRef.push({ x: this.x - 40, y: this.y + 40, vx: -3, vy: 5, damage: 100, color: '#ef4444', type: 'missile_enemy', life: 400, isEnemy: true, width: 14, height: 28, homingState: 'searching', launchTime: this.tick, headColor: '#ef4444', finsColor: '#991b1b', turnRate: 0.03, maxSpeed: 10, z: 0 });
+                    bulletsRef.push({ x: this.x + 40, y: this.y + 40, vx: 3, vy: 5, damage: 100, color: '#ef4444', type: 'missile_enemy', life: 400, isEnemy: true, width: 14, height: 28, homingState: 'searching', launchTime: this.tick, headColor: '#ef4444', finsColor: '#991b1b', turnRate: 0.03, maxSpeed: 10, z: 0 });
+                    audioService.playWeaponFire('missile', 0);
+                }
+                if (difficulty >= 10 && this.tick % 450 === 0) {
+                    bulletsRef.push({ x: this.x, y: this.y + 60, vx: 0, vy: 2, damage: 150, color: '#fbbf24', type: 'mine_enemy', life: 600, isEnemy: true, width: 20, height: 20, z: 0 });
+                    audioService.playWeaponFire('mine', 0);
+                }
+            }
+
         } else {
+            // --- PATTERN LOGIC ---
             this.y += verticalSpeed; 
-            this.vx = (this.vx + (Math.random() - 0.5) * 0.5) * 0.95; 
-            const dx = px - this.x;
+
+            if (this.movementPattern === 'z') {
+                // Diagonal ZIG ZAG Left-Right
+                const cycle = Math.floor(this.tick / 60) % 2; 
+                this.vx = cycle === 0 ? 3 : -3;
+            } else if (this.movementPattern === 'mirror_z') {
+                // Diagonal ZIG ZAG Right-Left
+                const cycle = Math.floor(this.tick / 60) % 2; 
+                this.vx = cycle === 0 ? -3 : 3;
+            } else if (this.movementPattern === 'cross_left') {
+                // Top Left -> Bottom Right
+                this.vx = 2.5; 
+            } else if (this.movementPattern === 'cross_right') {
+                // Top Right -> Bottom Left
+                this.vx = -2.5;
+            } else if (this.movementPattern === 'avoid') {
+                // Delta Logic: Avoid Player (Pass Over)
+                this.vx += (Math.sin(this.tick * 0.05 + this.squadId) * 0.5);
+                const distToPlayer = this.x - px;
+                if (Math.abs(distToPlayer) < 200 && this.y < py) {
+                     this.vx += (distToPlayer > 0 ? 0.8 : -0.8);
+                }
+                this.vx *= 0.92;
+            } else {
+                // 'sine' / Default
+                this.vx = (this.vx + (Math.random() - 0.5) * 0.5) * 0.95; 
+            }
+
+            // --- SEPARATION STEERING ---
+            // Repel from other enemies to avoid clustering/shield overlap
+            const safeDistance = 130; 
+            let sepX = 0;
+            otherEnemies.forEach(other => {
+                if (other === this) return;
+                // Only repel if on screen (y > -50)
+                if (other.y < -50) return;
+                
+                const dist = Math.hypot(this.x - other.x, this.y - other.y);
+                if (dist < safeDistance && dist > 0) {
+                    const angle = Math.atan2(this.y - other.y, this.x - other.x);
+                    const force = (safeDistance - dist) / safeDistance; 
+                    sepX += Math.cos(angle) * force * 1.5; // Push horizontal
+                    // Vertical push is minor to keep formation flow
+                }
+            });
+            this.vx += sepX;
+
+            // Bounce off walls
+            if (this.x < 50) this.vx += 1;
+            if (this.x > w - 50) this.vx -= 1;
             
+            // Generic evasion when bullets close
             if (this.y > h * 0.5 && Math.abs(this.z) < 50) {
-                if (Math.abs(dx) < 100 && this.y < py) this.vx -= Math.sign(dx) * 0.6; 
                 incomingFire.forEach(b => {
                     if (!b.isEnemy && Math.abs(b.y - this.y) < 150 && Math.abs(b.x - this.x) < 50) {
                         this.vx += (this.x < b.x ? -1 : 1) * 0.4; 
@@ -307,59 +450,101 @@ class Enemy {
     this.x += this.vx; this.y += this.vy;
     
     this.shieldLayers.forEach((l, i) => {
-        l.rotation += 0.05 * (i % 2 === 0 ? 1 : -1);
+        l.rotation += l.rotSpeed; 
         if (l.wobble > 0) l.wobble = Math.max(0, l.wobble - 0.1);
     });
   }
 
-  takeDamage(amount: number, type: string, isMain: boolean, isOvercharge: boolean = false, isEmp: boolean = false): { dmg: number, isShield: boolean } {
-      const isBoss = this.type === 'boss';
-      let hitShield = false;
-      let appliedHullDmg = 0;
+  // Returns index of the outermost shield that intercepts the hit, or -1
+  getHitShieldIndex(hitAngle: number): number {
+      if (this.shieldDisabledUntil > 0) return -1;
+      
+      for (let i = this.shieldLayers.length - 1; i >= 0; i--) {
+          const layer = this.shieldLayers[i];
+          if (layer.current <= 0) continue;
 
+          if (layer.type === 'full') return i;
+
+          // Normalize angle relative to shield rotation
+          let localAngle = (hitAngle - layer.rotation) % (Math.PI * 2);
+          if (localAngle < 0) localAngle += Math.PI * 2;
+
+          // Align 'Front' with PI/2 (Down) in local space
+          const frontCenter = Math.PI / 2; 
+
+          if (layer.type === 'front') {
+              const arcRad = (140 * Math.PI) / 180;
+              const halfArc = arcRad / 2;
+              let diff = Math.abs(localAngle - frontCenter);
+              if (diff > Math.PI) diff = (Math.PI * 2) - diff;
+              if (diff < halfArc) return i;
+          } else if (layer.type === 'tri') {
+              const period = (Math.PI * 2) / 3; 
+              const segSize = Math.PI / 2; 
+              const phase = localAngle % period;
+              if (phase < segSize) return i;
+          } else if (layer.type === 'hex') {
+              const period = (Math.PI * 2) / 6; 
+              const segSize = Math.PI / 4; 
+              const phase = localAngle % period;
+              if (phase < segSize) return i;
+          }
+      }
+      return -1;
+  }
+
+  damageShield(layerIdx: number, amount: number, type: string, isMain: boolean, isOvercharge: boolean, isEmp: boolean) {
+      const layer = this.shieldLayers[layerIdx];
+      const shieldDmg = calculateDamage(amount, type, 'shield', layer.color);
+      let finalShieldDmg = shieldDmg;
+      
+      if (isMain) {
+          if (isOvercharge) finalShieldDmg *= 3.0;
+          else finalShieldDmg *= 0.5;
+      }
+      if (isEmp) finalShieldDmg *= 5.0;
+
+      layer.current -= finalShieldDmg;
+      layer.wobble = 1.0; 
+      
+      if (layer.current <= 0) { 
+          this.shieldLayers.splice(layerIdx, 1); 
+      }
+  }
+
+  damageHull(amount: number, type: string, isMain: boolean, isOvercharge: boolean) {
+      const isBoss = this.type === 'boss';
       if (type === 'bolt') {
           this.stunnedUntil = 60; 
           this.shieldDisabledUntil = 60; 
       }
 
-      if (this.shieldLayers.length > 0 && this.shieldDisabledUntil <= 0) {
-          hitShield = true;
-          const layer = this.shieldLayers[0];
-          const shieldDmg = calculateDamage(amount, type, 'shield', layer.color);
-          
-          let finalShieldDmg = shieldDmg;
-          if (isMain) {
-              if (isOvercharge) finalShieldDmg *= 3.0;
-              else finalShieldDmg *= 0.5;
-          }
-          if (isEmp) finalShieldDmg *= 5.0;
-
-          layer.current -= finalShieldDmg;
-          layer.wobble = 1.0; 
-          
-          if (layer.current <= 0) { 
-              this.shieldLayers.shift(); 
-          }
-      } else {
-          const hullDmg = calculateDamage(amount, type, 'hull');
-          
-          let finalHullDmg = hullDmg;
-          if (isMain) {
-              if (isOvercharge) finalHullDmg *= 1.0; 
-              else finalHullDmg *= 3.0;
-          } else if (type === 'projectile' || type === 'star') {
-              finalHullDmg *= 2.0;
-          } else if (type === 'flame') {
-              finalHullDmg *= 1.2;
-          }
-
-          if (isBoss) finalHullDmg *= 0.25;
-
-          this.hp -= finalHullDmg;
-          appliedHullDmg = finalHullDmg;
-      }
+      const hullDmg = calculateDamage(amount, type, 'hull');
+      let finalHullDmg = hullDmg;
       
-      return { dmg: Math.floor(appliedHullDmg), isShield: hitShield };
+      if (isMain) {
+          if (isOvercharge) finalHullDmg *= 1.0; 
+          else finalHullDmg *= 3.0;
+      } else if (type === 'projectile' || type === 'star') {
+          finalHullDmg *= 2.0;
+      } else if (type === 'flame') {
+          finalHullDmg *= 1.2;
+      }
+
+      if (isBoss) finalHullDmg *= 0.25;
+      this.hp -= finalHullDmg;
+  }
+
+  // Backwards compat if needed, but logic moved to loop for precision
+  takeDamage(amount: number, type: string, isMain: boolean, isOvercharge: boolean = false, isEmp: boolean = false, hitAngle: number = 0): { dmg: number, isShield: boolean } {
+      const shieldIdx = this.getHitShieldIndex(hitAngle);
+      if (shieldIdx !== -1) {
+          this.damageShield(shieldIdx, amount, type, isMain, isOvercharge, isEmp);
+          return { dmg: amount, isShield: true };
+      } else {
+          this.damageHull(amount, type, isMain, isOvercharge);
+          return { dmg: amount, isShield: false };
+      }
   }
 }
 
@@ -753,13 +938,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const fireMine = () => { const s = state.current; if (s.mines > 0) { const isEmp = s.mines % 2 !== 0; s.mines--; s.lastMineFire = Date.now(); s.mineSide = !s.mineSide; const speed = 5; const vx = s.mineSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 20, vx: vx, vy: 0, vz: 0, damage: 250, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: s.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); audioService.playWeaponFire('mine'); } };
   const fireRedMine = () => { const s = state.current; if (s.redMines > 0) { s.redMines--; s.lastRedMineFire = Date.now(); s.omegaSide = !s.omegaSide; const speed = 4; const vx = s.omegaSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 30, vx: vx, vy: 0, vz: 0, damage: 600, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'launching', launchTime: s.frame, turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); audioService.playWeaponFire('mine'); setHud(h => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); } };
   const spawnLoot = (x: number, y: number, z: number, type: string, id?: string, name?: string, quantity: number = 1) => { state.current.loot.push({ x, y, z, type, id, name, quantity, isPulled: false, vx: (Math.random()-0.5), vy: (Math.random()-0.5) }); };
-  const createExplosion = (x: number, y: number, color: string, count: number, type: 'standard' | 'boss' | 'asteroid' | 'mine' | 'fireworks' = 'standard') => { const s = state.current; s.particles.push({ x, y, vx: 0, vy: 0, life: 0.5, color: '#ffffff', size: type === 'boss' ? 50 : 25 }); for(let i=0; i<count; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * (type === 'boss' ? 12 : 8) + 2; 
+  const createExplosion = (x: number, y: number, color: string, count: number, type: 'standard' | 'boss' | 'asteroid' | 'mine' | 'fireworks' | 'smoke' | 'shield_effect' = 'standard') => { const s = state.current; s.particles.push({ x, y, vx: 0, vy: 0, life: 0.5, color: '#ffffff', size: type === 'boss' ? 50 : 25 }); for(let i=0; i<count; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * (type === 'boss' ? 12 : 8) + 2; 
     let pColor = color;
-    if (type === 'fireworks') {
-        if (Math.random() > 0.5) pColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
-    }
+    if (type === 'fireworks') { if (Math.random() > 0.5) pColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)]; }
     s.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.0 + Math.random() * 0.5, color: Math.random() > 0.5 ? pColor : '#ffffff', size: Math.random()*3+2 }); } };
-  const createAreaDamage = (x: number, y: number, radius: number, damage: number, sourceId?: string) => { const s = state.current; s.enemies.forEach(e => { if (e.hp > 0) { const dist = Math.hypot(e.x - x, e.y - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor; if (dmg > 5) { e.takeDamage(dmg, 'explosion', false); createExplosion(e.x, e.y, '#f97316', 2); } } } }); if (!s.rescueMode) { const dist = Math.hypot(s.px - x, s.py - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor * 0.5; if (dmg > 5) { takeDamage(dmg, 'explosion'); } } } };
+  const createAreaDamage = (x: number, y: number, radius: number, damage: number, sourceId?: string) => { const s = state.current; s.enemies.forEach(e => { if (e.hp > 0) { const dist = Math.hypot(e.x - x, e.y - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor; if (dmg > 5) { e.damageHull(dmg, 'explosion', false, false); createExplosion(e.x, e.y, '#f97316', 2); } } } }); if (!s.rescueMode) { const dist = Math.hypot(s.px - x, s.py - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor * 0.5; if (dmg > 5) { takeDamage(dmg, 'explosion'); } } } };
   
   const getCapacitorBeamState = (chargeLevel: number) => {
       let color = '#ef4444'; 
@@ -779,7 +962,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       const baseDamage = mainDef ? mainDef.damage : 45; 
       
       // Logarithmic Power Scaling: 1x to 5x
-      // Math.log(1) = 0, Math.log(101) ~ 4.615. Ratio is 0 to 1.
       const powerFactor = Math.log(s.capacitor + 1) / Math.log(101); 
       const damageMult = 1.0 + 4.0 * powerFactor; 
       const dmg = baseDamage * damageMult; 
@@ -818,29 +1000,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           let detY = undefined;
           let isMulti = false;
 
-          if (isOrb) { 
-              w = 8; h = 8; speed = 16; 
-              grow = 1.05; 
-          }
-          else if (isWave) { 
-              w = 10; h = 6; speed = 16; 
-              grow = 1.05; 
-          }
-          else if (isGravity) { 
-              w = 10; h = 6; speed = 16; 
-              grow = 1.06; 
-          }
+          if (isOrb) { w = 8; h = 8; speed = 16; grow = 1.05; }
+          else if (isWave) { w = 10; h = 6; speed = 16; grow = 1.05; }
+          else if (isGravity) { w = 10; h = 6; speed = 16; grow = 1.06; }
           else if (isStar) { w = 12; h = 12; speed = 18; grow = 1.045; } 
           else if (isRainbow) { w = 10; h = 4; speed = 14; }
-          else if (isFlamer) { 
-              w = 30; h = 30; speed = 20; 
-              grow = 1.03; 
-              color = '#3b82f6'; 
-          }
-          else if (isElectric) { 
-              type = 'laser';
-              w = 4; h = 20; speed = 28;
-          }
+          else if (isFlamer) { w = 30; h = 30; speed = 20; grow = 1.03; color = '#3b82f6'; }
+          else if (isElectric) { type = 'laser'; w = 4; h = 20; speed = 28; }
           else if (isOcto) { 
               type = 'octo_shell';
               w = 12; h = 12; grow = 0; speed = 12; 
@@ -851,19 +1017,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               detY = s.py - dist;
               isMulti = Math.random() > 0.7; 
           }
-          else if (isPhaser) { 
-              type = 'laser';
-              w = 5; h = 40; // Base height reduced from 120 to match logic
-              speed = 32; 
-              color = '#d946ef'; 
-          }
+          else if (isPhaser) { type = 'laser'; w = 5; h = 40; speed = 32; color = '#d946ef'; }
 
           // Apply Dynamic Scaling
           if (isPhaser || isElectric) {
-              // Laser types mainly scale in length/height
               h = h * lengthMult;
           } else {
-              // Projectiles scale both dimensions slightly for mass feel, but mainly height for "length"
               w = w * (1 + 0.5 * powerFactor);
               h = h * lengthMult;
           }
@@ -899,7 +1058,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           const baseW = 4; 
           const baseH = 25; 
           
-          const width = baseW * (1 + 0.4 * powerFactor); // Slight width increase
+          const width = baseW * (1 + 0.4 * powerFactor); 
           const height = baseH * lengthMult; 
           const color = beamState.color;
 
@@ -982,19 +1141,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
               let w = 6; 
               let h = 12;
 
-              if (mainDef.id === 'exotic_rainbow_spread') {
-                  w = 16; 
-                  h = 4;  
-              }
-              
-              if (mainDef.id === 'exotic_flamer') {
-                  w = 12; h = 12; 
-              }
-              
-              if (mainDef.id === 'exotic_phaser_sweep') {
-                  h = 40; 
-                  w = 3.5;
-              }
+              if (mainDef.id === 'exotic_rainbow_spread') { w = 16; h = 4; }
+              if (mainDef.id === 'exotic_flamer') { w = 12; h = 12; }
+              if (mainDef.id === 'exotic_phaser_sweep') { h = 40; w = 3.5; }
 
               if (mainDef.id === 'exotic_octo_burst') {
                   s.bullets.push({
@@ -1352,11 +1501,59 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
 
         if (s.phase === 'travel') { 
-            if (s.enemies.length < 3 + difficulty/2 && Date.now() - s.lastSpawn > 1500 && !s.rescueMode) { 
-                let spawnPool = SHIPS.filter(s => !s.isAlien); if (difficulty >= 2) spawnPool = [...spawnPool, ...SHIPS.filter(s => s.isAlien)];
+            // 1. POPULATION LIMITS BY QUADRANT
+            let maxEnemies = 4; // Default Alfa/Beta
+            if (quadrant === QuadrantType.GAMA) maxEnemies = 5;
+            if (quadrant === QuadrantType.DELTA) maxEnemies = 6;
+
+            const canSpawn = s.enemies.length < maxEnemies;
+
+            // 2. SPAWN LOGIC (Only if below limit and cooldown passed)
+            if (canSpawn && Date.now() - s.lastSpawn > 1500 && !s.rescueMode) { 
+                let spawnPool = SHIPS.filter(s => !s.isAlien); 
+                if (difficulty >= 2) spawnPool = [...spawnPool, ...SHIPS.filter(s => s.isAlien)];
                 const selectedShip = spawnPool[Math.floor(Math.random() * spawnPool.length)] || SHIPS[0]; 
-                s.enemies.push(new Enemy(Math.random()*width, -50, 'fighter', selectedShip, difficulty, quadrant)); 
-                s.lastSpawn = Date.now(); 
+                
+                // Spawn Count: Try to fill up to limit, but usually spawn 1 or 2
+                let spawnBatch = 1;
+                // Gama: Always pairs for Z pattern symmetry
+                if (quadrant === QuadrantType.GAMA) spawnBatch = 2; 
+                // Delta: 2 or 3 for X pattern
+                if (quadrant === QuadrantType.DELTA) spawnBatch = Math.random() > 0.5 ? 2 : 1;
+
+                // Ensure we don't exceed max with this batch
+                if (s.enemies.length + spawnBatch > maxEnemies) spawnBatch = maxEnemies - s.enemies.length;
+
+                if (spawnBatch > 0) {
+                    const squadId = Math.floor(Math.random() * 100000);
+                    
+                    if (quadrant === QuadrantType.GAMA && spawnBatch === 2) {
+                        // GAMA: SYMMETRIC Z-PATTERN PAIR
+                        // One Left (Normal Z), One Right (Mirror Z)
+                        const leftEnemy = new Enemy(width * 0.25, -50, 'fighter', selectedShip, difficulty, quadrant, squadId, 0, 'z');
+                        const rightEnemy = new Enemy(width * 0.75, -50, 'fighter', selectedShip, difficulty, quadrant, squadId, 0, 'mirror_z');
+                        s.enemies.push(leftEnemy, rightEnemy);
+                    } 
+                    else if (quadrant === QuadrantType.DELTA) {
+                        // DELTA: X-PATTERN CROSSING
+                        // Spawn at corners targeting center-opposite
+                        for(let i=0; i<spawnBatch; i++) {
+                             const side = Math.random() > 0.5 ? 'left' : 'right';
+                             const startX = side === 'left' ? 50 : width - 50;
+                             const pattern = side === 'left' ? 'cross_left' : 'cross_right';
+                             s.enemies.push(new Enemy(startX, -50 - (i*60), 'fighter', selectedShip, difficulty, quadrant, squadId, 0, pattern));
+                        }
+                    }
+                    else {
+                        // STANDARD SPAWN (Alpha/Beta)
+                        const startX = Math.random() * (width - 200) + 100;
+                        for(let i=0; i<spawnBatch; i++) {
+                            const offset = i * 60; 
+                            s.enemies.push(new Enemy(startX + offset, -50 - (Math.abs(offset)*0.5), 'fighter', selectedShip, difficulty, quadrant, squadId, offset)); 
+                        }
+                    }
+                    s.lastSpawn = Date.now(); 
+                }
             } 
             if (s.asteroids.length < 3 && Math.random() > 0.99 && !s.rescueMode) s.asteroids.push(new Asteroid(width, difficulty, quadrant));
             if (s.time <= 0) { s.phase = 'boss'; s.enemies = []; const bossConfig = BOSS_SHIPS[Math.floor(Math.random() * BOSS_SHIPS.length)]; s.enemies.push(new Enemy(width/2, -200, 'boss', bossConfig, difficulty, quadrant)); setHud(h => ({...h, alert: "BOSS DETECTED", alertType: 'alert'})); } else if (s.frame % 60 === 0) s.time--; 
@@ -1374,16 +1571,24 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }); 
         s.asteroids = s.asteroids.filter(a => a.y < height + 100 && a.hp > 0);
 
+        // Update Enemies with new separation logic passed
         s.enemies.forEach(e => { 
             if (s.rescueMode) { e.y += 3; if (e.type === 'boss') e.y += 2; } 
             else {
-                e.update(s.px, s.py, width, height, s.bullets, worldSpeedFactor); 
+                e.update(s.px, s.py, width, height, s.bullets, worldSpeedFactor, s.bullets, difficulty, s.enemies); 
                 if (e.hp < e.maxHp && e.hp > 0) {
                     if (e.hp < e.maxHp * 0.9 && Math.random() < 0.2) s.particles.push({ x: e.x + (Math.random()-0.5)*30, y: e.y + (Math.random()-0.5)*30, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, life: 0.5 + Math.random()*0.5, size: 3 + Math.random()*4, color: '#52525b', type: 'smoke' });
                     if (e.hp < e.maxHp * 0.5 && Math.random() < 0.3) s.particles.push({ x: e.x + (Math.random()-0.5)*20, y: e.y + (Math.random()-0.5)*20, vx: (Math.random()-0.5), vy: (Math.random()-0.5), life: 0.4 + Math.random()*0.3, size: 2 + Math.random()*3, color: '#ef4444', type: 'fire' });
                 }
                 if (difficulty >= 2 && e.type !== 'boss') {
-                    const fireInterval = e.config.isAlien ? 120 : 180;
+                    // Adjusted fire rates based on quadrant
+                    let fireInterval = 180; // Base: Alpha
+                    if (quadrant === QuadrantType.BETA) fireInterval = 140;
+                    if (quadrant === QuadrantType.GAMA) fireInterval = 90; // Increased
+                    if (quadrant === QuadrantType.DELTA) fireInterval = 45; // Max Threat
+                    
+                    if (e.config.isAlien) fireInterval = Math.floor(fireInterval * 0.8);
+
                     if (s.frame % fireInterval === 0 && Math.abs(e.x - s.px) < 300) {
                         const w = e.equippedWeapons[0]; if (w) { s.bullets.push({ x: e.x, y: e.y + 20, vx: 0, vy: 5, damage: 10, color: '#ef4444', type: 'projectile', life: 100, isEnemy: true, width: 6, height: 12 }); }
                     }
@@ -1536,7 +1741,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         const dist = Math.hypot(e.x - b.x, e.y - b.y);
                         if (dist < 200) {
                             const dmg = calculateDamage(b.damage, 'explosion', 'hull');
-                            e.takeDamage(dmg, 'explosion', true, true, false);
+                            e.damageHull(dmg, 'explosion', true, true);
                             
                             if (e.shieldLayers.length > 0 && Math.random() > 0.5) {
                                 e.shieldDisabledUntil = 300; 
@@ -1547,36 +1752,63 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             }
 
-            if (['missile', 'missile_emp', 'mine', 'mine_emp', 'mine_red'].includes(b.type)) {
+            if (['missile', 'missile_emp', 'mine', 'mine_emp', 'mine_red', 'missile_enemy'].includes(b.type)) {
                 const isMissile = b.type.includes('missile');
                 const age = s.frame - (b.launchTime || 0);
-                if (age < 20) { if (isMissile) { b.vy -= 0.6; b.vx *= 0.95; } else { b.vx *= 0.99; } } 
+                if (age < 20) { if (isMissile) { b.vy -= (b.isEnemy ? -0.4 : 0.6); b.vx *= 0.95; } else { b.vx *= 0.99; } } 
                 else {
-                    if (!b.target || b.target.hp <= 0 || b.target.y > height + 200 || b.target.y < -200) {
-                        b.target = null; let best = null; let bestScore = -Infinity; let searchDir = isMissile ? (Math.hypot(b.vx, b.vy) > 1 ? Math.atan2(b.vy, b.vx) : -Math.PI/2) : (b.vx > 0 ? 0 : Math.PI);
-                        const cone = isMissile ? (Math.PI / 2.5) : (Math.PI / 1.5); 
-                        s.enemies.forEach(e => {
-                            if (e.hp <= 0) return;
-                            const dx = e.x - b.x; const dy = e.y - b.y; const dz = e.z - (b.z || 0); const dist3d = Math.hypot(dx, dy, dz);
-                            if (dist3d > 900) return;
-                            const angleToEnemy = Math.atan2(dy, dx); let diff = angleToEnemy - searchDir;
-                            while (diff <= -Math.PI) diff += 2*Math.PI; while (diff > Math.PI) diff -= 2*Math.PI;
-                            if (Math.abs(diff) < cone) { const score = (5000 / (dist3d + 1)) + (20 / (Math.abs(diff) + 0.1)); if (score > bestScore) { bestScore = score; best = e; } }
-                        });
-                        if (best) b.target = best;
+                    if (b.isEnemy) {
+                        // Enemy Missile Logic (Target Player)
+                        if (!s.rescueMode) {
+                            const dx = s.px - b.x; const dy = s.py - b.y; const dist = Math.hypot(dx, dy);
+                            const turnRate = 0.05; const desiredSpeed = 10;
+                            const tx = (dx / dist) * desiredSpeed; const ty = (dy / dist) * desiredSpeed;
+                            b.vx += (tx - b.vx) * turnRate; b.vy += (ty - b.vy) * turnRate;
+                        }
+                    } else {
+                        if (!b.target || b.target.hp <= 0 || b.target.y > height + 200 || b.target.y < -200) {
+                            b.target = null; let best = null; let bestScore = -Infinity; let searchDir = isMissile ? (Math.hypot(b.vx, b.vy) > 1 ? Math.atan2(b.vy, b.vx) : -Math.PI/2) : (b.vx > 0 ? 0 : Math.PI);
+                            const cone = isMissile ? (Math.PI / 2.5) : (Math.PI / 1.5); 
+                            s.enemies.forEach(e => {
+                                if (e.hp <= 0) return;
+                                const dx = e.x - b.x; const dy = e.y - b.y; const dz = e.z - (b.z || 0); const dist3d = Math.hypot(dx, dy, dz);
+                                if (dist3d > 900) return;
+                                const angleToEnemy = Math.atan2(dy, dx); let diff = angleToEnemy - searchDir;
+                                while (diff <= -Math.PI) diff += 2*Math.PI; while (diff > Math.PI) diff -= 2*Math.PI;
+                                if (Math.abs(diff) < cone) { const score = (5000 / (dist3d + 1)) + (20 / (Math.abs(diff) + 0.1)); if (score > bestScore) { bestScore = score; best = e; } }
+                            });
+                            if (best) b.target = best;
+                        }
+                        if (b.target) {
+                            const dx = b.target.x - b.x; const dy = b.target.y - b.y; const dz = b.target.z - (b.z || 0); const dist = Math.hypot(dx, dy, dz);
+                            const turnRate = isMissile ? 0.18 : 0.08; const desiredSpeed = isMissile ? 15 : 8;
+                            const tx = (dx / dist) * desiredSpeed; const ty = (dy / dist) * desiredSpeed; const tz = (dz / dist) * desiredSpeed;
+                            b.vx += (tx - b.vx) * turnRate; b.vy += (ty - b.vy) * turnRate; b.vz = (b.vz || 0) + (tz - (b.vz || 0)) * turnRate;
+                        }
                     }
-                    if (b.target) {
-                        const dx = b.target.x - b.x; const dy = b.target.y - b.y; const dz = b.target.z - (b.z || 0); const dist = Math.hypot(dx, dy, dz);
-                        const turnRate = isMissile ? 0.18 : 0.08; const desiredSpeed = isMissile ? 15 : 8;
-                        const tx = (dx / dist) * desiredSpeed; const ty = (dy / dist) * desiredSpeed; const tz = (dz / dist) * desiredSpeed;
-                        b.vx += (tx - b.vx) * turnRate; b.vy += (ty - b.vy) * turnRate; b.vz = (b.vz || 0) + (tz - (b.vz || 0)) * turnRate;
-                    }
-                    s.asteroids.forEach(a => { if (a.hp > 0) { const dx = b.x - a.x; const dy = b.y - a.y; const dist = Math.hypot(dx, dy); const avoidRad = a.size + 80; if (dist < avoidRad) { const force = (avoidRad - dist) / avoidRad; const repulsion = isMissile ? 2.5 : 1.5; b.vx += (dx / dist) * force * repulsion; b.vy += (dy / dist) * force * repulsion; } } });
                     if (isMissile) { const speed = Math.hypot(b.vx, b.vy); if (speed < (b.maxSpeed || 16)) { b.vx *= 1.05; b.vy *= 1.05; } }
                 }
             }
             if (b.weaponId === 'exotic_gravity_wave' && b.growthRate) {
                 s.bullets.forEach(other => { if (other.isEnemy && Math.abs(other.x - b.x) < b.width && Math.abs(other.y - b.y) < b.height) { other.isEnemy = false; other.vx = (Math.random()-0.5) * 5; other.vy = -Math.abs(other.vy) - 5; other.color = b.color; other.damage *= 2; createExplosion(other.x, other.y, b.color, 1); } });
+            }
+
+            // COLLISION: Player Bullet vs Enemy Ordnance
+            // Allows player to shoot mines/missiles
+            if (!b.isEnemy && (b.type === 'laser' || b.weaponId?.includes('exotic'))) {
+                s.bullets.forEach(enemyB => {
+                    if (enemyB.life > 0 && enemyB.isEnemy && (enemyB.type.includes('missile') || enemyB.type.includes('mine'))) {
+                        const dist = Math.hypot(b.x - enemyB.x, b.y - enemyB.y);
+                        if (dist < 30) {
+                            enemyB.life = 0;
+                            createExplosion(enemyB.x, enemyB.y, '#f97316', 15, 'mine');
+                            createAreaDamage(enemyB.x, enemyB.y, 80, 50);
+                            audioService.playExplosion(0, 0.8, 'mine');
+                            // If player bullet is small, destroy it too. If beam/wave, maybe keep going.
+                            if (!b.isOvercharge && b.width < 20) b.life = 0;
+                        }
+                    }
+                });
             }
 
             if (b.isEnemy && !s.rescueMode) { 
@@ -1585,11 +1817,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 let hit = false; 
                 s.enemies.forEach(e => { 
                     const isOrdnance = b.type.includes('missile') || b.type.includes('mine');
-                    const hitDist = isOrdnance ? (e.type === 'boss' ? 100 : 60) : (e.type === 'boss' ? 80 : 40); 
-                    let hitThreshold = (b.weaponId === 'exotic_flamer' || b.weaponId === 'exotic_rainbow_spread' || b.weaponId === 'exotic_star_shatter' || b.type === 'octo_shell') ? Math.max(hitDist, b.width/2) : hitDist;
-                    const dist2d = Math.hypot(b.x-e.x, b.y-e.y); const zDist = Math.abs((b.z || 0) - e.z);
+                    const hullRadius = e.type === 'boss' ? 80 : 40;
+                    const shieldRadius = e.shieldLayers.length > 0 ? (hullRadius + 20) : 0; // Shield slightly larger than hull
+                    const zDist = Math.abs((b.z || 0) - e.z);
 
-                    if (dist2d < hitThreshold && (!isOrdnance || zDist < 80)) { 
+                    // Check if bullet is near the enemy at all
+                    const dist2d = Math.hypot(b.x-e.x, b.y-e.y);
+                    
+                    if (dist2d < (shieldRadius || hullRadius) + 20 && (!isOrdnance || zDist < 80)) { 
                         let effectiveDamage = b.damage;
                         if (b.weaponId === 'exotic_star_shatter') {
                             if (b.isOvercharge) { const ratio = Math.min(1, Math.max(0, (b.width - 6) / 30)); const multiplier = 4 + (ratio * 16); effectiveDamage = b.damage * multiplier; } 
@@ -1600,31 +1835,65 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             effectiveDamage *= (b.life / 50); 
                         }
 
+                        // Calculate angle to bullet relative to enemy center
+                        const angleToBullet = Math.atan2(b.y - e.y, b.x - e.x);
+                        let normAngle = angleToBullet;
+                        if (normAngle < 0) normAngle += Math.PI * 2;
+
                         if (b.type === 'octo_shell') {
-                            hit = true;
-                            if (b.isOvercharge) {
-                                createExplosion(b.x, b.y, b.color, 40, 'fireworks'); 
-                                audioService.playExplosion(0, 1.5, 'emp'); 
-                                createAreaDamage(b.x, b.y, 200, b.damage);
-                            } else {
-                                e.takeDamage(effectiveDamage, 'projectile', true, false, false);
-                                createExplosion(b.x, b.y, b.color, 5, 'fireworks');
+                            // Octo shells explode on contact with anything
+                            if (dist2d < (shieldRadius || hullRadius)) {
+                                hit = true;
+                                if (b.isOvercharge) {
+                                    createExplosion(b.x, b.y, b.color, 40, 'fireworks'); 
+                                    audioService.playExplosion(0, 1.5, 'emp'); 
+                                    createAreaDamage(b.x, b.y, 200, b.damage);
+                                } else {
+                                    // Try to hit shield first, then hull
+                                    const shieldHitIdx = e.getHitShieldIndex(normAngle);
+                                    if (shieldHitIdx !== -1 && dist2d > hullRadius) {
+                                         e.damageShield(shieldHitIdx, effectiveDamage, 'projectile', true, false, false);
+                                    } else {
+                                         e.damageHull(effectiveDamage, 'projectile', true, false);
+                                    }
+                                    createExplosion(b.x, b.y, b.color, 5, 'fireworks');
+                                }
                             }
                         } else {
-                            e.takeDamage(effectiveDamage, b.type as any, !!b.isMain, !!b.isOvercharge, !!b.isEmp); 
-                            hit = true; 
-                            createExplosion(b.x, b.y, b.color, 2);
-                            
-                            if (b.isEmp || b.type.includes('emp') || b.type.includes('red')) { 
-                                audioService.playExplosion(0, 1.2, 'emp'); 
-                            } 
-                            else if (b.type.includes('missile')) { 
-                                audioService.playExplosion(0, 0.8, 'normal'); 
-                                createAreaDamage(b.x, b.y, 100, b.damage / 2);
-                            } 
-                            else if (b.type.includes('mine')) { 
-                                audioService.playExplosion(0, 1.2, 'mine'); 
-                                createAreaDamage(b.x, b.y, 150, b.damage); 
+                            // 1. Check Shield Collision FIRST (Outer Layer)
+                            // Only if within shield radius but outside hull radius (approx)
+                            if (shieldRadius > 0 && dist2d < shieldRadius + b.width/2 && dist2d > hullRadius - 5) {
+                                const shieldHitIdx = e.getHitShieldIndex(normAngle);
+                                if (shieldHitIdx !== -1) {
+                                    // Hit a shield segment
+                                    e.damageShield(shieldHitIdx, effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge, !!b.isEmp);
+                                    hit = true;
+                                    createExplosion(b.x, b.y, b.color, 2, 'shield_effect'); 
+                                    audioService.playShieldHit();
+                                }
+                                // If -1, it passed through a gap in the shield! Bullet continues.
+                            }
+
+                            // 2. Check Hull Collision (Inner Layer)
+                            // Only if it reaches the hull
+                            if (!hit && dist2d < hullRadius) {
+                                e.damageHull(effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge);
+                                hit = true;
+                                createExplosion(b.x, b.y, '#f97316', 4, 'smoke'); 
+                                if (b.isEmp || b.type.includes('emp') || b.type.includes('red')) { 
+                                    audioService.playExplosion(0, 1.2, 'emp'); 
+                                } 
+                                else if (b.type.includes('missile')) { 
+                                    audioService.playExplosion(0, 0.8, 'normal'); 
+                                    createAreaDamage(b.x, b.y, 100, b.damage / 2);
+                                } 
+                                else if (b.type.includes('mine')) { 
+                                    audioService.playExplosion(0, 1.2, 'mine'); 
+                                    createAreaDamage(b.x, b.y, 150, b.damage); 
+                                }
+                                else {
+                                    audioService.playHullHit('metal');
+                                }
                             }
                         }
                     } 
@@ -1728,7 +1997,79 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if ((s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) { if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } }
             } else if (item.type === 'enemy') {
                 const e = item.obj as Enemy; ctx.translate(e.x, e.y); ctx.scale(scale, scale); ctx.rotate(Math.PI); const alienCols = getAlienColors(quadrant); drawShip(ctx, { config: e.config, fitting: null, color: e.type==='boss'?'#a855f7':alienCols.hull, wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, gunColor: '#ef4444', equippedWeapons: e.equippedWeapons }, false);
-                if (e.shieldLayers.length > 0) { e.shieldLayers.forEach((layer, idx) => { if (layer.current <= 0) return; const radius = 48 + (idx * 8); const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; if (layer.wobble > 0.01) { ctx.beginPath(); const steps = 40; const wobbleFreq = 8; const wobbleAmp = 5 * layer.wobble; const timeOffset = s.frame * 0.5; for(let i=0; i<=steps; i++) { const angle = (i / steps) * Math.PI * 2; const rOff = Math.sin(angle * wobbleFreq + timeOffset) * wobbleAmp; const r = radius + rOff; const x = Math.cos(angle) * r; const y = Math.sin(angle) * r; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); ctx.stroke(); } else { ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.stroke(); } ctx.shadowBlur = 0; ctx.globalAlpha = 1; }); }
+                // NEW: Complex Shield Rendering
+                if (e.shieldLayers.length > 0) { 
+                    e.shieldLayers.forEach((layer, idx) => { 
+                        if (layer.current <= 0) return; 
+                        
+                        const radius = 48 + (idx * 8); 
+                        const opacity = Math.min(1, layer.current / layer.max); 
+                        ctx.strokeStyle = layer.color; 
+                        ctx.lineWidth = 3; 
+                        ctx.shadowColor = layer.color; 
+                        ctx.shadowBlur = 10; 
+                        ctx.globalAlpha = opacity; 
+                        
+                        ctx.beginPath();
+                        
+                        // DRAW BASED ON SHIELD TYPE
+                        // Context is rotated PI (180deg). 0 is Left, PI/2 is Up.
+                        // Enemy faces down in game space, which is UP in local rotated space (PI/2).
+                        // layer.rotation is added to segments.
+                        
+                        if (layer.type === 'full') {
+                            if (layer.wobble > 0.01) { 
+                                const steps = 40; const wobbleFreq = 8; const wobbleAmp = 5 * layer.wobble; const timeOffset = s.frame * 0.5; 
+                                for(let i=0; i<=steps; i++) { 
+                                    const angle = (i / steps) * Math.PI * 2; 
+                                    const rOff = Math.sin(angle * wobbleFreq + timeOffset) * wobbleAmp; 
+                                    const r = radius + rOff; 
+                                    const x = Math.cos(angle) * r; 
+                                    const y = Math.sin(angle) * r; 
+                                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); 
+                                } 
+                                ctx.closePath(); 
+                            } else {
+                                ctx.arc(0, 0, radius, 0, Math.PI * 2); 
+                            }
+                        } else if (layer.type === 'front') {
+                            const arcRad = (140 * Math.PI) / 180;
+                            const start = (-Math.PI / 2) - (arcRad / 2) + layer.rotation;
+                            const end = (-Math.PI / 2) + (arcRad / 2) + layer.rotation;
+                            ctx.arc(0, 0, radius, start, end);
+                        } else if (layer.type === 'tri') {
+                            const segSize = Math.PI / 2; // 90
+                            const gapSize = Math.PI / 6; // 30
+                            for (let k = 0; k < 3; k++) {
+                                const start = layer.rotation + (k * (segSize + gapSize));
+                                const end = start + segSize;
+                                ctx.moveTo(Math.cos(start) * radius, Math.sin(start) * radius);
+                                ctx.arc(0, 0, radius, start, end);
+                            }
+                        } else if (layer.type === 'hex') {
+                            const segSize = Math.PI / 4; // 45
+                            const gapSize = Math.PI / 12; // 15
+                            for (let k = 0; k < 6; k++) {
+                                const start = layer.rotation + (k * (segSize + gapSize));
+                                const end = start + segSize;
+                                ctx.moveTo(Math.cos(start) * radius, Math.sin(start) * radius);
+                                ctx.arc(0, 0, radius, start, end);
+                            }
+                        }
+                        
+                        ctx.stroke(); 
+                        
+                        // Inner glow for full shields or high energy
+                        if (layer.type === 'full') {
+                            ctx.fillStyle = layer.color;
+                            ctx.globalAlpha = opacity * 0.1;
+                            ctx.fill();
+                        }
+                        
+                        ctx.shadowBlur = 0; 
+                        ctx.globalAlpha = 1; 
+                    }); 
+                }
             } else if (item.type === 'loot') {
                 const l = item.obj as Loot; ctx.translate(l.x, l.y); ctx.scale(scale, scale); if (l.isBeingPulled) { ctx.strokeStyle = 'rgba(192, 210, 255, 0.8)'; ctx.lineWidth = 2; ctx.shadowColor = '#fff'; ctx.shadowBlur = 5; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0; ctx.save(); const dx = s.px - l.x; const dy = s.py - l.y; const dist = Math.hypot(dx, dy); const angle = Math.atan2(dy, dx); ctx.rotate(angle); const spacing = 15; const count = Math.ceil(dist / spacing); const speed = 4; const offset = (s.frame * speed) % spacing; ctx.lineWidth = 2; for (let i = 0; i <= count; i++) { const d = i * spacing + offset; if (d > 0 && d < dist) { const alpha = Math.min(1, Math.sin((d/dist)*Math.PI)) * 0.6; ctx.strokeStyle = `rgba(135, 206, 250, ${alpha})`; ctx.beginPath(); ctx.moveTo(d, -7); ctx.quadraticCurveTo(d - 5, 0, d, 7); ctx.stroke(); } } ctx.restore(); } ctx.fillStyle = '#fbbf24'; ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.rect(-8, -8, 16, 16); ctx.fill(); ctx.shadowBlur = 0; if (l.type === 'water') { ctx.fillStyle = '#3b82f6'; ctx.fillRect(-8,-8,16,16); } else if (l.type === 'energy') { ctx.fillStyle = '#22d3ee'; ctx.fillRect(-8,-8,16,16); } ctx.font = "900 10px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = (l.type === 'water' || l.type === 'energy') ? '#000' : '#000'; if (l.type === 'water') ctx.fillStyle = '#fff'; let letter = "?"; if (l.type === 'fuel') letter = "F"; else if (l.type === 'water') letter = "W"; else if (l.type === 'energy') letter = "E"; else if (l.type === 'repair' || l.type === 'nanite') letter = "+"; else if (l.type === 'missile') letter = "M"; else if (l.type === 'mine') letter = "X"; else if (l.type === 'ammo') letter = "A"; else if (l.type === 'weapon') letter = "G"; else if (l.type === 'shield') letter = "S"; ctx.fillText(letter, 0, 1);
             }
@@ -1737,8 +2078,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         s.bullets.forEach(b => { 
             const scale = 1 + (b.z || 0) / 1000; ctx.save(); ctx.translate(b.x, b.y); ctx.scale(scale, scale);
-            if (b.type === 'missile' || b.type === 'missile_emp') { ctx.scale(1.2, 1.2); const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); ctx.fillStyle = b.finsColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill(); ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.fillRect(-3, -6, 6, 14); ctx.fillStyle = b.headColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill(); } 
-            else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red') { const radius = b.width / 2; ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5; ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = b.color; ctx.lineWidth = 2; const spikeCount = 8; const spikeLen = radius + 4; for (let i = 0; i < spikeCount; i++) { const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius; const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); } }
+            if (b.type === 'missile' || b.type === 'missile_emp' || b.type === 'missile_enemy') { ctx.scale(1.2, 1.2); const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); ctx.fillStyle = b.finsColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill(); ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.fillRect(-3, -6, 6, 14); ctx.fillStyle = b.headColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill(); } 
+            else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red' || b.type === 'mine_enemy') { const radius = b.width / 2; ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5; ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = b.color; ctx.lineWidth = 2; const spikeCount = 8; const spikeLen = radius + 4; for (let i = 0; i < spikeCount; i++) { const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius; const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); } }
             else if (b.type === 'octo_shell') { 
                 ctx.save(); 
                 ctx.fillStyle = b.color;
