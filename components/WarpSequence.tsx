@@ -13,8 +13,8 @@ interface WarpSequenceProps {
   weaponId?: string;
   equippedWeapons?: (EquippedWeapon | null)[];
   destination?: string;
-  isCapsule?: boolean; // New prop for escape pod mode
-  isFriendly?: boolean; // New prop for arrival message context
+  isCapsule?: boolean;
+  isFriendly?: boolean;
   fontSize?: 'small' | 'medium' | 'large' | 'extra-large';
 }
 
@@ -32,15 +32,6 @@ const BATTLE_MESSAGES = [
     "DEFEND THE SECTOR",
     "VICTORY OR DEATH"
 ];
-
-// Helper to get colors based on sector string
-const getWandererColors = (sector: string | null) => {
-    const s = (sector || '').toUpperCase();
-    if (s.includes('BETA')) return ['#ef4444', '#f97316', '#fca5a5']; // Red/Orange
-    if (s.includes('GAMA')) return ['#3b82f6', '#22d3ee', '#8b5cf6']; // Blue/Cyan/Purple
-    if (s.includes('DELTA')) return ['#a855f7', '#db2777', '#4c1d95']; // Purple/Pink
-    return ['#ffffff', '#fef08a', '#e0f2fe']; // Default/Alpha (White/Yellow/LightBlue)
-};
 
 const WarpSequence: React.FC<WarpSequenceProps> = ({ 
     shipConfig, 
@@ -60,12 +51,13 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
   const [statusText, setStatusText] = useState<string | null>(null);
   const [battleMsg, setBattleMsg] = useState("");
 
-  // Select random message on mount
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
+
   useEffect(() => {
       setBattleMsg(BATTLE_MESSAGES[Math.floor(Math.random() * BATTLE_MESSAGES.length)]);
   }, []);
 
-  // Parse Destination String (Format: "NAME // SECTOR")
   const destParts = useMemo(() => {
       const parts = destination.split(' // ');
       return {
@@ -74,43 +66,54 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
       };
   }, [destination]);
 
-  // Animation State Logic - using ref to avoid re-renders during loop
+  // Calculate dynamic timing based on sector distance
+  const timingConfig = useMemo(() => {
+      const sec = destParts.sector?.toUpperCase() || '';
+      let warpFrames = 60; // Default 1s (Alfa/Home)
+
+      if (sec.includes('DELTA')) warpFrames = 180; // 3s
+      else if (sec.includes('GAMA')) warpFrames = 120;  // 2s
+      else if (sec.includes('BETA')) warpFrames = 60;   // 1s
+      
+      const initDuration = 60;
+      const accelDuration = 120;
+      const decelDuration = 120;
+      const coastDuration = 40;
+      const finishDuration = 140;
+
+      return {
+          tAccel: initDuration,
+          tWarp: initDuration + accelDuration,
+          tDecel: initDuration + accelDuration + warpFrames,
+          tCoast: initDuration + accelDuration + warpFrames + decelDuration,
+          tFinish: initDuration + accelDuration + warpFrames + decelDuration + coastDuration,
+          tEnd: initDuration + accelDuration + warpFrames + decelDuration + coastDuration + finishDuration
+      };
+  }, [destParts.sector]);
+
+  // ANIMATION STATE
   const animRef = useRef({
       frame: 0,
-      phase: 'drift' as 'drift' | 'power_on' | 'shrink' | 'warp' | 'expand' | 'cooldown' | 'finish',
-      lastPhase: 'drift', // Track phase changes for text updates
-      
-      // Visual Props
-      containerScale: 1.0, 
-      
-      // Bubble Props
+      phase: 'init' as 'init' | 'accel' | 'warp' | 'decel' | 'coast' | 'finish',
+      currentScale: 0.6, 
+      warpFactor: 0, 
+      stars: [] as {
+          angle: number;
+          dist: number; 
+          size: number;
+          color: string;
+          speedVar: number; 
+      }[],
       bubbleOpacity: 0.0,
       bubbleBlur: 0.0,
-      
-      // Rotation Props
-      rotationAngle: 0.0,
-      rotationSpeed: 0.0005, // Initial drift speed
-
-      // Wanderers State (Mutable)
-      wanderers: Array.from({length: 3}).map(() => ({
-          x: Math.random() * window.innerWidth,
-          y: Math.random() * window.innerHeight,
-          vx: (Math.random() - 0.5) * 0.8,
-          vy: (Math.random() - 0.5) * 0.8,
-          size: Math.random() * 1.5 + 1.0,
-          color: '#ffffff', // Initial color (will be updated or start generic)
-      })),
-      wandererOpacity: 1.0,
-      hasRecolored: false,
   });
 
-  // Calculate font size class based on prop
   const statusSizeClass = useMemo(() => {
       switch(fontSize) {
           case 'small': return 'text-xs tracking-[0.2em]';
           case 'large': return 'text-xl tracking-[0.3em]';
           case 'extra-large': return 'text-2xl tracking-[0.3em]';
-          default: return 'text-base tracking-[0.25em]'; // medium
+          default: return 'text-base tracking-[0.25em]';
       }
   }, [fontSize]);
 
@@ -119,7 +122,7 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
           case 'small': return 'text-xl md:text-2xl';
           case 'large': return 'text-4xl md:text-6xl';
           case 'extra-large': return 'text-5xl md:text-7xl';
-          default: return 'text-3xl md:text-5xl'; // medium
+          default: return 'text-3xl md:text-5xl';
       }
   }, [fontSize]);
 
@@ -128,224 +131,186 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
           case 'small': return 'text-[10px] md:text-xs';
           case 'large': return 'text-sm md:text-lg';
           case 'extra-large': return 'text-base md:text-xl';
-          default: return 'text-xs md:text-sm'; // medium
+          default: return 'text-xs md:text-sm';
       }
   }, [fontSize]);
 
-  // 1. ROTATING STARFIELD (Background)
-  // Crisp, small, shimmering
-  const stars = useMemo(() => {
-      const diag = Math.hypot(window.innerWidth, window.innerHeight) * 1.5;
-      const starColors = ['#ffffff', '#e0f2fe', '#bae6fd', '#fcd34d', '#fbbf24'];
-      return Array.from({ length: 800 }).map(() => ({
-          x: (Math.random() - 0.5) * diag,
-          y: (Math.random() - 0.5) * diag,
-          size: Math.random() * 1.2 + 0.3, // Smaller crisp stars
-          color: starColors[Math.floor(Math.random() * starColors.length)],
-          baseAlpha: Math.random() * 0.7 + 0.3,
-          twinkleOffset: Math.random() * 100,
-          twinkleSpeed: 0.05 + Math.random() * 0.05
-      }));
+  useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+          if (e.code === 'Escape') {
+              audioService.stopWarpHum(false); // Stop immediately
+              onCompleteRef.current();
+          }
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // INIT STARS ONCE
+  useEffect(() => {
+      const COLORS = ['#ffffff', '#60a5fa', '#facc15', '#f97316']; 
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const screenRadius = Math.hypot(w, h) / 2 + 50; 
+      const STAR_COUNT = 2000; 
+
+      animRef.current.stars = Array.from({length: STAR_COUNT}).map(() => {
+          const r = Math.random() * screenRadius;
+          return {
+              angle: Math.random() * Math.PI * 2,
+              dist: r,
+              color: COLORS[Math.floor(Math.random() * COLORS.length)],
+              size: 0.5 + Math.random() * 2.0, 
+              speedVar: 0.2 + Math.random() * 1.8 
+          };
+      });
   }, []);
 
   useEffect(() => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', { alpha: false }); 
       if (!ctx) return;
 
+      // FORCE AUDIO START ON MOUNT/UPDATE
+      // This ensures if the component re-renders (and cleans up), audio restarts immediately.
+      audioService.playWarpHum();
+
       let rAF: number;
+      const { tAccel, tWarp, tDecel, tCoast, tFinish, tEnd } = timingConfig;
 
       const loop = () => {
-          // Fullscreen canvas
           const w = canvas.width = window.innerWidth;
           const h = canvas.height = window.innerHeight;
           const cx = w / 2;
           const cy = h / 2;
-          
+          const maxRadius = Math.hypot(w/2, h/2) + 50;
+
           const s = animRef.current;
           s.frame++;
 
-          // --- STATE MACHINE (10s = ~600 frames) ---
-          
-          // Check for phase transitions to update status text
-          if (s.phase !== s.lastPhase) {
-              if (s.phase === 'power_on') setStatusText("HYPERDRIVE ACTIVE");
-              if (s.phase === 'shrink') setStatusText("WARP TRAVEL"); // Stars spin here
-              if (s.phase === 'expand') setStatusText(null); // Disappear
-              s.lastPhase = s.phase;
-          }
-
-          // 1. DRIFT (0s - 1.5s)
-          if (s.phase === 'drift') {
-              s.rotationSpeed = 0.0005; // Gentle drift
-              if (s.frame > 90) s.phase = 'power_on';
-          }
-          
-          // 2. POWER ON (1.5s - 3.5s)
-          else if (s.phase === 'power_on') {
-              // Bubble ON
-              s.bubbleOpacity = Math.min(0.85, s.bubbleOpacity + 0.015);
-              s.bubbleBlur = Math.min(8, s.bubbleBlur + 0.15);
+          // 2. State Machine
+          if (s.phase === 'init') {
+              setStatusText("ALIGNING VECTOR");
+              s.currentScale = 0.6; 
+              s.warpFactor = 0.0005; 
               
-              // Slight rotation ramp up
-              s.rotationSpeed += 0.0001; 
-
-              if (s.frame > 210) {
-                  s.phase = 'shrink';
-                  audioService.playLaunchSequence();
+              if (s.frame > tAccel) {
+                  s.phase = 'accel';
               }
           }
-          
-          // 3. SHRINK (3.5s - 5.5s)
-          else if (s.phase === 'shrink') {
-              // Ship Shrink
-              s.containerScale *= 0.94;
-              // Min scale 0.04 * 256px = ~10px visible size
-              if (s.containerScale < 0.04) s.containerScale = 0.04;
-
-              // Rotation Accelerate Exponentially
-              s.rotationSpeed *= 1.05;
+          else if (s.phase === 'accel') {
+              setStatusText("WARP DRIVE ENGAGED");
+              const duration = tWarp - tAccel;
+              const progress = (s.frame - tAccel) / duration;
+              const ease = progress * progress * progress; 
               
-              // Fade out wanderers
-              s.wandererOpacity = Math.max(0, s.wandererOpacity - 0.05);
+              s.warpFactor = 0.0005 + (0.12 * ease); 
+              s.currentScale = 0.6 - (0.5 * ease); 
+              
+              s.bubbleOpacity = Math.min(0.8, progress * 1.5);
+              s.bubbleBlur = Math.min(4, progress * 4);
 
-              if (s.frame > 330) {
-                  s.phase = 'warp';
-              }
+              if (s.frame > tWarp) s.phase = 'warp';
           }
-          
-          // 4. WARP (5.5s - 7.5s)
           else if (s.phase === 'warp') {
-              s.containerScale = 0.04;
-              s.wandererOpacity = 0; // Ensure hidden
+              setStatusText("TRANSIT IN PROGRESS");
+              s.warpFactor = 0.12; 
+              s.currentScale = 0.1;
+              if (s.frame > tDecel) s.phase = 'decel'; 
+          }
+          else if (s.phase === 'decel') {
+              setStatusText("EXITING HYPERSPACE");
+              const duration = tCoast - tDecel;
+              const progress = (s.frame - tDecel) / duration;
+              const easeOut = 1 - Math.pow(1 - progress, 3);
               
-              // Max Rotation Speed Cap increased for dizziness effect
-              s.rotationSpeed = Math.min(0.8, s.rotationSpeed * 1.02);
-              
-              if (s.frame > 450) {
-                  s.phase = 'expand';
-                  // (Stop Charging audio removed here)
+              s.warpFactor = 0.12 * (1 - easeOut); 
+              if (s.warpFactor < 0.0005) s.warpFactor = 0.0005; 
+
+              s.currentScale = 0.1 + (0.4 * easeOut);
+
+              s.bubbleOpacity = Math.max(0, 0.8 - progress);
+              s.bubbleBlur = Math.max(0, 4 - (progress * 4));
+
+              if (s.frame > tCoast) {
+                  s.phase = 'coast';
+                  // Trigger gradual spindown with steam hiss
+                  audioService.stopWarpHum(true);
                   audioService.playSfx('buy');
               }
           }
-          
-          // 5. EXPAND (7.5s - 9.0s)
-          else if (s.phase === 'expand') {
-              // Ship Expand
-              s.containerScale += (1.0 - s.containerScale) * 0.1;
-              
-              // Rotation Decelerate
-              s.rotationSpeed *= 0.9;
-              
-              // Recolor & Respawn Wanderers if not done
-              if (!s.hasRecolored) {
-                  const newColors = getWandererColors(destParts.sector);
-                  s.wanderers.forEach(wnd => {
-                      // Reset position randomly to ensure they appear fresh
-                      wnd.x = Math.random() * w;
-                      wnd.y = Math.random() * h;
-                      // Pick new color
-                      wnd.color = newColors[Math.floor(Math.random() * newColors.length)];
-                  });
-                  s.hasRecolored = true;
-              }
-
-              // Fade In Wanderers
-              s.wandererOpacity = Math.min(1.0, s.wandererOpacity + 0.05);
-              
-              if (s.containerScale > 0.98) {
-                  s.containerScale = 1.0;
-                  s.phase = 'cooldown';
-              }
-          }
-          
-          // 6. COOLDOWN (9.0s - 10s)
-          else if (s.phase === 'cooldown') {
-              s.bubbleOpacity = Math.max(0, s.bubbleOpacity - 0.05);
-              s.bubbleBlur = Math.max(0, s.bubbleBlur - 0.5);
-              s.rotationSpeed = Math.max(0.0005, s.rotationSpeed * 0.9); // Back to drift
-              
-              if (s.bubbleOpacity <= 0) {
-                  s.phase = 'finish';
+          else if (s.phase === 'coast') {
+              setStatusText(null);
+              s.warpFactor = 0; 
+              s.currentScale = 0.5;
+              if (s.frame > tFinish) {
                   setTextVisible(true);
+                  s.phase = 'finish';
               }
           }
-          
-          // 7. FINISH
           else if (s.phase === 'finish') {
-              if (s.frame > 660) {
-                  onComplete();
+              s.warpFactor = 0;
+              if (s.frame > tEnd) {
+                  onCompleteRef.current();
               }
           }
 
-          // --- UPDATE PHYSICS ---
-          s.rotationAngle += s.rotationSpeed;
-
-          // --- DRAW ---
-          // Clear background
+          // 3. Draw
           ctx.fillStyle = '#000000';
           ctx.fillRect(0, 0, w, h);
-
-          // 1. Draw Rotating Starfield
-          ctx.save();
           ctx.translate(cx, cy);
-          ctx.rotate(s.rotationAngle);
-          
-          stars.forEach(st => {
-              // Shimmer Logic
-              const shimmer = Math.sin((s.frame * st.twinkleSpeed) + st.twinkleOffset);
-              const alpha = Math.max(0.1, st.baseAlpha * (0.8 + shimmer * 0.2)); // Fluctuate alpha slightly
 
-              ctx.fillStyle = st.color;
-              ctx.globalAlpha = alpha;
-              ctx.beginPath();
-              
-              if (s.rotationSpeed > 0.1) {
-                  const dist = Math.hypot(st.x, st.y);
-                  const angle = Math.atan2(st.y, st.x);
-                  const streakLen = Math.min(30, dist * s.rotationSpeed * 0.5);
-                  ctx.ellipse(st.x, st.y, streakLen, st.size, angle + Math.PI/2, 0, Math.PI*2);
-              } else {
-                  // Crisp circle
-                  ctx.arc(st.x, st.y, st.size, 0, Math.PI * 2);
+          // 4. Update & Render Stars
+          s.stars.forEach(star => {
+              const move = (star.dist + 50) * s.warpFactor * star.speedVar;
+              star.dist += move;
+
+              if (star.dist > maxRadius) {
+                  star.dist = Math.random() * 60; 
+                  star.angle = Math.random() * Math.PI * 2; 
+                  star.speedVar = 0.2 + Math.random() * 1.8;
               }
-              ctx.fill();
-          });
-          ctx.restore();
 
-          // 2. Draw Independent Wanderers (Static Frame of Reference)
-          // These move linearly across the screen, creating depth/parallax against the rotation
-          if (s.wandererOpacity > 0) {
-              ctx.save();
-              ctx.globalAlpha = s.wandererOpacity * 0.9;
-              s.wanderers.forEach(wnd => {
-                  // Update position
-                  wnd.x += wnd.vx;
-                  wnd.y += wnd.vy;
+              const x = Math.cos(star.angle) * star.dist;
+              const y = Math.sin(star.angle) * star.dist;
+
+              if (x > -w && x < w && y > -h && y < h) {
+                  const alpha = Math.min(1, Math.max(0, (star.dist - 40) / 80));
                   
-                  // Wrap
-                  if (wnd.x < 0) wnd.x = w;
-                  if (wnd.x > w) wnd.x = 0;
-                  if (wnd.y < 0) wnd.y = h;
-                  if (wnd.y > h) wnd.y = 0;
+                  if (alpha > 0.01) {
+                      ctx.globalAlpha = alpha;
+                      ctx.fillStyle = star.color;
 
-                  // Draw
-                  ctx.fillStyle = wnd.color;
-                  ctx.shadowColor = wnd.color;
-                  ctx.shadowBlur = 4; // Slight glow for wanderers
-                  ctx.beginPath();
-                  ctx.arc(wnd.x, wnd.y, wnd.size, 0, Math.PI * 2);
-                  ctx.fill();
-                  ctx.shadowBlur = 0;
-              });
-              ctx.restore();
-          }
+                      const isWarping = s.warpFactor > 0.01;
 
-          // --- DOM UPDATES ---
-          if (containerRef.current) {
-              containerRef.current.style.transform = `scale(${s.containerScale})`;
-          }
+                      if (isWarping) {
+                          const maxStreak = 120;
+                          const tailLen = Math.min(maxStreak, move * 1.2); 
+                          
+                          const tailX = Math.cos(star.angle) * (star.dist - tailLen);
+                          const tailY = Math.sin(star.angle) * (star.dist - tailLen);
+                          
+                          ctx.lineWidth = star.size;
+                          ctx.strokeStyle = star.color;
+                          ctx.lineCap = 'round';
+                          ctx.beginPath();
+                          ctx.moveTo(x, y);
+                          ctx.lineTo(tailX, tailY);
+                          ctx.stroke();
+                      } else {
+                          ctx.beginPath();
+                          ctx.arc(x, y, star.size / 2, 0, Math.PI * 2);
+                          ctx.fill();
+                      }
+                  }
+              }
+          });
+          
+          ctx.globalAlpha = 1;
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+          if (containerRef.current) containerRef.current.style.transform = `scale(${s.currentScale})`;
           if (bubbleRef.current) {
               bubbleRef.current.style.opacity = s.bubbleOpacity.toString();
               const blurVal = `blur(${s.bubbleBlur}px)`;
@@ -357,25 +322,22 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
       };
 
       rAF = requestAnimationFrame(loop);
+      
+      // CLEANUP: Force immediate stop if unmounted (prevents hiss from bleeding if skipped)
       return () => {
           cancelAnimationFrame(rAF);
-          // (Stop Charging audio removed in cleanup)
-          audioService.stopLaunchSequence();
+          audioService.stopWarpHum(false);
       };
-  }, [onComplete, stars, destParts]); // Updated dependencies
+  }, [destParts, timingConfig]);
 
   return (
     <div className="fixed inset-0 z-[5000] bg-black overflow-hidden flex items-center justify-center select-none font-mono">
-      
-      {/* 1. Canvas (Rotates internally, DOM stays fixed) */}
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-0" />
-      
-      {/* 2. Main Container (Ship + Bubble) - SCALES */}
       <div 
         ref={containerRef}
         className="relative z-20 w-64 h-64 flex items-center justify-center will-change-transform origin-center"
+        style={{ transform: 'scale(0.6)' }}
       >
-         {/* THE SHIP (Layer 1) */}
          <div className="absolute inset-0 z-10 flex items-center justify-center">
              <ShipIcon 
                 config={shipConfig} 
@@ -394,14 +356,12 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
                 isCapsule={isCapsule}
              />
          </div>
-
-         {/* THE BUBBLE (Layer 2) */}
          <div 
             ref={bubbleRef}
             className="absolute -inset-10 rounded-full z-30 pointer-events-none will-change-transform"
             style={{
                 background: isCapsule 
-                    ? 'radial-gradient(circle at 30% 30%, rgba(255,200,200,0.8) 0%, rgba(255,100,100,0.4) 40%, rgba(239,68,68,0.6) 85%, rgba(255,200,200,0.8) 100%)' // Reddish bubble for capsule
+                    ? 'radial-gradient(circle at 30% 30%, rgba(255,200,200,0.8) 0%, rgba(255,100,100,0.4) 40%, rgba(239,68,68,0.6) 85%, rgba(255,200,200,0.8) 100%)'
                     : 'radial-gradient(circle at 30% 30%, rgba(255,255,255,0.8) 0%, rgba(200,240,255,0.4) 40%, rgba(34,211,238,0.6) 85%, rgba(255,255,255,0.8) 100%)',
                 boxShadow: isCapsule 
                     ? '0 0 30px rgba(239,68,68,0.5), inset 0 0 20px rgba(255,200,200,0.5)' 
@@ -411,17 +371,14 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
             }}
          />
       </div>
-
-      {/* 3. Status Text (Hyperdrive / Warp) */}
       {statusText && (
           <div className="absolute bottom-[20%] left-0 right-0 text-center z-40 animate-pulse">
               <h2 className={`retro-font ${statusSizeClass} ${isCapsule ? 'text-red-400' : 'text-cyan-400'} uppercase drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]`}>
                   {statusText}
               </h2>
+              <p className="text-[10px] font-mono text-white/50 mt-2 tracking-wide">PRESS ESC TO SKIP</p>
           </div>
       )}
-
-      {/* 4. Arrival Text - Positioned comfortably below the ship area */}
       {textVisible && (
           <div className="absolute top-[65%] left-0 right-0 text-center z-40 animate-in slide-in-from-bottom-8 fade-in duration-1000">
               <h1 className={`retro-font ${arrivalTitleSize} uppercase tracking-widest drop-shadow-[0_0_20px_rgba(255,255,255,0.5)] ${isCapsule ? 'text-red-500' : 'text-cyan-400'}`}>
@@ -437,7 +394,6 @@ const WarpSequence: React.FC<WarpSequenceProps> = ({
               </div>
           </div>
       )}
-
     </div>
   );
 };

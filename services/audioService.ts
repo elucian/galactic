@@ -19,7 +19,7 @@ class AudioService {
       'intro': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/intro.mp3',
       'command': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/hangar.mp3',
       'map': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/map.mp3',
-      'combat': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/combat.mp3'
+      'combat': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/combat.mp3',
   };
 
   private reactorOsc: OscillatorNode | null = null;
@@ -31,6 +31,7 @@ class AudioService {
   private launchNodes: any = null;
   private landingNodes: any = null;
   private reEntryNodes: any = null;
+  private warpNodes: any = null;
 
   init() {
     if (!this.ctx) {
@@ -89,8 +90,7 @@ class AudioService {
   private loadAndPlay(trackId: string) {
       const path = this.tracks[trackId];
       if (!path) return;
-      this.stopBattleSounds();
-
+      
       if (this.introAudio) {
           const currentSrc = this.introAudio.src;
           const fileName = path.split('/').pop() || '';
@@ -100,7 +100,6 @@ class AudioService {
                }
                return; 
           }
-          // Unload previous track aggressively
           this.introAudio.volume = 0;
           this.introAudio.pause();
           this.introAudio.removeAttribute('src');
@@ -108,7 +107,7 @@ class AudioService {
           this.introAudio = null;
       }
 
-      if (!this.musicEnabled) return;
+      if (!this.musicEnabled || this.musicVolume <= 0) return;
 
       const audio = new Audio(path);
       audio.crossOrigin = "anonymous";
@@ -143,6 +142,7 @@ class AudioService {
       this.stopLaunchSequence();
       this.stopLandingThruster();
       this.stopReEntryWind();
+      this.stopWarpHum(false);
   }
 
   private registerSfx() {
@@ -164,8 +164,8 @@ class AudioService {
           osc1.connect(gain1); gain1.connect(this.sfxGain);
           osc1.type = 'square';
           osc1.frequency.setValueAtTime(800, now);
-          gain1.gain.setValueAtTime(0, now); // Start at 0
-          gain1.gain.linearRampToValueAtTime(0.08, now + 0.01); // Ramp up
+          gain1.gain.setValueAtTime(0, now);
+          gain1.gain.linearRampToValueAtTime(0.08, now + 0.01);
           gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
           osc1.start(now); osc1.stop(now + 0.04);
 
@@ -446,7 +446,6 @@ class AudioService {
   updateReEntryWind(intensity: number) {
       if (!this.reEntryNodes || !this.ctx) return;
       const now = this.ctx.currentTime;
-      // Map intensity 0-1 to wind parameters
       const freq = 400 + (intensity * 800);
       const vol = intensity * 0.4;
       
@@ -463,24 +462,19 @@ class AudioService {
       this.reEntryNodes = null;
   }
 
-  // --- LAUNCH ENGINE (HYBRID - NO RAMPS) ---
-  // Guaranteed sound: Sets gain directly to avoid scheduling issues
+  // --- LAUNCH ENGINE ---
   playLaunchSequence() {
-      this.stopLaunchSequence(); // Clean start
-      
+      this.stopLaunchSequence(); 
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       if (this.ctx.state !== 'running') {
           this.ctx.resume().catch(() => {});
       }
 
       const now = this.ctx.currentTime;
-
-      // Master Gain for this entire sequence - DIRECT SET
       const seqMaster = this.ctx.createGain();
       seqMaster.gain.value = 1.0; 
       seqMaster.connect(this.sfxGain);
 
-      // 1. RUMBLE: Sawtooth Oscillator (Bass) -> INCREASED VOLUME
       const osc1 = this.ctx.createOscillator();
       osc1.type = 'sawtooth';
       osc1.frequency.setValueAtTime(50, now);
@@ -488,18 +482,16 @@ class AudioService {
       
       const rumbleFilter = this.ctx.createBiquadFilter();
       rumbleFilter.type = 'lowpass';
-      rumbleFilter.frequency.value = 400; // Allow more roar
+      rumbleFilter.frequency.value = 400; 
 
       const rumbleGain = this.ctx.createGain();
-      rumbleGain.gain.value = 1.0; // Boosted from 0.6
+      rumbleGain.gain.value = 1.0; 
       
       osc1.connect(rumbleFilter);
       rumbleFilter.connect(rumbleGain);
       rumbleGain.connect(seqMaster);
       osc1.start(now);
 
-      // 2. ROAR: Filtered Noise (Thrust) -> DECREASED HISS
-      // Safety Check: Generate buffer if missing
       if (!this.noiseBuffer) {
           const bufferSize = this.ctx.sampleRate * 2;
           this.noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -514,10 +506,10 @@ class AudioService {
       const noiseFilter = this.ctx.createBiquadFilter();
       noiseFilter.type = 'lowpass';
       noiseFilter.frequency.setValueAtTime(100, now);
-      noiseFilter.frequency.exponentialRampToValueAtTime(800, now + 8); // Capped at 800 (was 2500) to reduce hiss
+      noiseFilter.frequency.exponentialRampToValueAtTime(800, now + 8); 
       
       const noiseGain = this.ctx.createGain();
-      noiseGain.gain.value = 0.3; // Reduced from 0.8
+      noiseGain.gain.value = 0.3; 
       
       noiseNode.connect(noiseFilter);
       noiseFilter.connect(noiseGain);
@@ -551,18 +543,163 @@ class AudioService {
       this.launchNodes = null;
   }
 
-  // --- LANDING THRUSTER (SMOOTH SCI-FI HOVER) ---
+  // --- WARP SOUND: WOUP WOUP EFFECT ---
+  // Uses LFO modulated filter to create resonant "woup woup" sweep
+  playWarpHum() {
+      this.stopWarpHum(false);
+      if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
+      if (this.ctx.state !== 'running') {
+          this.ctx.resume().catch(() => {});
+      }
+
+      const now = this.ctx.currentTime;
+
+      // Master Gain for Warp
+      const master = this.ctx.createGain();
+      master.connect(this.sfxGain);
+      master.gain.setValueAtTime(0, now);
+      master.gain.linearRampToValueAtTime(0.5, now + 0.5); // Fast Fade in
+
+      // 1. Source Oscillator (Deep Drone)
+      const carrier = this.ctx.createOscillator();
+      carrier.type = 'sawtooth';
+      carrier.frequency.setValueAtTime(55, now); // Low reactor rumble (55Hz)
+      // Slight pitch variance to make it dynamic
+      carrier.frequency.linearRampToValueAtTime(80, now + 2.0);
+      carrier.frequency.linearRampToValueAtTime(45, now + 4.0);
+
+      // 2. Filter for "Woup" sound (Resonant Lowpass)
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 6; // High resonance for "Woup" vowel-like sound
+      filter.frequency.setValueAtTime(400, now); // Base cutoff center
+
+      // 3. LFO for "Woup" modulation (Modulates Filter Frequency)
+      const lfo = this.ctx.createOscillator();
+      lfo.type = 'sine';
+      lfo.frequency.setValueAtTime(3, now); // Start slow (woup... woup)
+      // Speed up during acceleration
+      lfo.frequency.exponentialRampToValueAtTime(10, now + 2.0); // (wupwupwup)
+      // Slow down during deceleration
+      lfo.frequency.linearRampToValueAtTime(2, now + 4.5); // (wap... wap)
+
+      // LFO Depth (How much it sweeps the filter)
+      const lfoGain = this.ctx.createGain();
+      lfoGain.gain.setValueAtTime(300, now); // Sweep range +/- 300Hz around 400Hz
+
+      // Wiring
+      lfo.connect(lfoGain);
+      lfoGain.connect(filter.frequency);
+      
+      carrier.connect(filter);
+      filter.connect(master);
+
+      // Start
+      carrier.start(now);
+      lfo.start(now);
+
+      // Store references
+      this.warpNodes = { master, carrier, lfo, lfoGain };
+  }
+
+  stopWarpHum(playTail: boolean = false) {
+      if (this.warpNodes && this.ctx && this.sfxEnabled) {
+          const now = this.ctx.currentTime;
+          const { master, carrier, lfo, hissSrc, hissGain } = this.warpNodes; 
+
+          if (playTail) {
+              // --- START TAIL SEQUENCE (Gradual Stop + Steam) ---
+              if (master && carrier && lfo) {
+                  master.gain.cancelScheduledValues(now);
+                  master.gain.setValueAtTime(master.gain.value, now);
+                  master.gain.exponentialRampToValueAtTime(0.001, now + 2.0); 
+
+                  carrier.frequency.cancelScheduledValues(now);
+                  carrier.frequency.setValueAtTime(carrier.frequency.value, now);
+                  carrier.frequency.exponentialRampToValueAtTime(20, now + 2.0);
+
+                  lfo.frequency.cancelScheduledValues(now);
+                  lfo.frequency.setValueAtTime(lfo.frequency.value, now);
+                  lfo.frequency.linearRampToValueAtTime(0.5, now + 2.0);
+              }
+
+              // Create Steam/Hiss (Woush sh sh)
+              let newHissSrc = null;
+              let newHissGain = null;
+              
+              if (this.noiseBuffer) {
+                  newHissSrc = this.ctx.createBufferSource();
+                  newHissSrc.buffer = this.noiseBuffer;
+                  newHissSrc.loop = true;
+                  
+                  const hissFilter = this.ctx.createBiquadFilter();
+                  hissFilter.type = 'highpass';
+                  hissFilter.frequency.value = 800;
+
+                  newHissGain = this.ctx.createGain();
+                  newHissSrc.connect(hissFilter);
+                  hissFilter.connect(newHissGain);
+                  newHissGain.connect(this.sfxGain);
+
+                  newHissGain.gain.setValueAtTime(0, now);
+                  newHissGain.gain.linearRampToValueAtTime(0.4, now + 0.5); // Attack
+                  newHissGain.gain.exponentialRampToValueAtTime(0.001, now + 2.5); // Decay
+
+                  newHissSrc.start(now);
+                  newHissSrc.stop(now + 2.6);
+              }
+
+              // Update stored nodes to include hiss so it can be killed if needed
+              this.warpNodes = { ...this.warpNodes, hissSrc: newHissSrc, hissGain: newHissGain };
+
+              // Cleanup timeout
+              setTimeout(() => {
+                  if (this.warpNodes && this.warpNodes.master === master) {
+                      if (carrier) carrier.stop();
+                      if (lfo) lfo.stop();
+                      if (master) master.disconnect();
+                      this.warpNodes = null;
+                  }
+              }, 2600);
+
+          } else {
+              // --- IMMEDIATE STOP (Clean Kill) ---
+              if (master) {
+                  master.gain.cancelScheduledValues(now);
+                  master.gain.setValueAtTime(master.gain.value, now);
+                  master.gain.linearRampToValueAtTime(0, now + 0.1);
+              }
+              
+              if (hissGain) {
+                  hissGain.gain.cancelScheduledValues(now);
+                  hissGain.gain.linearRampToValueAtTime(0, now + 0.1);
+              }
+              
+              setTimeout(() => {
+                  if (carrier) carrier.stop();
+                  if (lfo) lfo.stop();
+                  if (hissSrc) hissSrc.stop();
+                  if (master) master.disconnect();
+                  if (hissGain) hissGain.disconnect();
+              }, 150);
+              
+              this.warpNodes = null;
+          }
+      } else {
+          this.warpNodes = null;
+      }
+  }
+
+  // --- LANDING THRUSTER ---
   startLandingThruster() {
-      this.stopLandingThruster(); // Clean start
+      this.stopLandingThruster(); 
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.noiseBuffer) return;
       const now = this.ctx.currentTime;
 
-      // 1. Hover Tone (Pulsing Sci-Fi Hum) -> BOOSTED
       const osc = this.ctx.createOscillator();
-      osc.type = 'triangle'; // Smoother than saw
+      osc.type = 'triangle'; 
       osc.frequency.setValueAtTime(100, now); 
 
-      // LFO for modulation
       const lfo = this.ctx.createOscillator();
       lfo.type = 'sine';
       lfo.frequency.setValueAtTime(10, now); 
@@ -580,7 +717,6 @@ class AudioService {
       oscGain.connect(this.sfxGain);
       osc.start(now);
 
-      // 2. Gas Hiss (High Pass Noise - No Growl) -> REDUCED
       const noiseSrc = this.ctx.createBufferSource();
       noiseSrc.buffer = this.noiseBuffer;
       noiseSrc.loop = true;
@@ -605,14 +741,14 @@ class AudioService {
       const now = this.ctx.currentTime;
       
       const targetPitch = 80 + (intensity * 100);
-      const targetVol = intensity * 0.8; // Boosted from 0.3
+      const targetVol = intensity * 0.8; 
       
       this.landingNodes.osc.frequency.setTargetAtTime(targetPitch, now, 0.1);
       this.landingNodes.oscGain.gain.setTargetAtTime(targetVol, now, 0.1);
       
       this.landingNodes.lfo.frequency.setTargetAtTime(10 + (intensity * 20), now, 0.1);
 
-      const hissVol = intensity * 0.1; // Reduced from 0.2
+      const hissVol = intensity * 0.1; 
       this.landingNodes.noiseGain.gain.setTargetAtTime(hissVol, now, 0.1);
   }
 
@@ -635,12 +771,10 @@ class AudioService {
 
   // --- ONE-SHOT SFX ---
 
-  // RESTORED PUNCHY IGNITION (No Chirp)
   playLaunchBang() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const now = this.ctx.currentTime;
       
-      // 1. Noise Burst (The Blast)
       if (this.noiseBuffer) {
           const src = this.ctx.createBufferSource();
           src.buffer = this.noiseBuffer;
@@ -657,14 +791,13 @@ class AudioService {
           src.start(now); src.stop(now + 0.8);
       }
 
-      // 2. Punch (Low Sine Kick)
       const osc = this.ctx.createOscillator();
       const g = this.ctx.createGain();
       osc.connect(g); g.connect(this.sfxGain);
       
       osc.type = 'sine';
       osc.frequency.setValueAtTime(150, now);
-      osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.5); // Drop pitch fast
+      osc.frequency.exponentialRampToValueAtTime(0.01, now + 0.5); 
       
       g.gain.setValueAtTime(1.0, now);
       g.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
@@ -676,7 +809,6 @@ class AudioService {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const now = this.ctx.currentTime;
       
-      // Clean Gas Release (Highpass)
       if (this.noiseBuffer) {
           const src = this.ctx.createBufferSource();
           src.buffer = this.noiseBuffer;
@@ -693,7 +825,6 @@ class AudioService {
           src.start(now); src.stop(now + 0.3);
       }
 
-      // Smooth Sine Sweep (Power Up)
       const osc = this.ctx.createOscillator();
       osc.type = 'sine'; 
       osc.frequency.setValueAtTime(100, now);

@@ -1134,6 +1134,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                   crystalColor = '#3b82f6'; 
               } else if (mainDef.id === 'exotic_octo_burst') {
                   crystalColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
+              } else if (mainDef.id === 'exotic_rainbow_spread') {
+                  const rainbowColors = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7'];
+                  crystalColor = rainbowColors[Math.floor(Math.random() * rainbowColors.length)];
               } else if (mainDef.id !== 'exotic_phaser_sweep') {
                   audioService.playWeaponFire('exotic_single', 0);
               }
@@ -2177,7 +2180,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             }
             else if (b.weaponId === 'exotic_rainbow_spread') { 
                 const radius = b.width / 2; 
-                const thickness = b.height; 
                 const maxRad = b.isOvercharge ? 300 : 100; 
                 const opacity = Math.max(0.1, 1.0 - (radius / maxRad)); 
                 ctx.globalAlpha = opacity; 
@@ -2200,15 +2202,25 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 } else {
                     const rot = Math.atan2(b.vy, b.vx);
                     ctx.rotate(rot);
-                    ctx.strokeStyle = '#52525b'; 
-                    ctx.lineWidth = 2;
+                    
+                    // Semi-transparent glowing shot
+                    ctx.shadowColor = b.color;
+                    ctx.shadowBlur = 10;
+                    ctx.globalAlpha = opacity * 0.7;
+
+                    ctx.strokeStyle = b.color; 
+                    ctx.lineWidth = 2; // Thicker line as requested
+                    
                     ctx.beginPath();
                     ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2);
                     ctx.stroke();
-                    ctx.strokeStyle = '#27272a';
+                    
+                    // Inner arc to retain dual-arc style
                     ctx.beginPath();
                     ctx.arc(0, 0, radius * 0.7, -Math.PI/2, Math.PI/2);
                     ctx.stroke();
+
+                    ctx.shadowBlur = 0;
                 }
                 ctx.globalAlpha = 1; 
             } 

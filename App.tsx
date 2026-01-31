@@ -536,7 +536,7 @@ export default function App() {
     else if (screen === 'hangar') audioService.playTrack('command');
     else if (screen === 'map') audioService.playTrack('map');
     else if (screen === 'game') audioService.playTrack('combat');
-    else audioService.stop();
+    else if (screen !== 'warp') audioService.stop(); // Only stop if NOT in warp screen, preserving sound continuity
   }, [screen]);
 
   
