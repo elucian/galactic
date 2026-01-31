@@ -14,12 +14,17 @@ class AudioService {
   
   private noiseBuffer: AudioBuffer | null = null;
 
+  private currentTheme: string = 'music'; // Default folder
+
+  // Base URL for assets
+  private readonly baseUrl = 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com';
+
   // Track Mapping
   private tracks: Record<string, string> = {
-      'intro': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/intro.mp3',
-      'command': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/hangar.mp3',
-      'map': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/map.mp3',
-      'combat': 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com/music/combat.mp3',
+      'intro': `${this.baseUrl}/music/intro.mp3`,
+      'command': `${this.baseUrl}/music/hangar.mp3`,
+      'map': `${this.baseUrl}/music/map.mp3`,
+      'combat': `${this.baseUrl}/music/combat.mp3`,
   };
 
   private reactorOsc: OscillatorNode | null = null;
@@ -60,6 +65,33 @@ class AudioService {
     this.updateMusicState();
   }
 
+  setTheme(theme: string) {
+      // Map theme names to folder names
+      let folder = 'music'; // Default 'Retro'
+      if (theme === 'classic') folder = 'Classic';
+      if (theme === 'modern') folder = 'Modern';
+      
+      if (this.currentTheme !== folder) {
+          this.currentTheme = folder;
+          this.updateTrackPaths();
+          
+          // Reload current track if playing
+          if (this.intendedTrack && this.musicEnabled) {
+              this.loadAndPlay(this.intendedTrack);
+          }
+      }
+  }
+
+  private updateTrackPaths() {
+      const folder = this.currentTheme;
+      this.tracks = {
+          'intro': `${this.baseUrl}/${folder}/intro.mp3`,
+          'command': `${this.baseUrl}/${folder}/hangar.mp3`,
+          'map': `${this.baseUrl}/${folder}/map.mp3`,
+          'combat': `${this.baseUrl}/${folder}/combat.mp3`,
+      };
+  }
+
   private updateMusicState() {
       if (this.introAudio) {
           this.introAudio.volume = this.musicVolume;
@@ -87,14 +119,24 @@ class AudioService {
   setMusicEnabled(e: boolean) { this.musicEnabled = e; this.updateMusicState(); }
   setSfxEnabled(e: boolean) { this.sfxEnabled = e; this.updateSfxState(); }
 
+  private getFileName(trackId: string): string {
+      switch(trackId) {
+          case 'intro': return 'intro.mp3';
+          case 'command': return 'hangar.mp3';
+          case 'map': return 'map.mp3';
+          case 'combat': return 'combat.mp3';
+          default: return 'intro.mp3';
+      }
+  }
+
   private loadAndPlay(trackId: string) {
       const path = this.tracks[trackId];
       if (!path) return;
       
       if (this.introAudio) {
           const currentSrc = this.introAudio.src;
-          const fileName = path.split('/').pop() || '';
-          if (currentSrc === path || (fileName && currentSrc.includes(fileName))) { 
+          // Check if same URL (same file and same theme folder)
+          if (currentSrc === path) { 
                if (this.introAudio.paused && this.musicEnabled && this.musicVolume > 0) {
                    this.introAudio.play().catch(e => { });
                }
@@ -113,6 +155,22 @@ class AudioService {
       audio.crossOrigin = "anonymous";
       audio.loop = true;
       audio.volume = this.musicVolume;
+
+      // Fallback Logic: If themed music fails, load from default 'music' folder
+      audio.onerror = () => {
+          // If we are NOT already using the default 'music' folder, try fallback
+          if (this.currentTheme !== 'music') {
+              const fallbackPath = `${this.baseUrl}/music/${this.getFileName(trackId)}`;
+              
+              // Only retry if we haven't already retried to this path
+              if (audio.src !== fallbackPath) {
+                  console.warn(`Audio theme '${this.currentTheme}' file missing for ${trackId}. Falling back to default.`);
+                  audio.src = fallbackPath;
+                  audio.play().catch(e => {});
+              }
+          }
+      };
+
       audio.play().catch(e => {});
       this.introAudio = audio;
   }
@@ -237,16 +295,6 @@ class AudioService {
           return;
       }
       
-      if (type === 'phaser') {
-          osc.type = 'sine';
-          osc.frequency.setValueAtTime(1800, now);
-          osc.frequency.exponentialRampToValueAtTime(300, now + 0.15); 
-          gain.gain.setValueAtTime(0.15, now);
-          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
-          osc.start(now); osc.stop(now + 0.15);
-          return;
-      }
-
       if (type === 'missile' || type === 'missile_emp' || type === 'emp' || type === 'mine') {
           if (this.noiseBuffer) {
               const noise = this.ctx.createBufferSource();
@@ -290,58 +338,97 @@ class AudioService {
       }
   }
 
-  playShieldHit() {
-      if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
-      this.registerSfx();
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.connect(gain); gain.connect(this.sfxGain);
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(2000, this.ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(3000, this.ctx.currentTime + 0.05); 
-      osc.frequency.linearRampToValueAtTime(1000, this.ctx.currentTime + 0.2); 
-      gain.gain.setValueAtTime(0.2, this.ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.2);
-      osc.start(); osc.stop(this.ctx.currentTime + 0.2);
-  }
-
-  playHullHit(type: string) {
+  // UPDATED: High-fidelity impact sounds
+  playImpact(material: 'rock' | 'metal' | 'ice' | 'shield', intensity: number = 1.0) {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       this.registerSfx();
       const now = this.ctx.currentTime;
+      
+      const vol = Math.min(1.0, 0.3 * intensity);
 
-      if (type === 'asteroid') {
+      if (material === 'shield') {
           const osc = this.ctx.createOscillator();
           const gain = this.ctx.createGain();
-          const filter = this.ctx.createBiquadFilter();
-          filter.type = 'highpass';
-          filter.frequency.value = 150; 
-          osc.type = 'sawtooth'; 
+          osc.connect(gain); gain.connect(this.sfxGain);
+          
+          const mod = this.ctx.createOscillator();
+          const modGain = this.ctx.createGain();
+          mod.connect(modGain);
+          modGain.connect(osc.frequency);
+          
+          osc.type = 'sine';
           osc.frequency.setValueAtTime(800, now);
-          osc.frequency.exponentialRampToValueAtTime(100, now + 0.05); 
-          osc.connect(filter); filter.connect(gain); gain.connect(this.sfxGain);
-          gain.gain.setValueAtTime(0.4, now);
+          
+          mod.type = 'sine';
+          mod.frequency.setValueAtTime(50, now);
+          modGain.gain.setValueAtTime(200, now);
+          modGain.gain.exponentialRampToValueAtTime(1, now + 0.2);
+
+          gain.gain.setValueAtTime(vol * 0.8, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+          
+          osc.start(now); osc.stop(now + 0.2);
+          mod.start(now); mod.stop(now + 0.2);
+          
+      } else if (material === 'metal') {
+          if (this.noiseBuffer) {
+              const noise = this.ctx.createBufferSource();
+              noise.buffer = this.noiseBuffer;
+              const filter = this.ctx.createBiquadFilter();
+              filter.type = 'bandpass';
+              filter.frequency.setValueAtTime(1000, now);
+              filter.Q.value = 1.0;
+              const nGain = this.ctx.createGain();
+              nGain.gain.setValueAtTime(vol, now);
+              nGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+              noise.connect(filter); filter.connect(nGain); nGain.connect(this.sfxGain);
+              noise.start(now); noise.stop(now + 0.1);
+          }
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.sfxGain);
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(400, now);
+          osc.frequency.linearRampToValueAtTime(380, now + 0.15);
+          gain.gain.setValueAtTime(vol * 0.6, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+          osc.start(now); osc.stop(now + 0.2);
+
+      } else if (material === 'rock') {
+          if (this.noiseBuffer) {
+              const noise = this.ctx.createBufferSource();
+              noise.buffer = this.noiseBuffer;
+              const filter = this.ctx.createBiquadFilter();
+              filter.type = 'lowpass';
+              filter.frequency.setValueAtTime(300, now);
+              const nGain = this.ctx.createGain();
+              nGain.gain.setValueAtTime(vol * 1.2, now);
+              nGain.gain.exponentialRampToValueAtTime(0.01, now + 0.15);
+              noise.connect(filter); filter.connect(nGain); nGain.connect(this.sfxGain);
+              noise.start(now); noise.stop(now + 0.15);
+          }
+
+      } else if (material === 'ice') {
+          if (this.noiseBuffer) {
+              const noise = this.ctx.createBufferSource();
+              noise.buffer = this.noiseBuffer;
+              const filter = this.ctx.createBiquadFilter();
+              filter.type = 'highpass';
+              filter.frequency.setValueAtTime(3000, now);
+              const nGain = this.ctx.createGain();
+              nGain.gain.setValueAtTime(vol * 0.8, now);
+              nGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+              noise.connect(filter); filter.connect(nGain); nGain.connect(this.sfxGain);
+              noise.start(now); noise.stop(now + 0.1);
+          }
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.connect(gain); gain.connect(this.sfxGain);
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(2500, now);
+          gain.gain.setValueAtTime(vol * 0.4, now);
           gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-          osc.start(); osc.stop(now + 0.1);
-      } else {
-          const main = this.ctx.createOscillator();
-          const ring = this.ctx.createOscillator();
-          const mainGain = this.ctx.createGain();
-          const ringGain = this.ctx.createGain();
-          main.connect(mainGain); mainGain.connect(this.sfxGain);
-          ring.connect(ringGain); ringGain.connect(this.sfxGain);
-          main.type = 'square';
-          main.frequency.setValueAtTime(300, now);
-          main.frequency.exponentialRampToValueAtTime(100, now + 0.1);
-          mainGain.gain.setValueAtTime(0.4, now);
-          mainGain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
-          ring.type = 'sine';
-          ring.frequency.setValueAtTime(1200, now);
-          ring.frequency.exponentialRampToValueAtTime(800, now + 0.4); 
-          ringGain.gain.setValueAtTime(0.15, now);
-          ringGain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
-          main.start(); main.stop(now + 0.1);
-          ring.start(); ring.stop(now + 0.4);
+          osc.start(now); osc.stop(now + 0.1);
       }
   }
 

@@ -214,6 +214,8 @@ export interface GameSettings {
   showTransitions: boolean;
   testMode?: boolean;
   fontSize: 'small' | 'medium' | 'large' | 'extra-large'; 
+  speedMode?: 'slow' | 'normal' | 'fast';
+  audioTheme?: 'retro' | 'classic' | 'modern';
 }
 
 export interface Moon {

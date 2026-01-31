@@ -142,19 +142,22 @@ export class Enemy {
     }
   }
 
-  update(px: number, py: number, w: number, h: number, incomingFire: Projectile[], worldSpeedFactor: number = 1.0, bulletsRef: Projectile[], difficulty: number, otherEnemies: Enemy[]) {
+  update(px: number, py: number, w: number, h: number, incomingFire: Projectile[], worldSpeedFactor: number = 1.0, bulletsRef: Projectile[], difficulty: number, otherEnemies: Enemy[], speedMult: number = 1.0) {
     this.tick++;
     if (this.vibration > 0) this.vibration = Math.max(0, this.vibration - 1);
     
     if (this.stunnedUntil > 0) this.stunnedUntil--;
     if (this.shieldDisabledUntil > 0) this.shieldDisabledUntil--;
 
-    const verticalSpeed = (this.quadrant === QuadrantType.DELTA && this.type !== 'boss' ? 1.8 : 2.8) * worldSpeedFactor;
+    // Base vertical movement speed
+    const verticalSpeed = (this.quadrant === QuadrantType.DELTA && this.type !== 'boss' ? 1.8 : 2.8) * worldSpeedFactor * speedMult;
 
     if (this.stunnedUntil > 0) {
         this.vx *= 0.9;
         this.vy *= 0.9;
-        this.vy += 0.5 * worldSpeedFactor; 
+        // Boss Resistance: Reduced stun drift for bosses to prevent them flying off screen
+        const drift = this.type === 'boss' ? 0.1 : 0.5;
+        this.vy += drift * worldSpeedFactor; 
     } else {
         if (this.type === 'boss') {
             if (this.shieldLayers.length > 0 && this.shieldRegen > 0 && this.shieldDisabledUntil <= 0) {
@@ -183,6 +186,13 @@ export class Enemy {
                 this.vy = (this.vy + (180 - this.y) * 0.05) * 0.9;
             }
             
+            // --- BOSS CLAMPING LOGIC ---
+            // Prevent boss from leaving screen vertically (Coward Fix)
+            if (this.y < 50) this.vy += 0.5;
+            if (this.y > 400) this.vy -= 0.5; 
+            if (this.x < 50) this.vx += 1;
+            if (this.x > w - 50) this.vx -= 1;
+
             // Boss Shooting Logic
             if (Math.random() < 0.02) { 
                 if (difficulty >= 8 && this.tick % 300 === 0) {
@@ -250,7 +260,20 @@ export class Enemy {
         }
     }
     
-    this.x += this.vx; this.y += this.vy;
+    // Scale horizontal/vertical velocity adjustments for speed mode
+    this.x += this.vx * speedMult; 
+    
+    // Boss Y movement uses its own logic (vy), so scale that too
+    if (this.type === 'boss') {
+        this.y += this.vy * speedMult;
+    } else {
+        // Standard enemies already had verticalSpeed added to Y above
+        // But sideways drift (vx) might have vertical component? No, pure x/y split here.
+        // Wait, standard enemy update:
+        // this.y += verticalSpeed; (Already scaled by speedMult)
+        // this.x += this.vx; (Now scaled)
+        // So standard enemy Y is updated via verticalSpeed above, and X via vx here.
+    }
     
     this.shieldLayers.forEach((l, i) => {
         l.rotation += l.rotSpeed; 

@@ -1,6 +1,7 @@
 
 import React, { useState } from 'react';
 import { GameState } from '../types.ts';
+import { audioService } from '../services/audioService.ts';
 
 // 8 Distinct Avatars with unique Emojis
 const AVATAR_LIST = [
@@ -85,6 +86,15 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
           ...prev,
           settings: { ...prev.settings, [key]: !prev.settings[key] }
       }));
+  };
+
+  const updateSpeedMode = (mode: 'slow' | 'normal' | 'fast') => {
+      setGameState(prev => ({ ...prev, settings: { ...prev.settings, speedMode: mode } }));
+  };
+
+  const updateAudioTheme = (theme: 'retro' | 'classic' | 'modern') => {
+      setGameState(prev => ({ ...prev, settings: { ...prev.settings, audioTheme: theme } }));
+      audioService.setTheme(theme);
   };
 
   const handleAvatarSelect = (avatar: typeof AVATAR_LIST[0]) => {
@@ -216,6 +226,22 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                             <div className="flex flex-col"><span className={`font-black uppercase text-white ${titleSize}`}>Cinematics</span><span className={`text-zinc-500 uppercase ${btnSize}`}>Launch Sequences</span></div>
                             <button onClick={() => toggleSetting('showTransitions')} className={`w-12 h-6 rounded-full p-1 transition-colors ${gameState.settings.showTransitions ? 'bg-emerald-600' : 'bg-zinc-700'}`}><div className={`w-4 h-4 bg-white rounded-full transition-transform ${gameState.settings.showTransitions ? 'translate-x-6' : 'translate-x-0'}`} /></button>
                         </div>
+
+                        {/* Game Speed Mode */}
+                        <div className="flex justify-between items-center">
+                            <div className="flex flex-col"><span className={`font-black uppercase text-white ${titleSize}`}>Game Speed</span><span className={`text-zinc-500 uppercase ${btnSize}`}>Enemy Movement Rate</span></div>
+                            <div className="flex gap-1 bg-zinc-800 p-1 rounded">
+                                {(['slow', 'normal', 'fast'] as const).map(mode => (
+                                    <button 
+                                        key={mode} 
+                                        onClick={() => updateSpeedMode(mode)}
+                                        className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-colors ${gameState.settings.speedMode === mode ? 'bg-blue-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+                                    >
+                                        {mode}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
                      </div>
                  </div>
              )}
@@ -231,12 +257,12 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                                 <span className={`font-black uppercase text-white ${titleSize}`}>Music</span>
                                 <span className={`text-zinc-500 uppercase ${btnSize}`}>Atmospheric Tracks</span>
                             </div>
-                            <div className="flex items-center gap-4 w-1/2">
+                            <div className="flex items-center gap-4 w-1/2 justify-end">
                                 <input 
                                     type="range" min="0" max="1" step="0.1" 
                                     value={gameState.settings.musicVolume} 
                                     onChange={(e) => updateVolume('musicVolume', parseFloat(e.target.value))}
-                                    className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:bg-emerald-400"
+                                    className="w-32 h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-emerald-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:bg-emerald-400"
                                 />
                                 <span className="text-[10px] font-mono text-emerald-400 w-8 text-right">{Math.round(gameState.settings.musicVolume * 100)}%</span>
                             </div>
@@ -248,14 +274,32 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                                 <span className={`font-black uppercase text-white ${titleSize}`}>FX Effects</span>
                                 <span className={`text-zinc-500 uppercase ${btnSize}`}>Weapons & Systems</span>
                             </div>
-                            <div className="flex items-center gap-4 w-1/2">
+                            <div className="flex items-center gap-4 w-1/2 justify-end">
                                 <input 
                                     type="range" min="0" max="1" step="0.1" 
                                     value={gameState.settings.sfxVolume} 
                                     onChange={(e) => updateVolume('sfxVolume', parseFloat(e.target.value))}
-                                    className="w-full h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-amber-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:bg-amber-400"
+                                    className="w-32 h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-amber-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:bg-amber-400"
                                 />
                                 <span className="text-[10px] font-mono text-amber-400 w-8 text-right">{Math.round(gameState.settings.sfxVolume * 100)}%</span>
+                            </div>
+                        </div>
+
+                        {/* Audio Theme Selector - Horizontal Alignment */}
+                        <div className="flex justify-between items-center pt-4 border-t border-zinc-800">
+                            <div className="flex flex-col">
+                                <span className={`font-black uppercase text-white ${titleSize}`}>Audio Theme</span>
+                            </div>
+                            <div className="flex gap-1 bg-zinc-800 p-1 rounded overflow-x-auto">
+                                {(['retro', 'classic', 'modern'] as const).map(theme => (
+                                    <button 
+                                        key={theme} 
+                                        onClick={() => updateAudioTheme(theme)}
+                                        className={`min-w-[60px] px-2 py-2 rounded text-[9px] font-black uppercase transition-colors ${gameState.settings.audioTheme === theme ? 'bg-emerald-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'}`}
+                                    >
+                                        {theme}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                      </div>

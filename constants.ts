@@ -277,7 +277,22 @@ export const WEAPONS: Weapon[] = [
   { 
       id: 'gun_hyper', name: 'Hyper Gatling', type: WeaponType.PROJECTILE, price: 150000, damage: 40, fireRate: 12, energyCost: 0, cargoWeight: 35, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 6, defaultAmmo: 'tungsten',
       description: 'Class 5 Projectile Storm. Extreme fire rate saturates target area. Effective against spaceship hull. Depletes ammunition reserves rapidly.'
-  } 
+  },
+  // Level 7
+  {
+      id: 'gun_rail_titan', name: 'Titan Railgun', type: WeaponType.PROJECTILE, price: 250000, damage: 120, fireRate: 3, energyCost: 0, cargoWeight: 40, isAmmoBased: true, beamColor: '#22d3ee', barrelCount: 1, defaultAmmo: 'iridium',
+      description: 'Class 7 Magnetic Accelerator. Hyper-velocity slugs penetrate multiple layers of armor. Requires Iridium Ammo.'
+  },
+  // Level 10
+  {
+      id: 'gun_doomsday', name: 'Doomsday Cannon', type: WeaponType.PROJECTILE, price: 600000, damage: 300, fireRate: 2, energyCost: 0, cargoWeight: 60, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'explosive',
+      description: 'Class 10 Siege Artillery. Massive 120mm shells designed to crack capital ship hulls. Requires HE Rounds.'
+  },
+  // Level 12
+  {
+      id: 'gun_shredder', name: 'Neutron Shredder', type: WeaponType.PROJECTILE, price: 950000, damage: 90, fireRate: 15, energyCost: 0, cargoWeight: 50, isAmmoBased: true, beamColor: '#a855f7', barrelCount: 6, defaultAmmo: 'explosive',
+      description: 'Class 12 Rotary Annihilator. Spews explosive rounds at extreme velocities. Melts anything in seconds. Requires HE Rounds.'
+  }
 ];
 
 // 9 DISTINCT EXOTIC WEAPONS

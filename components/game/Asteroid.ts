@@ -8,7 +8,7 @@ export class Asteroid {
   vertices: {x:number, y:number, z:number}[]; 
   faces: {indices: number[], normal: {x:number, y:number, z:number}}[];
   ax: number = 0; ay: number = 0; az: number = 0; vax: number; vay: number; vaz: number;
-  isIce: boolean = false;
+  material: 'rock' | 'ice' | 'metal' = 'rock';
 
   constructor(w: number, diff: number, quadrant: QuadrantType) {
     this.x = Math.random() * w; this.y = -200; this.z = (Math.random() - 0.5) * 600;
@@ -37,7 +37,15 @@ export class Asteroid {
     const selectedType = variantPool[Math.floor(Math.random() * variantPool.length)];
     const variant = ASTEROID_VARIANTS.find(v => v.type === selectedType) || ASTEROID_VARIANTS[2]; 
     this.color = variant.color;
-    this.isIce = variant.type === 'ice' || variant.type === 'platinum'; // Blue/White are ice-like
+    
+    // Determine Material for Sound
+    if (variant.type === 'ice' || variant.type === 'platinum' || variant.type === 'rare') {
+        this.material = 'ice';
+    } else if (variant.type === 'gold' || variant.type === 'copper') {
+        this.material = 'metal';
+    } else {
+        this.material = 'rock';
+    }
 
     if (Math.random() > 0.8) {
         this.loot = null;
