@@ -285,7 +285,7 @@ export const WEAPONS: Weapon[] = [
   },
   // Level 10
   {
-      id: 'gun_doomsday', name: 'Doomsday Cannon', type: WeaponType.PROJECTILE, price: 600000, damage: 300, fireRate: 2, energyCost: 0, cargoWeight: 60, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'explosive',
+      id: 'gun_doomsday', name: 'Doomsday Cannon', type: WeaponType.PROJECTILE, price: 600000, damage: 300, fireRate: 4, energyCost: 0, cargoWeight: 60, isAmmoBased: true, beamColor: '#ef4444', barrelCount: 1, defaultAmmo: 'explosive',
       description: 'Class 10 Siege Artillery. Massive 120mm shells designed to crack capital ship hulls. Requires HE Rounds.'
   },
   // Level 12

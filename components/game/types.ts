@@ -1,5 +1,7 @@
 
 import { Enemy } from './Enemy'; 
+import { CargoItem, AmmoType } from '../../types';
+import { Asteroid } from './Asteroid';
 
 export interface Projectile {
   x: number; y: number; vx: number; vy: number;
@@ -43,4 +45,65 @@ export interface ShieldLayer {
     wobble: number;
     type: 'full' | 'front' | 'tri' | 'hex';
     rotSpeed: number;
+}
+
+export interface GameEngineState {
+    px: number; py: number; hp: number; fuel: number; water: number; energy: number;
+    sh1: number; sh2: number; score: number; time: number; phase: 'travel' | 'boss';
+    bossSpawned: boolean; bossDead: boolean;
+    enemies: Enemy[]; asteroids: Asteroid[]; bullets: Projectile[];
+    particles: Particle[]; loot: Loot[]; stars: {x:number, y:number, s:number}[];
+    keys: Set<string>; lastFire: number; lastSpawn: number; frame: number;
+    missiles: number; mines: number; redMines: number;
+    cargo: CargoItem[];
+    ammo: Record<AmmoType, number>;
+    gunStates: Record<number, { mag: number, reloadTimer: number, maxMag: number }>;
+    magazineCurrent: number;
+    reloadTimer: number;
+    selectedAmmo: AmmoType;
+    weaponFireTimes: {[key: number]: number};
+    weaponHeat: {[key: number]: number};
+    lastMissileFire: number;
+    lastMineFire: number;
+    lastRedMineFire: number;
+    mineSide: boolean;
+    omegaSide: boolean;
+    paused: boolean;
+    active: boolean;
+    swivelMode: boolean;
+    chargeLevel: number;
+    hasFiredOverload: boolean;
+    lastRapidFire: number;
+    victoryTimer: number;
+    failureTimer: number;
+    movement: { up: boolean, down: boolean, left: boolean, right: boolean };
+    criticalExposure: number;
+    rescueMode: boolean;
+    rescueTimer: number;
+    usingWater: boolean;
+    overload: number;
+    overdrive: boolean;
+    overdriveFirstShot: boolean;
+    shakeX: number;
+    shakeY: number;
+    shakeDecay: number;
+    capacitor: number;
+    salvoTimer: number;
+    lastSalvoFire: number;
+    currentThrottle: number;
+    shipVy: number;
+    refuelTimer: number;
+    isRefueling: boolean;
+    refuelType: 'fuel' | 'water' | null;
+    refuelStartVal: number;
+    capacitorLocked: boolean;
+    depletionTime: number;
+    weaponCoolDownTimer: number;
+    missileBurstCount: number;
+    mineBurstCount: number;
+    isExitDialogOpen: boolean;
+    capsLock: boolean;
+    shieldsEnabled: boolean;
+    wasShieldHit: boolean;
+    isShooting: boolean;
 }

@@ -4,18 +4,86 @@ import { ShipPart, Shield, EquippedWeapon, WeaponType } from '../../types';
 import { getEngineCoordinates, getWingMounts } from '../../utils/drawingUtils';
 
 export const drawRetro = (ctx: CanvasRenderingContext2D, x: number, y: number, angleDeg: number, usingWater: boolean) => {
+    // Legacy function, using drawJet internally now for consistency if called
+    drawJet(ctx, x, y, angleDeg, 0.8, usingWater, 30);
+};
+
+export const drawJet = (ctx: CanvasRenderingContext2D, x: number, y: number, angleDeg: number, intensity: number, usingWater: boolean, lengthScale: number = 60) => {
     ctx.save();
     ctx.translate(x, y);
     const rad = (angleDeg * Math.PI) / 180;
     ctx.rotate(rad);
-    const flicker = 0.8 + Math.random() * 0.4;
-    const len = 30 * flicker; 
-    const w = 6; 
-    ctx.beginPath(); ctx.moveTo(-w/2, 0); ctx.lineTo(0, -len); ctx.lineTo(w/2, 0); ctx.closePath();
-    const grad = ctx.createLinearGradient(0, 0, 0, -len);
-    if (usingWater) { grad.addColorStop(0, '#e0f2fe'); grad.addColorStop(0.4, '#3b82f6'); grad.addColorStop(1, 'rgba(59, 130, 246, 0)'); } 
-    else { grad.addColorStop(0, '#fff'); grad.addColorStop(0.2, '#fbbf24'); grad.addColorStop(1, 'rgba(251, 191, 36, 0)'); }
-    ctx.fillStyle = grad; ctx.globalAlpha = 0.9; ctx.fill();
+    
+    // Stabilize flicker for permanent jets so they don't look glitchy
+    const flicker = 0.9 + Math.random() * 0.2; 
+    
+    // Length based on intensity
+    const len = lengthScale * intensity * flicker;
+    
+    // SLIMMER JETS: Reduced widths by ~30%
+    const nozzleRadius = 2.1 * (0.8 + 0.2 * intensity); // Was 3
+    const fatWidth = 10 * (0.8 + 0.5 * intensity);      // Was 14
+    const fatY = len * 0.35;                            // Position of widest point
+    
+    ctx.beginPath(); 
+    
+    // Start at left side of nozzle
+    ctx.moveTo(-nozzleRadius, 0);
+    
+    // Left curve: Nozzle -> Fat Point -> Tip
+    // Using bezier to create the "drop" belly
+    ctx.bezierCurveTo(-fatWidth, fatY * 0.8, -fatWidth * 0.5, len * 0.8, 0, len);
+    
+    // Right curve: Tip -> Fat Point -> Nozzle
+    ctx.bezierCurveTo(fatWidth * 0.5, len * 0.8, fatWidth, fatY * 0.8, nozzleRadius, 0);
+    
+    // Top curve: Rounded into the engine
+    ctx.quadraticCurveTo(0, -nozzleRadius, -nozzleRadius, 0);
+    
+    ctx.closePath();
+    
+    const grad = ctx.createLinearGradient(0, 0, 0, len);
+    if (usingWater) {
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)'); 
+        grad.addColorStop(0.3, 'rgba(96, 165, 250, 0.9)'); 
+        grad.addColorStop(1, 'rgba(59, 130, 246, 0)');
+    } else {
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.95)'); 
+        grad.addColorStop(0.2, 'rgba(250, 204, 21, 0.9)'); // Yellow
+        grad.addColorStop(0.6, 'rgba(239, 68, 68, 0.8)'); // Red
+        grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+    }
+    
+    ctx.fillStyle = grad;
+    
+    // High visibility opacity
+    ctx.globalAlpha = Math.min(1, 0.85 + (0.15 * intensity)); 
+    
+    // Add strong glow effect
+    ctx.shadowBlur = 15 * intensity;
+    ctx.shadowColor = usingWater ? '#3b82f6' : '#f97316';
+    
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    
+    // Draw secondary inner core for extra "hot" look on high thrust
+    // Also shaped like a smaller drop
+    if (intensity > 0.4) {
+        const coreLen = len * 0.6;
+        const coreW = fatWidth * 0.5;
+        const coreFatY = coreLen * 0.35;
+        
+        ctx.beginPath();
+        ctx.moveTo(-nozzleRadius * 0.5, 0);
+        ctx.bezierCurveTo(-coreW, coreFatY * 0.8, -coreW * 0.5, coreLen * 0.8, 0, coreLen);
+        ctx.bezierCurveTo(coreW * 0.5, coreLen * 0.8, coreW, coreFatY * 0.8, nozzleRadius * 0.5, 0);
+        ctx.quadraticCurveTo(0, -nozzleRadius * 0.5, -nozzleRadius * 0.5, 0);
+        
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.7;
+        ctx.fill();
+    }
+
     ctx.restore();
 };
 
@@ -54,20 +122,9 @@ export const drawShip = (ctx: CanvasRenderingContext2D, shipData: any, isPlayer 
         ctx.fillRect(-6, 28, 12, 6);
         
         if (movement?.up) {
-             ctx.fillStyle = '#f97316';
-             ctx.beginPath();
-             ctx.moveTo(-4, 34);
-             ctx.lineTo(0, 48); 
-             ctx.lineTo(4, 34);
-             ctx.fill();
+             drawJet(ctx, 0, 34, 0, 1.4, usingWater, 50);
         } else {
-             ctx.fillStyle = '#f97316';
-             ctx.globalAlpha = 0.6;
-             ctx.beginPath();
-             ctx.moveTo(-3, 34);
-             ctx.lineTo(0, 40);
-             ctx.lineTo(3, 34);
-             ctx.fill();
+             drawJet(ctx, 0, 34, 0, 0.7, usingWater, 40);
         }
         ctx.restore();
     } else {
@@ -92,35 +149,58 @@ export const drawShip = (ctx: CanvasRenderingContext2D, shipData: any, isPlayer 
             else { ctx.moveTo(50, 30); ctx.lineTo(10, 70); ctx.lineTo(50, 60); ctx.lineTo(90, 70); ctx.fill(); }
         }
 
-        // 2. JETS (If Moving)
-        if (movement?.up) {
-            const engineLocs = getEngineCoordinates(config);
+        // 2. THRUSTERS (ALL TYPES)
+        // Main Jets (Rear)
+        const engineLocs = getEngineCoordinates(config);
+        
+        // Permanent Idle Jet: Min intensity 0.6 to be visible
+        // Thrusting: 1.2 intensity
+        const mainIntensity = movement?.up ? 1.5 : 0.8; 
+        // Longer lengths: Idle ~50px, Thrust ~90px
+        const mainLength = usingWater ? 120 : 90;
+        
+        // Only draw main jets if NOT moving down (braking)
+        if (!movement?.down) {
             engineLocs.forEach(eng => {
                 const isAlien = config.isAlien;
                 const nozzleH = isAlien ? 6 : 5;
                 const jetY = eng.y + eng.h + nozzleH;
-                const jetW = eng.w * 0.8;
-                const jetX = eng.x - (jetW / 2);
-                const length = usingWater ? 50 : 35;
+                const jetX = eng.x;
                 
-                ctx.beginPath();
-                ctx.moveTo(jetX, jetY);
-                ctx.lineTo(jetX + jetW/2, jetY + length + (Math.random() * 5));
-                ctx.lineTo(jetX + jetW, jetY);
-                
-                const grad = ctx.createLinearGradient(jetX, jetY, jetX, jetY + length);
-                if (usingWater) {
-                    grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.2, '#60a5fa'); grad.addColorStop(1, 'rgba(59, 130, 246, 0)');
-                } else {
-                    grad.addColorStop(0, '#ffffff'); grad.addColorStop(0.2, '#facc15'); grad.addColorStop(0.6, '#ef4444'); grad.addColorStop(1, 'rgba(239, 68, 68, 0)');
-                }
-                ctx.fillStyle = grad;
-                ctx.fill();
+                // Draw Main Jet (Downwards 0deg)
+                drawJet(ctx, jetX, jetY, 0, mainIntensity, usingWater, mainLength);
             });
         }
 
-        // 3. ENGINES
-        const engineLocs = getEngineCoordinates(config);
+        // Retro Thrusters (Braking - Front)
+        if (movement?.down) {
+            // Draw 2 small retro jets at the nose pointing OUTWARDS at 45 degrees relative to UP
+            // 0 deg = DOWN. 180 deg = UP.
+            // Left Retro: Points Up-Left. 180 - 45 = 135 degrees.
+            // Right Retro: Points Up-Right. 180 + 45 = 225 degrees.
+            
+            drawJet(ctx, 35, 20, 135, 1.0, usingWater, 35);
+            drawJet(ctx, 65, 20, 225, 1.0, usingWater, 35);
+        }
+
+        // Maneuvering Thrusters (Strafe)
+        // Strafe jets also boosted in size and intensity
+        if (movement?.left) {
+            // Moving Left -> Fire RIGHT thrusters pushing Left (Angle -90deg aka 270deg, pointing Right)
+            // Position: Right Wing/Side
+            const rx = config.wingStyle === 'x-wing' ? 85 : 80;
+            const ry = 50;
+            drawJet(ctx, rx, ry, -90, 0.9, usingWater, 35); // Pointing Right (East)
+        }
+        if (movement?.right) {
+            // Moving Right -> Fire LEFT thrusters pushing Right (Angle 90deg, pointing Left)
+            // Position: Left Wing/Side
+            const lx = config.wingStyle === 'x-wing' ? 15 : 20;
+            const ly = 50;
+            drawJet(ctx, lx, ly, 90, 0.9, usingWater, 35); // Pointing Left (West)
+        }
+
+        // 3. ENGINES (Body)
         const eColor = config.isAlien ? '#172554' : (engineColor || '#334155');
         const nColor = config.isAlien ? '#9ca3af' : (nozzleColor || '#475569');
         

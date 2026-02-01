@@ -66,15 +66,56 @@ export const getEngineCoordinates = (config: ExtendedShipConfig) => {
     const baseY = 80;
     
     if (config.isAlien) {
-        if (config.engines === 1) {
-            engines.push({ x: 50, y: 70, w: 12, h: 8 });
-        } else if (config.engines === 2) {
+        // Specific placement based on geometry for Alien ships
+        if (config.wingStyle === 'alien-h') {
+            // H-Class: Pontoons at x=25 and x=75. Bottom is y=75.
+            if (config.engines >= 6) { // Boss
+                 engines.push({ x: 25, y: 70, w: 14, h: 8 });
+                 engines.push({ x: 75, y: 70, w: 14, h: 8 });
+                 engines.push({ x: 15, y: 60, w: 10, h: 6 });
+                 engines.push({ x: 85, y: 60, w: 10, h: 6 });
+                 engines.push({ x: 25, y: 50, w: 10, h: 6 });
+                 engines.push({ x: 75, y: 50, w: 10, h: 6 });
+            } else {
+                 engines.push({ x: 25, y: 72, w: 14, h: 10 });
+                 engines.push({ x: 75, y: 72, w: 14, h: 10 });
+            }
+        } else if (config.wingStyle === 'alien-w') {
+            // W-Class: Bottom points at x=35, 65, y=75.
+            engines.push({ x: 35, y: 72, w: 12, h: 10 });
+            engines.push({ x: 65, y: 72, w: 12, h: 10 });
+        } else if (config.wingStyle === 'alien-a') {
+            // A-Class: Arch ends at x=20, 80, y=75.
+            if (config.engines >= 4) { // Boss
+                engines.push({ x: 20, y: 72, w: 12, h: 10 });
+                engines.push({ x: 80, y: 72, w: 12, h: 10 });
+                engines.push({ x: 35, y: 65, w: 10, h: 8 });
+                engines.push({ x: 65, y: 65, w: 10, h: 8 });
+            } else {
+                engines.push({ x: 20, y: 72, w: 14, h: 10 });
+                engines.push({ x: 80, y: 72, w: 14, h: 10 });
+            }
+        } else if (config.wingStyle === 'alien-m') {
+            // M-Class: Legs at x=20, 80, y=75.
+            if (config.engines >= 8) { // Boss
+                engines.push({ x: 20, y: 72, w: 12, h: 10 });
+                engines.push({ x: 80, y: 72, w: 12, h: 10 });
+                engines.push({ x: 30, y: 60, w: 10, h: 8 });
+                engines.push({ x: 70, y: 60, w: 10, h: 8 });
+                // Inner
+                engines.push({ x: 45, y: 55, w: 8, h: 6 });
+                engines.push({ x: 55, y: 55, w: 8, h: 6 });
+                // Outer
+                engines.push({ x: 10, y: 50, w: 8, h: 6 });
+                engines.push({ x: 90, y: 50, w: 8, h: 6 });
+            } else {
+                engines.push({ x: 20, y: 72, w: 14, h: 10 });
+                engines.push({ x: 80, y: 72, w: 14, h: 10 });
+            }
+        } else {
+            // Fallback for unknown alien styles
             engines.push({ x: 35, y: 75, w: 10, h: 8 });
             engines.push({ x: 65, y: 75, w: 10, h: 8 });
-        } else {
-            engines.push({ x: 30, y: 70, w: 8, h: 6 });
-            engines.push({ x: 50, y: 75, w: 10, h: 8 });
-            engines.push({ x: 70, y: 70, w: 8, h: 6 });
         }
     } else {
         if (config.engines === 1) {

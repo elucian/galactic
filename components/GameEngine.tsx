@@ -2,14 +2,15 @@
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData, AmmoType } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
-import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, EXOTIC_SHIELDS, BOSS_SHIPS, AMMO_CONFIG } from '../constants.ts';
+import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, BOSS_SHIPS, EXOTIC_SHIELDS } from '../constants.ts';
 import { getEngineCoordinates, getWingMounts } from '../utils/drawingUtils.ts';
 import { Enemy } from './game/Enemy.ts';
-import { Projectile, Particle, Loot } from './game/types.ts';
+import { Projectile, Particle, Loot, GameEngineState } from './game/types.ts';
 import { Asteroid } from './game/Asteroid.ts';
-import { calculateDamage, mixColor, getAlienColors, ASTEROID_VARIANTS, OCTO_COLORS } from './game/utils.ts';
-import { LEDMeter, HudButton } from './game/HUD.tsx';
-import { drawShip, drawRetro } from './game/renderers.ts';
+import { calculateDamage, OCTO_COLORS } from './game/utils.ts';
+import { GameHUD } from './game/GameHUD.tsx';
+import { fireMissile, fireMine, fireRedMine, firePowerShot, fireNormalShot, fireAlienWeapons, fireWingWeapon, createExplosion, createAreaDamage, takeDamage } from './game/CombatMechanics.ts';
+import { renderGame } from './game/GameRenderer.ts';
 
 interface GameEngineProps {
   ships: {
@@ -58,11 +59,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
   const hasGuns = activeShip?.fitting.weapons.some(w => !!w);
 
-  const hudLabel = fontSize === 'small' ? 'text-[8px]' : (fontSize === 'large' ? 'text-[12px]' : 'text-[10px]');
-  const hudScore = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-lg' : 'text-sm');
-  const hudTimer = fontSize === 'small' ? 'text-xs' : (fontSize === 'large' ? 'text-xl' : 'text-base');
-  const hudAlertText = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[16px]' : 'text-[12px]');
-
   const [hud, setHud] = useState({ 
     hp: 100, sh1: 0, sh2: 0, energy: maxEnergy, score: 0, missiles: 0, mines: 0, redMines: 0, fuel: 0, water: 0,
     alert: mode === 'drift' ? "DRIFTING" : "SYSTEMS READY", alertType: 'info', 
@@ -76,8 +72,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     overdrive: false,
     rescueMode: false,
     capacitorLocked: false,
-    powerMode: false, // Track UI state for CapsLock
-    shieldsOnline: true // New HUD state
+    powerMode: false, 
+    shieldsOnline: true 
   });
   
   const [showExitDialog, setShowExitDialog] = useState(false);
@@ -87,7 +83,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
   const hasTiltRef = useRef(false);
   const targetRef = useRef<{x: number, y: number} | null>(null);
 
-  const state = useRef({
+  const state = useRef<GameEngineState>({
     px: window.innerWidth/2, py: window.innerHeight*0.8, hp: 100, fuel: 0, water: 0, energy: maxEnergy, 
     sh1: 0, sh2: 0, score: 0, time: mode === 'drift' ? 60 : 120, phase: 'travel', bossSpawned: false, bossDead: false,
     enemies: [] as Enemy[], asteroids: [] as Asteroid[], bullets: [] as Projectile[], 
@@ -126,27 +122,23 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     shakeX: 0,
     shakeY: 0,
     shakeDecay: 0.9,
-    capacitor: 100, // Initialize full
+    capacitor: 100,
     salvoTimer: 0,
     lastSalvoFire: 0,
     currentThrottle: 0, 
     shipVy: 0,
-    refuelTimer: 0, // 0 to 600 (10 seconds)
+    refuelTimer: 0,
     isRefueling: false,
     refuelType: null as 'fuel' | 'water' | null,
     refuelStartVal: 0,
-    // Capacitor Lock Logic
     capacitorLocked: false,
     depletionTime: 0,
-    // Cooldown Logic
     weaponCoolDownTimer: 0,
-    // Burst Logic
     missileBurstCount: 0,
     mineBurstCount: 0,
     isExitDialogOpen: false,
-    capsLock: false, // CapsLock state tracking
-    shieldsEnabled: true, // Shield Toggle State
-    // New Logic State
+    capsLock: false,
+    shieldsEnabled: true,
     wasShieldHit: false,
     isShooting: false
   });
@@ -254,343 +246,19 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
       targetRef.current = { x: e.clientX, y: e.clientY };
   };
 
-  const fireMissile = () => { const s = state.current; if (s.missiles > 0) { const isEmp = s.missiles % 2 !== 0; s.missiles--; s.lastMissileFire = Date.now(); s.bullets.push({ x: s.px, y: s.py, vx: 0, vy: -3, vz: 0, damage: 200, color: isEmp ? '#22d3ee' : '#ef4444', type: isEmp ? 'missile_emp' : 'missile', life: 600, isEnemy: false, width: 12, height: 28, homingState: 'launching', launchTime: s.frame, headColor: isEmp ? '#22d3ee' : '#ef4444', finsColor: isEmp ? '#0ea5e9' : '#ef4444', turnRate: 0.05, maxSpeed: 14, z: 0 }); audioService.playWeaponFire(isEmp ? 'emp' : 'missile'); } };
-  const fireMine = () => { const s = state.current; if (s.mines > 0) { const isEmp = s.mines % 2 !== 0; s.mines--; s.lastMineFire = Date.now(); s.mineSide = !s.mineSide; const speed = 5; const vx = s.mineSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 20, vx: vx, vy: 0, vz: 0, damage: 250, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: s.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); audioService.playWeaponFire('mine'); } };
-  const fireRedMine = () => { const s = state.current; if (s.redMines > 0) { s.redMines--; s.lastRedMineFire = Date.now(); s.omegaSide = !s.omegaSide; const speed = 4; const vx = s.omegaSide ? -speed : speed; s.bullets.push({ x: s.px, y: s.py + 30, vx: vx, vy: 0, vz: 0, damage: 600, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'launching', launchTime: s.frame, turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); audioService.playWeaponFire('mine'); setHud(h => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); } };
   const spawnLoot = (x: number, y: number, z: number, type: string, id?: string, name?: string, quantity: number = 1) => { state.current.loot.push({ x, y, z, type, id, name, quantity, isPulled: false, vx: (Math.random()-0.5), vy: (Math.random()-0.5) }); };
-  const createExplosion = (x: number, y: number, color: string, count: number, type: 'standard' | 'boss' | 'asteroid' | 'mine' | 'fireworks' | 'smoke' | 'shield_effect' | 'player' = 'standard') => { const s = state.current; s.particles.push({ x, y, vx: 0, vy: 0, life: 0.5, color: '#ffffff', size: type === 'boss' ? 50 : 25 }); for(let i=0; i<count; i++) { const angle = Math.random() * Math.PI * 2; const speed = Math.random() * (type === 'boss' ? 12 : 8) + 2; 
-    let pColor = color;
-    if (type === 'fireworks') { if (Math.random() > 0.5) pColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)]; }
-    s.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.0 + Math.random() * 0.5, color: Math.random() > 0.5 ? pColor : '#ffffff', size: Math.random()*3+2 }); } };
-  const createAreaDamage = (x: number, y: number, radius: number, damage: number, sourceId?: string) => { const s = state.current; s.enemies.forEach(e => { if (e.hp > 0) { const dist = Math.hypot(e.x - x, e.y - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor; if (dmg > 5) { e.damageHull(dmg, 'explosion', false, false); createExplosion(e.x, e.y, '#f97316', 2); } } } }); if (!s.rescueMode) { const dist = Math.hypot(s.px - x, s.py - y); if (dist < radius) { const factor = 1 - (dist / radius); const dmg = damage * factor * 0.5; if (dmg > 5) { takeDamage(dmg, 'explosion'); } } } };
-  
-  const getCapacitorBeamState = (chargeLevel: number) => {
-      let color = '#ef4444'; 
-      if (chargeLevel > 80) { color = '#e0f2fe'; } else if (chargeLevel > 40) { color = '#facc15'; }
-      return { color };
-  };
-
-  const firePowerShot = () => { 
-      const s = state.current; 
-      const mainWeapon = activeShip.fitting.weapons[0]; 
-      const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null; 
-      const baseDamage = mainDef ? mainDef.damage : 45; 
-      
-      // Dynamic Power Scaling
-      const capRatio = s.capacitor / 100;
-      const damageMult = 1.0 + (3.0 * capRatio); 
-      const dmg = baseDamage * damageMult; 
-      
-      let powerCost = 5.0 * capRatio;
-      if (powerCost < 0.5) powerCost = 0.5;
-
-      if (mainDef?.id === 'exotic_star_shatter') powerCost *= 1.5; 
-      if (mainDef?.id === 'exotic_phaser_sweep') powerCost *= 2.0; 
-
-      if (s.capacitor <= 0 || s.capacitorLocked) return;
-
-      s.capacitor = Math.max(0, s.capacitor - powerCost);
-      if (s.capacitor <= 0.1) {
-          s.capacitorLocked = true;
-          setHud(h => ({...h, alert: "CAPACITOR DRAINED - RECHARGING", alertType: 'warning'}));
-      }
-
-      const lengthMult = 1.0 + (1.0 * capRatio);
-      const EXP_GROWTH_RATE = 1.06;
-
-      if (mainDef?.id.includes('exotic')) {
-          const isStar = mainDef.id === 'exotic_star_shatter';
-          const isRainbow = mainDef.id === 'exotic_rainbow_spread';
-          const isFlamer = mainDef.id === 'exotic_flamer';
-          const isWave = mainDef.id === 'exotic_wave';
-          const isGravity = mainDef.id === 'exotic_gravity_wave';
-          const isOrb = mainDef.id === 'exotic_plasma_orb';
-          const isElectric = mainDef.id === 'exotic_electric';
-          const isOcto = mainDef.id === 'exotic_octo_burst';
-          const isPhaser = mainDef.id === 'exotic_phaser_sweep';
-
-          // Base Dimensions
-          let w = 6;
-          let h = 12; // Standard base height
-          let grow = EXP_GROWTH_RATE; 
-          let speed = 20; 
-          const life = 60;
-          let color = mainDef.beamColor || '#fff';
-          let type = 'projectile';
-          let detY = undefined;
-          let isMulti = false;
-
-          if (isOrb) { w = 8; h = 8; speed = 16; grow = 1.05; }
-          else if (isWave) { w = 10; h = 6; speed = 16; grow = 1.05; }
-          else if (isGravity) { w = 10; h = 6; speed = 16; grow = 1.06; }
-          else if (isStar) { w = 12; h = 12; speed = 18; grow = 1.045; } 
-          else if (isRainbow) { w = 10; h = 4; speed = 14; }
-          else if (isFlamer) { w = 30; h = 30; speed = 20; grow = 1.03; color = '#3b82f6'; }
-          else if (isElectric) { type = 'laser'; w = 4; h = 20; speed = 28; }
-          else if (isOcto) { 
-              type = 'octo_shell';
-              w = 12; h = 12; grow = 0; speed = 12; 
-              color = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
-              const hCanvas = canvasRef.current?.height || window.innerHeight;
-              const distRatio = 0.5 + ((Math.random() + Math.random()) / 2) * 0.5; 
-              const dist = hCanvas * distRatio;
-              detY = s.py - dist;
-              isMulti = Math.random() > 0.7; 
-          }
-          else if (isPhaser) { type = 'laser'; w = 5; h = 40; speed = 32; color = '#d946ef'; }
-
-          // Apply Dynamic Scaling
-          if (isPhaser || isElectric) {
-              h = h * lengthMult;
-          } else {
-              w = w * (1 + 0.5 * capRatio);
-              h = h * lengthMult;
-          }
-
-          const spawnY = s.py - 30 - (h / 2);
-
-          s.bullets.push({
-              x: s.px, y: spawnY,
-              vx: 0, vy: -speed, 
-              damage: dmg,
-              color: color,
-              type: type,
-              life: life,
-              isEnemy: false,
-              width: w,
-              height: h,
-              weaponId: mainDef.id,
-              isOvercharge: true,
-              isMain: true,
-              growthRate: grow, 
-              initialWidth: w, 
-              initialHeight: h,
-              glow: true,
-              glowIntensity: 30 * capRatio, 
-              detonationY: detY,
-              isMulticolor: isMulti
-          });
-          
-          if (isPhaser) audioService.playWeaponFire('phaser', 0); 
-          else audioService.playWeaponFire('exotic_power', 0);
-      } else { 
-          const beamState = getCapacitorBeamState(s.capacitor);
-          const baseW = 4; 
-          const baseH = 25; 
-          
-          const width = baseW * (1 + 0.4 * capRatio); 
-          const height = baseH * lengthMult; 
-          const color = beamState.color;
-
-          const spawnY = s.py - 30 - (height / 2);
-
-          s.bullets.push({ 
-              x: s.px, y: spawnY, vx: 0, vy: -35, damage: dmg, color: color, type: 'laser', life: 50, isEnemy: false, width: width, height: height, glow: true, glowIntensity: 20 * capRatio, isMain: true, weaponId: mainWeapon?.id || 'gun_pulse', isOvercharge: true,
-              growthRate: EXP_GROWTH_RATE, initialWidth: width, initialHeight: height
-          }); 
-          audioService.playWeaponFire('mega', 0, activeShip.config.id);
-      } 
-      
-      s.weaponFireTimes[0] = Date.now(); 
-      s.weaponHeat[0] = Math.min(100, (s.weaponHeat[0] || 0) + 1.0); 
-      s.lastRapidFire = Date.now(); 
-  };
-
-  const fireNormalShot = () => { 
-      const s = state.current; 
-      
-      if (s.weaponCoolDownTimer > s.frame) {
-          return;
-      }
-
-      if (s.capacitorLocked) return;
-
-      const mainWeapon = activeShip.fitting.weapons[0]; 
-      const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null; 
-      const fireRate = (mainDef?.id === 'exotic_rainbow_spread' || mainDef?.id === 'exotic_star_shatter') ? 6 : (mainDef ? mainDef.fireRate : 4); 
-      const delay = 1000 / fireRate; 
-      
-      if (Date.now() - s.lastRapidFire > delay) { 
-          if (mainDef && mainDef.isAmmoBased) { 
-              const gun = s.gunStates[0]; 
-              if (!gun || gun.mag <= 0) return; 
-              gun.mag--; 
-          } else { 
-              // UPDATED: Main gun consumes Capacitor points
-              const isExotic = mainDef?.id.includes('exotic');
-              // Cost in Capacitor units (0-100)
-              const capacitorCost = isExotic ? 2.0 : 1.0;
-
-              if (s.capacitor < capacitorCost) {
-                  // Not enough capacitor charge to fire
-                  return; 
-              }
-              
-              s.capacitor -= capacitorCost; 
-          } 
-          
-          let damage = mainDef ? mainDef.damage : 45; 
-          let weaponId = mainDef ? mainDef.id : 'gun_pulse'; 
-          let crystalColor = (mainDef?.beamColor) || (activeShip.gunColor || activeShip.config.noseGunColor || '#f87171'); 
-          
-          if (mainDef?.id.includes('exotic')) {
-              const sprayAngleDeg = (Math.random() * 30) - 15; 
-              const sprayRad = sprayAngleDeg * (Math.PI / 180);
-              const speed = 20;
-              
-              if (mainDef.id === 'exotic_flamer') {
-                  crystalColor = '#3b82f6'; 
-              } else if (mainDef.id === 'exotic_octo_burst') {
-                  crystalColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
-              } else if (mainDef.id === 'exotic_rainbow_spread') {
-                  const rainbowColors = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7'];
-                  crystalColor = rainbowColors[Math.floor(Math.random() * rainbowColors.length)];
-              } else if (mainDef.id !== 'exotic_phaser_sweep') {
-                  audioService.playWeaponFire('exotic_single', 0);
-              }
-
-              let w = 6; 
-              let h = 12;
-
-              if (mainDef.id === 'exotic_rainbow_spread') { w = 16; h = 4; }
-              if (mainDef.id === 'exotic_flamer') { w = 12; h = 12; }
-              if (mainDef.id === 'exotic_phaser_sweep') { h = 40; w = 3.5; }
-
-              if (mainDef.id === 'exotic_octo_burst') {
-                  s.bullets.push({
-                      x: s.px, y: s.py - 30, 
-                      vx: Math.sin(sprayRad) * 12, 
-                      vy: -12, 
-                      damage: damage,
-                      color: crystalColor,
-                      type: 'octo_shell',
-                      life: 80,
-                      isEnemy: false,
-                      width: 8, height: 8,
-                      glow: true,
-                      glowIntensity: 20,
-                      isMain: true,
-                      weaponId,
-                      growthRate: 0,
-                      detonationY: undefined 
-                  });
-                  audioService.playWeaponFire('missile', 0);
-              } else if (mainDef.id === 'exotic_phaser_sweep') {
-                  const spawnY = s.py - 30 - (h / 2);
-                   s.bullets.push({ 
-                      x: s.px, y: spawnY, 
-                      vx: Math.sin(sprayRad) * speed, 
-                      vy: -Math.cos(sprayRad) * speed, 
-                      damage, 
-                      color: crystalColor, 
-                      type: 'laser', 
-                      life: 50, 
-                      isEnemy: false, 
-                      width: w, 
-                      height: h, 
-                      glow: true, 
-                      glowIntensity: 5, 
-                      isMain: true, 
-                      weaponId,
-                      growthRate: 0 
-                  });
-                  audioService.playWeaponFire('phaser', 0);
-              } else {
-                  const growth = (mainDef.id === 'exotic_flamer') ? 1.025 : 0; 
-                  
-                  if (mainDef.id === 'exotic_star_shatter') { w = 6; h = 6; }
-
-                  s.bullets.push({ 
-                      x: s.px, y: s.py - 24, 
-                      vx: Math.sin(sprayRad) * speed, 
-                      vy: -Math.cos(sprayRad) * speed, 
-                      damage, 
-                      color: crystalColor, 
-                      type: 'projectile', 
-                      life: 50, 
-                      isEnemy: false, 
-                      width: w, 
-                      height: h, 
-                      glow: true, 
-                      glowIntensity: 5, 
-                      isMain: true, 
-                      weaponId,
-                      growthRate: growth 
-                  });
-                  
-                  if (mainDef.id === 'exotic_flamer') {
-                      audioService.playWeaponFire('flame', 0);
-                  }
-              }
-          } else { 
-              s.bullets.push({ x: s.px, y: s.py - 24, vx: 0, vy: -30, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, glow: true, glowIntensity: 5, isMain: true, weaponId }); 
-              audioService.playWeaponFire(mainDef?.type === WeaponType.LASER ? 'laser' : 'cannon', 0, activeShip.config.id); 
-          } 
-          
-          s.weaponFireTimes[0] = Date.now(); 
-          // Heat Accumulation
-          const heatAdd = (mainDef && mainDef.type === WeaponType.PROJECTILE) ? 2.0 : 1.0;
-          s.weaponHeat[0] = Math.min(100, (s.weaponHeat[0] || 0) + heatAdd); 
-          s.lastRapidFire = Date.now(); 
-      } 
-  };
-  const fireAlienWeapons = () => { const s = state.current; const mounts = getWingMounts(activeShip.config); const slots = [0, 1, 2]; const scale = 0.6; let fired = false; slots.forEach(slotIdx => { const w = activeShip.fitting.weapons[slotIdx]; if (w && w.id) { const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); if (wDef) { const lastFire = s.weaponFireTimes[slotIdx] || 0; const delay = 1000 / wDef.fireRate; if (Date.now() - lastFire < delay) return; if (s.energy < wDef.energyCost) return; let startX = s.px; let startY = s.py; if (slotIdx === 0) { startY = s.py - 30; } else { const mountIdx = slotIdx - 1; const m = mounts[mountIdx]; startX = s.px + (m.x - 50) * scale; startY = s.py + (m.y - 50) * scale; } const damage = wDef.damage; const color = wDef.beamColor || '#fff'; const bulletSpeed = w.id.includes('exotic') ? 10 : 18; if (wDef.id === 'exotic_gravity_wave') { const angles = [-15, 0, 15]; angles.forEach(deg => { const rad = deg * (Math.PI / 180); s.bullets.push({ x: startX, y: startY, vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, damage, color: '#60a5fa', type: 'projectile', life: 80, isEnemy: false, width: 20, height: 20, weaponId: w.id, growthRate: 0.5 }); }); } else if (wDef.type === WeaponType.LASER) { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -30, damage, color, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, weaponId: w.id }); } else { s.bullets.push({ x: startX, y: startY, vx: 0, vy: -bulletSpeed, damage, color, type: 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); } s.weaponFireTimes[slotIdx] = Date.now(); s.energy -= wDef.energyCost; fired = true; } } }); if (fired) { if (activeShip.fitting.weapons.some(w => w?.id === 'exotic_flamer')) { audioService.playWeaponFire('flame', 0, activeShip.config.id); } else { audioService.playWeaponFire('cannon', 0, activeShip.config.id); } } };
-  const fireWingWeapon = (slotIdx: number) => { 
-      const s = state.current; 
-      const mounts = getWingMounts(activeShip.config); 
-      const w = activeShip.fitting.weapons[slotIdx];
-      
-      if (w && w.id) { 
-          const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); 
-          if (wDef) { 
-              const interval = Math.max(1, Math.floor(60 / wDef.fireRate)); 
-              if (s.frame % interval === 0) { 
-                  if (wDef.isAmmoBased) { 
-                      const gun = s.gunStates[slotIdx]; 
-                      if (!gun || gun.mag <= 0) return; 
-                      gun.mag--; 
-                  } else if (s.energy < wDef.energyCost) return; 
-                  
-                  s.weaponFireTimes[slotIdx] = Date.now(); 
-                  const scale = 0.6; 
-                  const m = mounts[slotIdx - 1]; // slot 1 -> mount 0, slot 2 -> mount 1
-                  const startX = s.px + (m.x - 50) * scale; 
-                  const startY = s.py + (m.y - 50) * scale; 
-                  const damage = wDef.damage; 
-                  const color = wDef.beamColor || '#fff'; 
-                  
-                  if (wDef.id === 'exotic_gravity_wave') { 
-                      const angles = [-15, 0, 15]; 
-                      angles.forEach(deg => { 
-                          const rad = deg * (Math.PI / 180); 
-                          s.bullets.push({ x: startX, y: startY, vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, damage, color: '#60a5fa', type: 'projectile', life: 80, isEnemy: false, width: 20, height: 20, weaponId: w.id, growthRate: 0.5 }); 
-                      }); 
-                  } else { 
-                      s.bullets.push({ x: startX, y: startY, vx: 0, vy: -20, damage, color, type: wDef.type === WeaponType.LASER ? 'laser' : 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); 
-                  } 
-                  if (!wDef.isAmmoBased) s.energy -= wDef.energyCost; 
-                  audioService.playWeaponFire('cannon', 0, activeShip.config.id); 
-              } 
-          } 
-      } 
-  };
 
   useEffect(() => {
     const k = state.current.keys;
     const kd = (e: KeyboardEvent) => { 
         if(e.repeat) return;
         
-        // Track CapsLock state from event modifier
         const caps = e.getModifierState("CapsLock");
         state.current.capsLock = caps;
         
         if (e.ctrlKey && (e.key === '+' || e.key === '=' || e.key === '-' || e.code === 'NumpadAdd' || e.code === 'NumpadSubtract')) { e.preventDefault(); }
         if (e.code === 'Tab') { e.preventDefault(); } 
         
-        // NEW: Alt Key Handlers
-        if (e.code === 'AltLeft') { e.preventDefault(); k.add('AltLeft'); }
-        if (e.code === 'AltRight') { e.preventDefault(); k.add('AltRight'); }
-
         k.add(e.code); 
         if(e.code === 'KeyP') { togglePause(); }
         if(e.code === 'Escape') {
@@ -599,7 +267,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             else { s.isExitDialogOpen = true; setShowExitDialog(true); togglePause(true); }
         }
         
-        // S Key Toggles Shield
         if (e.code === 'KeyS') {
             const s = state.current;
             s.shieldsEnabled = !s.shieldsEnabled;
@@ -608,8 +275,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
 
         if(!state.current.paused && state.current.active && !state.current.rescueMode) {
-            if(e.code === 'KeyB') fireRedMine(); 
-            if(e.code === 'KeyN' || e.code === 'NumpadEnter' || e.code === 'Enter') fireMine();
+            if(e.code === 'KeyB') fireRedMine(state.current, setHud); 
+            // Enter fires 2 mines simultaneously (Dual)
+            if(e.code === 'KeyN' || e.code === 'NumpadEnter' || e.code === 'Enter') fireMine(state.current, 'both');
+            
             if (e.code === 'Space') inputRef.current.main = true;
             if (e.code === 'ControlLeft' || e.code === 'ControlRight') inputRef.current.secondary = true;
         }
@@ -622,7 +291,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         if (e.code === 'Space') inputRef.current.main = false;
         if (e.code === 'ControlLeft' || e.code === 'ControlRight') inputRef.current.secondary = false;
-        if (e.code === 'Tab') { state.current.missileBurstCount = 0; }
+        if (e.code === 'Tab' || e.code === 'NumpadAdd') { state.current.missileBurstCount = 0; }
         if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { state.current.mineBurstCount = 0; }
     };
     window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
@@ -643,39 +312,27 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         const height = cvs.height = window.innerHeight;
         s.frame++;
 
-        // Determine Speed Multiplier for Aliens/Asteroids
         let speedMult = 1.0;
         if (speedMode === 'slow') speedMult = 0.6;
         if (speedMode === 'fast') speedMult = 1.4;
 
-        // ENERGY MANAGEMENT & SHIELD RECHARGE
         const baseRegen = (2.0 + (activeShip.config.price / 100000)) * 1.5;
         
-        // --- POWER DISTRIBUTION LOGIC ---
-        // If under stress (Hit + Shooting), split the incoming reactor power
         const isStress = s.wasShieldHit && s.isShooting;
         
         if (isStress) {
-            // 50% Capacitor, 25% Shields, 25% Drive (Main Energy)
             s.capacitor = Math.min(100, s.capacitor + (baseRegen * 0.5));
             s.energy = Math.min(maxEnergy, s.energy + (baseRegen * 0.25));
-            
-            // Add proportional regen to shield pool directly
             const shieldShare = baseRegen * 0.25;
             if (s.shieldsEnabled) {
                if (s.sh1 < (shield?.capacity || 0)) s.sh1 += shieldShare;
                else if (s.sh2 < (secondShield?.capacity || 0)) s.sh2 += shieldShare;
             }
-            
         } else {
-            // Standard: 100% to Energy Pool
             s.energy = Math.min(maxEnergy, s.energy + baseRegen);
         }
-        
-        // Reset Transient Flags
         s.wasShieldHit = false;
         
-        // --- FUEL & REFUEL LOGIC ---
         const speed = 9;
         const fuelLimit = maxFuel * 0.1;
         
@@ -729,18 +386,24 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         let targetThrottle = 0; let left = false; let right = false;
         
-        // MOVEMENT LOGIC
-        // Allow movement if not distress, AND (not refueling OR has water buffer)
-        // UPDATED: Logic allows movement during rehydration specifically if water > 5
         const canMove = !isDistress && (!s.isRefueling || (s.refuelType === 'water' && s.water > 5));
 
-        if (canMove) {
-            left = s.keys.has('ArrowLeft') || s.keys.has('Numpad4');
-            right = s.keys.has('ArrowRight') || s.keys.has('Numpad6');
-            const up = s.keys.has('ArrowUp') || s.keys.has('Numpad8');
-            const down = s.keys.has('ArrowDown') || s.keys.has('Numpad2') || s.keys.has('Numpad5');
+        // Define directional keys for visual feedback
+        let keyLeft = false;
+        let keyRight = false;
+        let keyUp = false;
+        let keyDown = false;
 
-            if (left || right || up || down) {
+        if (canMove) {
+            keyLeft = s.keys.has('ArrowLeft') || s.keys.has('Numpad4');
+            keyRight = s.keys.has('ArrowRight') || s.keys.has('Numpad6');
+            keyUp = s.keys.has('ArrowUp') || s.keys.has('Numpad8');
+            keyDown = s.keys.has('ArrowDown') || s.keys.has('Numpad2') || s.keys.has('Numpad5');
+
+            left = keyLeft;
+            right = keyRight;
+
+            if (left || right || keyUp || keyDown) {
                 targetRef.current = null;
             }
 
@@ -750,8 +413,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (tiltVal < -5) { left = true; s.px -= Math.abs(tiltVal) * 0.2; } else if (tiltVal > 5) { right = true; s.px += Math.abs(tiltVal) * 0.2; }
                 if (Math.abs(tiltVal) > 5) { targetRef.current = null; }
             }
-            if (up) targetThrottle = 1;
-            else if (down) targetThrottle = -1;
+            if (keyUp) targetThrottle = 1;
+            else if (keyDown) targetThrottle = -1;
             
             if (targetRef.current) {
                 const dx = targetRef.current.x - s.px; const dy = targetRef.current.y - s.py; const dist = Math.hypot(dx, dy);
@@ -773,7 +436,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (right && !targetRef.current) s.px += speed;
         }
         s.px = Math.max(30, Math.min(width-30, s.px));
-        s.movement = { up: s.currentThrottle > 0.2, down: s.currentThrottle < -0.2, left, right };
+        
+        // Pass both key state AND throttle for immediate visual feedback + smooth physics
+        s.movement = { 
+            up: keyUp || s.currentThrottle > 0.1, 
+            down: keyDown || s.currentThrottle < -0.1, 
+            left, 
+            right 
+        };
+        
         let isMoving = s.currentThrottle !== 0 || left || right; 
         s.usingWater = false; 
         let worldSpeedFactor = 1.0;
@@ -788,28 +459,34 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                  s.particles.push({ x: s.px, y: s.py + 60, vx: (Math.random()-0.5)*1, vy: 2 + Math.random(), life: 1.2, color: '#9ca3af', size: 5 + Math.random()*5 });
             }
         } else {
-            // --- ENGINE CONSUMPTION LOGIC ---
-            if (isMoving) {
-                // Ion Mode Check: Has Energy > 10% AND Has Water?
-                const isIonMode = (s.energy > maxEnergy * 0.1) && (s.water > 0);
-                
-                // UsingWater flag implicitly signals Ion Drive visual (Blue Jet)
-                // If false, it's Combustion Drive (Red/Orange Jet)
+            // Determine Ion/Fuel Mode based on resources
+            const isIonMode = (s.energy > maxEnergy * 0.1) && (s.water > 0);
+            s.usingWater = isIonMode;
 
+            // Permanent idle drain (simulating reactor/engine hold)
+            // Drain varies by mode to ensure fairness
+            const idleDrain = 0.002;
+            if (isIonMode) {
+                // Idle Water/Energy Drain
+                s.water = Math.max(0, s.water - (idleDrain * 2)); 
+                s.energy = Math.max(0, s.energy - (idleDrain * 10)); 
+            } else if (s.fuel > fuelLimit) {
+                // Idle Fuel Drain
+                s.fuel = Math.max(fuelLimit, s.fuel - idleDrain); 
+            }
+
+            if (isMoving) {
                 let effort = 0.005; 
                 if (Math.abs(s.currentThrottle) > 0.1) effort += 0.002 * Math.abs(s.currentThrottle);
 
                 if (isIonMode) {
-                    s.usingWater = true; 
-                    // Consume Water (Efficiently) + Energy
-                    s.water = Math.max(0, s.water - (effort * 5.0)); // Efficient water use
-                    s.energy = Math.max(0, s.energy - (effort * 100)); // Energy cost
+                    s.water = Math.max(0, s.water - (effort * 5.0)); 
+                    s.energy = Math.max(0, s.energy - (effort * 100)); 
                 } else if (s.fuel > fuelLimit) {
-                    // Fallback to Fuel (Combustion)
-                    s.usingWater = false; 
                     s.fuel = Math.max(fuelLimit, s.fuel - effort); 
                 } else {
-                    // Out of fuel and cant use Ion
+                    // Out of fuel/water/energy -> Cannot accelerate effectively
+                    // Although drift physics still apply, we reduce control
                     isMoving = false; 
                 }
             }
@@ -820,11 +497,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
         
         const now = Date.now();
-        // Missile (Tab) - Hold for burst (max 3, 1 per sec)
-        if (s.keys.has('Tab') && !s.isRefueling && !s.rescueMode) {
+        // Updated Missile Logic: Tab OR NumpadAdd
+        if ((s.keys.has('Tab') || s.keys.has('NumpadAdd')) && !s.isRefueling && !s.rescueMode) {
             if (s.missileBurstCount < 3) {
                 if (now - s.lastMissileFire > 1000) {
-                    fireMissile();
+                    fireMissile(s);
                     s.missileBurstCount++;
                 }
             }
@@ -832,13 +509,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             s.missileBurstCount = 0;
         }
 
-        // Mine (Shift) - Hold for burst (max 3, 1 per sec)
-        if ((s.keys.has('ShiftLeft') || s.keys.has('ShiftRight')) && !s.isRefueling && !s.rescueMode) {
-            if (s.mineBurstCount < 3) {
-                if (now - s.lastMineFire > 1000) {
-                    fireMine();
-                    s.mineBurstCount++;
-                }
+        // Updated Mine Logic: Directional
+        if (s.keys.has('ShiftLeft') && !s.isRefueling && !s.rescueMode) {
+            if (s.mineBurstCount < 3 && now - s.lastMineFire > 1000) {
+                fireMine(s, 'left');
+                s.mineBurstCount++;
+            }
+        } else if (s.keys.has('ShiftRight') && !s.isRefueling && !s.rescueMode) {
+            if (s.mineBurstCount < 3 && now - s.lastMineFire > 1000) {
+                fireMine(s, 'right');
+                s.mineBurstCount++;
             }
         } else {
             s.mineBurstCount = 0;
@@ -868,13 +548,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             });
             
-            // Capacitor recharge logic (always active unless max)
             const canCharge = s.capacitor < 100 && !s.rescueMode; 
             let isCharging = false;
             
-            // LOW PRIORITY RECHARGE: Only if not stressed
             if (canCharge && !isStress) {
-                // If not firing, or firing Normal Shot (non-power), charge slowly
                 if (!isFiring || !s.capsLock) {
                     const requiredDrain = 0.5; 
                     if (s.energy >= requiredDrain) { 
@@ -896,10 +573,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (energyIdx >= 0) { const item = s.cargo[energyIdx]; item.quantity--; if (item.quantity <= 0) s.cargo.splice(energyIdx, 1); s.energy = Math.min(maxEnergy, s.energy + 500); setHud(h => ({...h, alert: "RESERVE POWER INJECTED", alertType: 'warning'})); audioService.playSfx('buy'); }
             }
             
-            if (activeShip.config.isAlien) { if (isFiring) fireAlienWeapons(); } 
+            if (activeShip.config.isAlien) { if (isFiring) fireAlienWeapons(s, activeShip); } 
             else {
                 if (isFiring) {
-                    // MAIN WEAPON FIRE LOGIC
                     if (s.capacitorLocked) {
                         if (s.frame % 60 === 0) audioService.playSfx('denied'); 
                     } else {
@@ -912,17 +588,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             if (wId === 'exotic_star_shatter') salvoRate = 10; 
                             
                             if (s.frame - s.lastSalvoFire > salvoRate) { 
-                                firePowerShot(); 
+                                firePowerShot(s, activeShip, setHud, cvs.height); 
                                 s.lastSalvoFire = s.frame; 
                             }
                         } else {
-                            fireNormalShot();
+                            fireNormalShot(s, activeShip);
                         }
                     }
                 }
             }
             
-            // Cool Down Weapon Heat
             Object.keys(s.weaponHeat).forEach(k => {
                 const idx = parseInt(k);
                 if (s.weaponHeat[idx] > 0) {
@@ -930,14 +605,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             });
 
-            // Alt Key / Secondary Fire Logic
-            if (s.keys.has('AltLeft') && !s.isRefueling) fireWingWeapon(1);
-            if (s.keys.has('AltRight') && !s.isRefueling) fireWingWeapon(2);
+            // UPDATED: Fire Wing Weapons via Numpad
+            if (s.keys.has('Numpad0') && !s.isRefueling) fireWingWeapon(s, activeShip, 1);
+            if (s.keys.has('NumpadDecimal') && !s.isRefueling) fireWingWeapon(s, activeShip, 2);
 
             const firingSecondary = inputRef.current.secondary;
             if (firingSecondary && !activeShip.config.isAlien && !s.isRefueling) { 
-                fireWingWeapon(1);
-                fireWingWeapon(2);
+                fireWingWeapon(s, activeShip, 1);
+                fireWingWeapon(s, activeShip, 2);
             }
         }
 
@@ -955,42 +630,32 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
 
         if (s.phase === 'travel') { 
-            // 1. POPULATION LIMITS BY QUADRANT
-            let maxEnemies = 4; // Default Alfa/Beta
+            let maxEnemies = 4; 
             if (quadrant === QuadrantType.GAMA) maxEnemies = 5;
             if (quadrant === QuadrantType.DELTA) maxEnemies = 6;
 
             const canSpawn = s.enemies.length < maxEnemies;
 
-            // 2. SPAWN LOGIC (Only if below limit and cooldown passed)
             if (canSpawn && Date.now() - s.lastSpawn > 1500 && !s.rescueMode) { 
                 let spawnPool = SHIPS.filter(s => !s.isAlien); 
                 if (difficulty >= 2) spawnPool = [...spawnPool, ...SHIPS.filter(s => s.isAlien)];
                 const selectedShip = spawnPool[Math.floor(Math.random() * spawnPool.length)] || SHIPS[0]; 
                 
-                // Spawn Count: Try to fill up to limit, but usually spawn 1 or 2
                 let spawnBatch = 1;
-                // Gama: Always pairs for Z pattern symmetry
                 if (quadrant === QuadrantType.GAMA) spawnBatch = 2; 
-                // Delta: 2 or 3 for X pattern
                 if (quadrant === QuadrantType.DELTA) spawnBatch = Math.random() > 0.5 ? 2 : 1;
 
-                // Ensure we don't exceed max with this batch
                 if (s.enemies.length + spawnBatch > maxEnemies) spawnBatch = maxEnemies - s.enemies.length;
 
                 if (spawnBatch > 0) {
                     const squadId = Math.floor(Math.random() * 100000);
                     
                     if (quadrant === QuadrantType.GAMA && spawnBatch === 2) {
-                        // GAMA: SYMMETRIC Z-PATTERN PAIR
-                        // One Left (Normal Z), One Right (Mirror Z)
                         const leftEnemy = new Enemy(width * 0.25, -50, 'fighter', selectedShip, difficulty, quadrant, squadId, 0, 'z');
                         const rightEnemy = new Enemy(width * 0.75, -50, 'fighter', selectedShip, difficulty, quadrant, squadId, 0, 'mirror_z');
                         s.enemies.push(leftEnemy, rightEnemy);
                     } 
                     else if (quadrant === QuadrantType.DELTA) {
-                        // DELTA: X-PATTERN CROSSING
-                        // Spawn at corners targeting center-opposite
                         for(let i=0; i<spawnBatch; i++) {
                              const side = Math.random() > 0.5 ? 'left' : 'right';
                              const startX = side === 'left' ? 50 : width - 50;
@@ -999,7 +664,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         }
                     }
                     else {
-                        // STANDARD SPAWN (Alpha/Beta)
                         const startX = Math.random() * (width - 200) + 100;
                         for(let i=0; i<spawnBatch; i++) {
                             const offset = i * 60; 
@@ -1019,16 +683,14 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             a.z += a.vz * speedMult; 
             a.ax += a.vax; a.ay += a.vay; a.az += a.vaz;
             if (Math.abs(a.z) < 50 && Math.hypot(a.x-s.px, a.y-s.py) < a.size + 30 && !s.rescueMode) {
-                takeDamage(20, 'collision');
+                takeDamage(s, 20, 'collision', shield, secondShield, setHud);
                 a.hp = 0;
-                // NEW: Use material property for distinct rock/ice/metal sounds
                 audioService.playImpact(a.material, 1.0);
-                createExplosion(a.x, a.y, '#aaa', 10, 'asteroid');
+                createExplosion(s, a.x, a.y, '#aaa', 10, 'asteroid');
             }
         }); 
         s.asteroids = s.asteroids.filter(a => a.y < height + 100 && a.hp > 0);
 
-        // Update Enemies with new separation logic passed
         s.enemies.forEach(e => { 
             if (s.rescueMode) { e.y += 3; if (e.type === 'boss') e.y += 2; } 
             else {
@@ -1038,11 +700,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     if (e.hp < e.maxHp * 0.5 && Math.random() < 0.3) s.particles.push({ x: e.x + (Math.random()-0.5)*20, y: e.y + (Math.random()-0.5)*20, vx: (Math.random()-0.5), vy: (Math.random()-0.5), life: 0.4 + Math.random()*0.3, size: 2 + Math.random()*3, color: '#ef4444', type: 'fire' });
                 }
                 if (difficulty >= 2 && e.type !== 'boss') {
-                    // Adjusted fire rates based on quadrant
-                    let fireInterval = 180; // Base: Alpha
+                    let fireInterval = 180; 
                     if (quadrant === QuadrantType.BETA) fireInterval = 140;
-                    if (quadrant === QuadrantType.GAMA) fireInterval = 90; // Increased
-                    if (quadrant === QuadrantType.DELTA) fireInterval = 45; // Max Threat
+                    if (quadrant === QuadrantType.GAMA) fireInterval = 90; 
+                    if (quadrant === QuadrantType.DELTA) fireInterval = 45; 
                     
                     if (e.config.isAlien) fireInterval = Math.floor(fireInterval * 0.8);
 
@@ -1058,11 +719,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
                 
                 if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < 60) {
-                    takeDamage(30, 'collision');
+                    takeDamage(s, 30, 'collision', shield, secondShield, setHud);
                     if(e.type !== 'boss') e.hp = 0;
-                    // NEW: Distinct Metal Impact Sound
                     audioService.playImpact('metal', 1.0);
-                    createExplosion(e.x, e.y, '#f00', 10);
+                    createExplosion(s, e.x, e.y, '#f00', 10);
                 }
             }
         });
@@ -1071,14 +731,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             const e = s.enemies[i];
             if (e.hp <= 0 || e.y > height + 200) {
                 if (e.hp <= 0 && !s.rescueMode) {
-                    createAreaDamage(e.x, e.y, 150, 50);
+                    createAreaDamage(s, e.x, e.y, 150, 50, shield, secondShield, setHud);
                     if (e.type === 'boss') {
                         s.bossDead = true; s.score += 10000 * difficulty;
                         audioService.playExplosion(e.x, 3.0, 'boss');
-                        createExplosion(e.x, e.y, '#a855f7', 30, 'boss');
+                        createExplosion(s, e.x, e.y, '#a855f7', 30, 'boss');
                         setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
                         
-                        // Boss Drop: 2 Drops, Pack of missiles/mines, exotic weapon/shield
                         for (let k=0; k<2; k++) {
                             const rand = Math.random();
                             let lootType = ''; let lootId = ''; let quantity = 1; let name = '';
@@ -1098,7 +757,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     } else {
                         audioService.playExplosion(e.x, 1.0, 'normal');
                         s.score += 100 * difficulty;
-                        // Enemy Drop: 50% chance, Ammo (100) or Energy Pack
                         if (Math.random() < 0.5) {
                             if (Math.random() < 0.5) {
                                 spawnLoot(e.x, e.y, 0, 'energy', 'energy', 'Energy Pack', 1);
@@ -1178,7 +836,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
             if (b.type === 'firework_shell' && b.detonationY !== undefined) {
                 if (Math.random() > 0.5) s.particles.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.5, size: 2, color: '#fbbf24' });
-                if (b.y <= b.detonationY) { b.life = 0; createExplosion(b.x, b.y, b.color, 25, 'fireworks'); createAreaDamage(b.x, b.y, 120, b.damage); audioService.playExplosion(0, 0.8, 'mine'); }
+                if (b.y <= b.detonationY) { b.life = 0; createExplosion(s, b.x, b.y, b.color, 25, 'fireworks'); createAreaDamage(s, b.x, b.y, 120, b.damage, shield, secondShield, setHud); audioService.playExplosion(0, 0.8, 'mine'); }
             }
             
             if (b.type === 'octo_shell') {
@@ -1186,10 +844,10 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     b.life = 0;
                     if (b.isMulticolor) {
                         for(let i=0; i<3; i++) {
-                             createExplosion(b.x + (Math.random()-0.5)*20, b.y + (Math.random()-0.5)*20, OCTO_COLORS[Math.floor(Math.random()*OCTO_COLORS.length)], 15, 'fireworks');
+                             createExplosion(s, b.x + (Math.random()-0.5)*20, b.y + (Math.random()-0.5)*20, OCTO_COLORS[Math.floor(Math.random()*OCTO_COLORS.length)], 15, 'fireworks');
                         }
                     } else {
-                        createExplosion(b.x, b.y, b.color, 30, 'fireworks'); 
+                        createExplosion(s, b.x, b.y, b.color, 30, 'fireworks'); 
                     }
                     
                     audioService.playExplosion(0, 1.2, 'mine'); 
@@ -1203,7 +861,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             
                             if (e.shieldLayers.length > 0 && Math.random() > 0.5) {
                                 e.shieldDisabledUntil = 300; 
-                                createExplosion(e.x, e.y, '#3b82f6', 10, 'standard'); 
+                                createExplosion(s, e.x, e.y, '#3b82f6', 10, 'standard'); 
                             }
                         }
                     });
@@ -1216,7 +874,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (age < 20) { if (isMissile) { b.vy -= (b.isEnemy ? -0.4 : 0.6); b.vx *= 0.95; } else { b.vx *= 0.99; } } 
                 else {
                     if (b.isEnemy) {
-                        // Enemy Missile Logic (Target Player)
                         if (!s.rescueMode) {
                             const dx = s.px - b.x; const dy = s.py - b.y; const dist = Math.hypot(dx, dy);
                             const turnRate = 0.05; const desiredSpeed = 10;
@@ -1248,21 +905,18 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             }
             if (b.weaponId === 'exotic_gravity_wave' && b.growthRate) {
-                s.bullets.forEach(other => { if (other.isEnemy && Math.abs(other.x - b.x) < b.width && Math.abs(other.y - b.y) < b.height) { other.isEnemy = false; other.vx = (Math.random()-0.5) * 5; other.vy = -Math.abs(other.vy) - 5; other.color = b.color; other.damage *= 2; createExplosion(other.x, other.y, b.color, 1); } });
+                s.bullets.forEach(other => { if (other.isEnemy && Math.abs(other.x - b.x) < b.width && Math.abs(other.y - b.y) < b.height) { other.isEnemy = false; other.vx = (Math.random()-0.5) * 5; other.vy = -Math.abs(other.vy) - 5; other.color = b.color; other.damage *= 2; createExplosion(s, other.x, other.y, b.color, 1); } });
             }
 
-            // COLLISION: Player Bullet vs Enemy Ordnance
-            // Allows player to shoot mines/missiles
             if (!b.isEnemy && (b.type === 'laser' || b.weaponId?.includes('exotic'))) {
                 s.bullets.forEach(enemyB => {
                     if (enemyB.life > 0 && enemyB.isEnemy && (enemyB.type.includes('missile') || enemyB.type.includes('mine'))) {
                         const dist = Math.hypot(b.x - enemyB.x, b.y - enemyB.y);
                         if (dist < 30) {
                             enemyB.life = 0;
-                            createExplosion(enemyB.x, enemyB.y, '#f97316', 15, 'mine');
-                            createAreaDamage(enemyB.x, enemyB.y, 80, 50);
+                            createExplosion(s, enemyB.x, enemyB.y, '#f97316', 15, 'mine');
+                            createAreaDamage(s, enemyB.x, enemyB.y, 80, 50, shield, secondShield, setHud);
                             audioService.playExplosion(0, 0.8, 'mine');
-                            // If player bullet is small, destroy it too. If beam/wave, maybe keep going.
                             if (!b.isOvercharge && b.width < 20) b.life = 0;
                         }
                     }
@@ -1270,16 +924,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             }
 
             if (b.isEnemy && !s.rescueMode) { 
-                if (Math.hypot(b.x-s.px, b.y-s.py) < 30) { takeDamage(b.damage, b.type); b.life = 0; createExplosion(b.x, b.y, b.color, 3); } 
+                if (Math.hypot(b.x-s.px, b.y-s.py) < 30) { takeDamage(s, b.damage, b.type, shield, secondShield, setHud); b.life = 0; createExplosion(s, b.x, b.y, b.color, 3); } 
             } else if (!b.isEnemy) { 
                 let hit = false; 
                 s.enemies.forEach(e => { 
                     const isOrdnance = b.type.includes('missile') || b.type.includes('mine');
                     const hullRadius = e.type === 'boss' ? 80 : 40;
-                    const shieldRadius = e.shieldLayers.length > 0 ? (hullRadius + 20) : 0; // Shield slightly larger than hull
+                    const shieldRadius = e.shieldLayers.length > 0 ? (hullRadius + 20) : 0; 
                     const zDist = Math.abs((b.z || 0) - e.z);
 
-                    // Check if bullet is near the enemy at all
                     const dist2d = Math.hypot(b.x-e.x, b.y-e.y);
                     
                     if (dist2d < (shieldRadius || hullRadius) + 20 && (!isOrdnance || zDist < 80)) { 
@@ -1293,65 +946,54 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             effectiveDamage *= (b.life / 50); 
                         }
 
-                        // Calculate angle to bullet relative to enemy center
                         const angleToBullet = Math.atan2(b.y - e.y, b.x - e.x);
                         let normAngle = angleToBullet;
                         if (normAngle < 0) normAngle += Math.PI * 2;
 
                         if (b.type === 'octo_shell') {
-                            // Octo shells explode on contact with anything
                             if (dist2d < (shieldRadius || hullRadius)) {
                                 hit = true;
                                 if (b.isOvercharge) {
-                                    createExplosion(b.x, b.y, b.color, 40, 'fireworks'); 
+                                    createExplosion(s, b.x, b.y, b.color, 40, 'fireworks'); 
                                     audioService.playExplosion(0, 1.5, 'emp'); 
-                                    createAreaDamage(b.x, b.y, 200, b.damage);
+                                    createAreaDamage(s, b.x, b.y, 200, b.damage, shield, secondShield, setHud);
                                 } else {
-                                    // Try to hit shield first, then hull
                                     const shieldHitIdx = e.getHitShieldIndex(normAngle);
                                     if (shieldHitIdx !== -1 && dist2d > hullRadius) {
                                          e.damageShield(shieldHitIdx, effectiveDamage, 'projectile', true, false, false);
                                     } else {
                                          e.damageHull(effectiveDamage, 'projectile', true, false);
                                     }
-                                    createExplosion(b.x, b.y, b.color, 5, 'fireworks');
+                                    createExplosion(s, b.x, b.y, b.color, 5, 'fireworks');
                                 }
                             }
                         } else {
-                            // 1. Check Shield Collision FIRST (Outer Layer)
-                            // Only if within shield radius but outside hull radius (approx)
                             if (shieldRadius > 0 && dist2d < shieldRadius + b.width/2 && dist2d > hullRadius - 5) {
                                 const shieldHitIdx = e.getHitShieldIndex(normAngle);
                                 if (shieldHitIdx !== -1) {
-                                    // Hit a shield segment
                                     e.damageShield(shieldHitIdx, effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge, !!b.isEmp);
                                     hit = true;
-                                    createExplosion(b.x, b.y, b.color, 2, 'shield_effect'); 
-                                    // NEW: Distinct Shield Impact
+                                    createExplosion(s, b.x, b.y, b.color, 2, 'shield_effect'); 
                                     audioService.playImpact('shield', 0.8);
                                 }
-                                // If -1, it passed through a gap in the shield! Bullet continues.
                             }
 
-                            // 2. Check Hull Collision (Inner Layer)
-                            // Only if it reaches the hull
                             if (!hit && dist2d < hullRadius) {
                                 e.damageHull(effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge);
                                 hit = true;
-                                createExplosion(b.x, b.y, '#f97316', 4, 'smoke'); 
+                                createExplosion(s, b.x, b.y, '#f97316', 4, 'smoke'); 
                                 if (b.isEmp || b.type.includes('emp') || b.type.includes('red')) { 
                                     audioService.playExplosion(0, 1.2, 'emp'); 
                                 } 
                                 else if (b.type.includes('missile')) { 
                                     audioService.playExplosion(0, 0.8, 'normal'); 
-                                    createAreaDamage(b.x, b.y, 100, b.damage / 2);
+                                    createAreaDamage(s, b.x, b.y, 100, b.damage / 2, shield, secondShield, setHud);
                                 } 
                                 else if (b.type.includes('mine')) { 
                                     audioService.playExplosion(0, 1.2, 'mine'); 
-                                    createAreaDamage(b.x, b.y, 150, b.damage); 
+                                    createAreaDamage(s, b.x, b.y, 150, b.damage, shield, secondShield, setHud); 
                                 }
                                 else {
-                                    // NEW: Standard Metallic Hull Impact
                                     audioService.playImpact('metal', 0.7);
                                 }
                             }
@@ -1372,12 +1014,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                              if (b.isOvercharge) {
                                 dmg *= 2.0;
                                 hit = true;
-                                createExplosion(b.x, b.y, b.color, 40, 'fireworks'); 
+                                createExplosion(s, b.x, b.y, b.color, 40, 'fireworks'); 
                                 audioService.playExplosion(0, 1.5, 'emp'); 
-                                createAreaDamage(b.x, b.y, 200, b.damage);
+                                createAreaDamage(s, b.x, b.y, 200, b.damage, shield, secondShield, setHud);
                              } else {
                                 hit = true;
-                                createExplosion(b.x, b.y, b.color, 5, 'fireworks');
+                                createExplosion(s, b.x, b.y, b.color, 5, 'fireworks');
                              }
                         }
 
@@ -1385,17 +1027,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         if (!hit) hit = true; 
                         
                         if (dmg > 5 && b.type !== 'octo_shell') { 
-                            createExplosion(b.x, b.y, '#aaa', 5, 'asteroid');
+                            createExplosion(s, b.x, b.y, '#aaa', 5, 'asteroid');
                             if (b.type.includes('missile')) { 
                                 audioService.playExplosion(0, 0.8, 'normal'); 
-                                createAreaDamage(b.x, b.y, 100, b.damage / 2);
+                                createAreaDamage(s, b.x, b.y, 100, b.damage / 2, shield, secondShield, setHud);
                             } 
                             else if (b.type.includes('mine')) { 
                                 audioService.playExplosion(0, 1.2, 'mine'); 
-                                createAreaDamage(b.x, b.y, 150, b.damage); 
+                                createAreaDamage(s, b.x, b.y, 150, b.damage, shield, secondShield, setHud); 
                             } 
                             else {
-                                // NEW: Distinct Asteroid Material Impact
                                 audioService.playImpact(a.material === 'ice' ? 'ice' : 'rock', 0.6);
                             }
                         }
@@ -1408,8 +1049,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         s.bullets = s.bullets.filter(b => {
             if (b.life <= 0) {
                 if (b.type.includes('mine')) {
-                    createAreaDamage(b.x, b.y, 150, b.damage); 
-                    createExplosion(b.x, b.y, b.color, 5);
+                    createAreaDamage(s, b.x, b.y, 150, b.damage, shield, secondShield, setHud); 
+                    createExplosion(s, b.x, b.y, b.color, 5);
                     if (b.type.includes('emp') || b.type.includes('red')) { audioService.playExplosion(0, 1.2, 'emp'); } 
                     else { audioService.playExplosion(0, 1.2, 'mine'); }
                 }
@@ -1422,7 +1063,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             const dx = s.px - l.x; const dy = s.py - l.y; const dist = Math.hypot(dx, dy);
             if (dist < 175) { l.isBeingPulled = true; l.x += dx * 0.08; l.y += dy * 0.08; } 
             else { l.isBeingPulled = false; l.y += 2 * worldSpeedFactor; l.x += l.vx; l.y += l.vy; }
-            if (dist < 30) {
+            if (dist < 30 && !l.isPulled) {
                 l.isPulled = true; audioService.playSfx('buy');
                 if (l.type === 'fuel') { s.fuel = Math.min(maxFuel, s.fuel + (l.quantity || 1)); setHud(h => ({...h, alert: `+${l.quantity || 1} FUEL`, alertType: 'success'})); }
                 else if (l.type === 'water') { s.water = Math.min(maxWater, s.water + (l.quantity || 20)); setHud(h => ({...h, alert: `+${l.quantity || 20} WATER`, alertType: 'success'})); }
@@ -1436,92 +1077,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 else { s.score += 500; }
             }
         });
-        s.loot = s.loot.filter(l => !l.isPulled && (l.y < height + 100 || l.isBeingPulled));
+        s.loot = s.loot.filter(l => !l.isPulled && l.y < height + 100);
+        
         s.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; }); s.particles = s.particles.filter(p => p.life > 0);
 
-        const shakeX = (Math.random() - 0.5) * s.shakeX; const shakeY = (Math.random() - 0.5) * s.shakeY;
-        ctx.save(); ctx.translate(shakeX, shakeY);
-        ctx.fillStyle = '#000'; ctx.fillRect(-shakeX, -shakeY, width, height); 
-        ctx.fillStyle = '#fff'; s.stars.forEach(st => { st.y += st.s * 0.5 * worldSpeedFactor; if(st.y > height) st.y = 0; ctx.globalAlpha = Math.random() * 0.5 + 0.3; ctx.beginPath(); ctx.arc(st.x, st.y, st.s, 0, Math.PI*2); ctx.fill(); }); ctx.globalAlpha = 1;
-        const entities = [...s.asteroids.map(a => ({type: 'ast', z: a.z, obj: a})), ...s.enemies.map(e => ({type: 'enemy', z: e.z, obj: e})), ...s.loot.map(l => ({type: 'loot', z: l.z, obj: l})), {type: 'player', z: 0, obj: null}].sort((a,b) => a.z - b.z);
-        const lightVec = { x: 0.8, y: -0.8, z: 0.8 }; const len = Math.hypot(lightVec.x, lightVec.y, lightVec.z); lightVec.x /= len; lightVec.y /= len; lightVec.z /= len;
-        
-        entities.forEach(item => {
-            const scale = 1 + (item.z / 1000);
-            if (item.type === 'ast') {
-                const a = item.obj as Asteroid;
-                ctx.save(); ctx.translate(a.x, a.y); ctx.scale(scale, scale); 
-                const cosX = Math.cos(a.ax), sinX = Math.sin(a.ax); const cosY = Math.cos(a.ay), sinY = Math.sin(a.ay); ctx.rotate(a.az); 
-                a.faces.forEach(f => { let nx = f.normal.x; let ny = f.normal.y; let nz = f.normal.z; let ty = ny*cosX - nz*sinX; let tz = ny*sinX + nz*cosX; ny = ty; nz = tz; let tx = nx*cosY + nz*sinY; tz = -nx*sinY + nz*cosY; nx = tx; nz = tz; const cosZ = Math.cos(a.az), sinZ = Math.sin(a.az); tx = nx*cosZ - ny*sinZ; ty = nx*sinZ + ny*cosZ; nx = tx; ny = ty; if (nz <= 0) return; const dot = Math.max(0, nx*lightVec.x + ny*lightVec.y + nz*lightVec.z); const lightIntensity = 0.2 + (0.8 * dot); ctx.fillStyle = mixColor('#000000', a.color, lightIntensity); ctx.strokeStyle = mixColor('#000000', a.color, lightIntensity * 1.2); ctx.lineWidth = 1; ctx.beginPath(); f.indices.forEach((idx, i) => { const v = a.vertices[idx]; let vx = v.x; let vy = v.y; let vz = v.z; let rvy = vy*cosX - vz*sinX; let rvz = vy*sinX + vz*cosX; vy = rvy; vz = rvz; let rvx = vx*cosY + vz*sinY; rvz = -vx*sinY + vz*cosY; vx = rvx; vz = rvz; if (i===0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy); }); ctx.closePath(); ctx.fill(); ctx.stroke(); }); ctx.restore();
-            } else if (item.type === 'player') {
-                ctx.translate(s.px, s.py); 
-                
-                // VISUAL MOVEMENT OBJECT FOR DRAWING
-                // If boss phase, force 'up' (jets) to false to hide them as requested
-                // Otherwise pass actual movement state
-                const visualMovement = { 
-                    ...s.movement, 
-                    up: s.phase === 'boss' ? false : s.movement.up 
-                };
-
-                drawShip(ctx, { 
-                    config: activeShip.config, 
-                    fitting: activeShip.fitting, 
-                    color: activeShip.color, 
-                    wingColor: activeShip.wingColor, 
-                    cockpitColor: activeShip.cockpitColor, 
-                    gunColor: activeShip.gunColor, 
-                    secondaryGunColor: activeShip.secondaryGunColor, 
-                    gunBodyColor: activeShip.gunBodyColor, 
-                    engineColor: activeShip.engineColor, 
-                    nozzleColor: activeShip.nozzleColor, 
-                    equippedWeapons: activeShip.fitting.weapons,
-                    weaponFireTimes: s.weaponFireTimes,
-                    weaponHeat: s.weaponHeat
-                }, true, visualMovement, s.usingWater, s.rescueMode);
-                
-                // SHIELDS - Only draw if enabled
-                if (s.shieldsEnabled && (s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) { 
-                    if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
-                    if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
-                }
-            } else if (item.type === 'enemy') {
-                const e = item.obj as Enemy; ctx.translate(e.x, e.y); ctx.scale(scale, scale); ctx.rotate(Math.PI); const alienCols = getAlienColors(quadrant); drawShip(ctx, { config: e.config, fitting: null, color: e.type==='boss'?'#a855f7':alienCols.hull, wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, gunColor: '#ef4444', equippedWeapons: e.equippedWeapons }, false);
-                if (e.shieldLayers.length > 0) { 
-                    e.shieldLayers.forEach((layer, idx) => { 
-                        if (layer.current <= 0) return; 
-                        const radius = 48 + (idx * 8); const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; ctx.beginPath();
-                        if (layer.type === 'full') { if (layer.wobble > 0.01) { const steps = 40; const wobbleFreq = 8; const wobbleAmp = 5 * layer.wobble; const timeOffset = s.frame * 0.5; for(let i=0; i<=steps; i++) { const angle = (i / steps) * Math.PI * 2; const rOff = Math.sin(angle * wobbleFreq + timeOffset) * wobbleAmp; const r = radius + rOff; const x = Math.cos(angle) * r; const y = Math.sin(angle) * r; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); } else { ctx.arc(0, 0, radius, 0, Math.PI * 2); } } else if (layer.type === 'front') { const arcRad = (140 * Math.PI) / 180; const start = (-Math.PI / 2) - (arcRad / 2) + layer.rotation; const end = (-Math.PI / 2) + (arcRad / 2) + layer.rotation; ctx.arc(0, 0, radius, start, end); } else if (layer.type === 'tri') { const segSize = Math.PI / 2; const gapSize = Math.PI / 6; for (let k = 0; k < 3; k++) { const start = layer.rotation + (k * (segSize + gapSize)); const end = start + segSize; ctx.moveTo(Math.cos(start) * radius, Math.sin(start) * radius); ctx.arc(0, 0, radius, start, end); } } else if (layer.type === 'hex') { const segSize = Math.PI / 4; const gapSize = Math.PI / 12; for (let k = 0; k < 6; k++) { const start = layer.rotation + (k * (segSize + gapSize)); const end = start + segSize; ctx.moveTo(Math.cos(start) * radius, Math.sin(start) * radius); ctx.arc(0, 0, radius, start, end); } }
-                        ctx.stroke(); if (layer.type === 'full') { ctx.fillStyle = layer.color; ctx.globalAlpha = opacity * 0.1; ctx.fill(); } ctx.shadowBlur = 0; ctx.globalAlpha = 1; 
-                    }); 
-                }
-            } else if (item.type === 'loot') {
-                const l = item.obj as Loot; ctx.translate(l.x, l.y); ctx.scale(scale, scale); if (l.isBeingPulled) { ctx.strokeStyle = 'rgba(192, 210, 255, 0.8)'; ctx.lineWidth = 2; ctx.shadowColor = '#fff'; ctx.shadowBlur = 5; ctx.beginPath(); ctx.arc(0, 0, 22, 0, Math.PI * 2); ctx.stroke(); ctx.shadowBlur = 0; ctx.save(); const dx = s.px - l.x; const dy = s.py - l.y; const dist = Math.hypot(dx, dy); const angle = Math.atan2(dy, dx); ctx.rotate(angle); const spacing = 15; const count = Math.ceil(dist / spacing); const speed = 4; const offset = (s.frame * speed) % spacing; ctx.lineWidth = 2; for (let i = 0; i <= count; i++) { const d = i * spacing + offset; if (d > 0 && d < dist) { const alpha = Math.min(1, Math.sin((d/dist)*Math.PI)) * 0.6; ctx.strokeStyle = `rgba(135, 206, 250, ${alpha})`; ctx.beginPath(); ctx.moveTo(d, -7); ctx.quadraticCurveTo(d - 5, 0, d, 7); ctx.stroke(); } } ctx.restore(); } ctx.fillStyle = '#fbbf24'; ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10; ctx.beginPath(); ctx.rect(-8, -8, 16, 16); ctx.fill(); ctx.shadowBlur = 0; if (l.type === 'water') { ctx.fillStyle = '#3b82f6'; ctx.fillRect(-8,-8,16,16); } else if (l.type === 'energy') { ctx.fillStyle = '#22d3ee'; ctx.fillRect(-8,-8,16,16); } ctx.font = "900 10px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = (l.type === 'water' || l.type === 'energy') ? '#000' : '#000'; if (l.type === 'water') ctx.fillStyle = '#fff'; let letter = "?"; if (l.type === 'fuel') letter = "F"; else if (l.type === 'water') letter = "W"; else if (l.type === 'energy') letter = "E"; else if (l.type === 'repair' || l.type === 'nanite') letter = "+"; else if (l.type === 'missile') letter = "M"; else if (l.type === 'mine') letter = "X"; else if (l.type === 'ammo') letter = "A"; else if (l.type === 'weapon') letter = "G"; else if (l.type === 'shield') letter = "S"; ctx.fillText(letter, 0, 1);
-            }
-            ctx.setTransform(1, 0, 0, 1, shakeX, shakeY); 
-        });
-
-        s.bullets.forEach(b => { 
-            const scale = 1 + (b.z || 0) / 1000; ctx.save(); ctx.translate(b.x, b.y); ctx.scale(scale, scale);
-            if (b.type === 'missile' || b.type === 'missile_emp' || b.type === 'missile_enemy') { ctx.scale(1.2, 1.2); const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); ctx.fillStyle = b.finsColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill(); ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.fillRect(-3, -6, 6, 14); ctx.fillStyle = b.headColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill(); } 
-            else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red' || b.type === 'mine_enemy') { const radius = b.width / 2; ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5; ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = b.color; ctx.lineWidth = 2; const spikeCount = 8; const spikeLen = radius + 4; for (let i = 0; i < spikeCount; i++) { const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius; const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); } }
-            else if (b.type === 'octo_shell') { ctx.save(); ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.glowIntensity || 20; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); if (!b.isOvercharge) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(0, 0, b.width*0.8, 0, Math.PI*2); ctx.fill(); } ctx.restore(); } 
-            else if (b.weaponId === 'exotic_octo_burst') { ctx.save(); ctx.translate(b.x, b.y); ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.glowIntensity || 20; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); ctx.restore(); } 
-            else if (b.weaponId === 'exotic_gravity_wave') { ctx.strokeStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = 15; ctx.lineCap = 'round'; const count = 5; const spacing = 6; for(let i=0; i<count; i++) { const arcW = b.width * (1 - i * 0.15); const yOff = i * spacing; ctx.globalAlpha = Math.max(0, 0.8 - (i * 0.15)); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, yOff, arcW/2, Math.PI * (7/6), Math.PI * (11/6)); ctx.stroke(); } ctx.globalAlpha = 1; ctx.shadowBlur = 0; } 
-            else if (b.weaponId === 'exotic_star_shatter') { ctx.fillStyle = b.isOvercharge ? '#ffffff' : '#fbbf24'; ctx.shadowColor = b.isOvercharge ? '#facc15' : '#f97316'; const blurScale = b.width / 4; ctx.shadowBlur = b.isOvercharge ? Math.min(100, 20 + blurScale) : 10; const rot = s.frame * 0.15 + (b.x * 0.01); ctx.rotate(rot); ctx.beginPath(); const baseSpikes = 6; const maxSpikes = 64; const ratio = (b.width - (b.initialWidth || 4)) / ((b.initialWidth || 4) * 2); const spikes = Math.floor(Math.min(maxSpikes, Math.max(baseSpikes, baseSpikes + (ratio * (maxSpikes - baseSpikes))))); const outer = b.width; const inner = b.width * 0.4; for(let i=0; i<spikes; i++) { const angleStep = Math.PI / spikes; const angle = i * 2 * Math.PI / spikes; let x = Math.cos(angle) * outer; let y = -Math.sin(angle) * outer; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); x = Math.cos(angle + angleStep) * inner; y = -Math.sin(angle + angleStep) * inner; ctx.lineTo(x, y); } ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0; } 
-            else if (b.weaponId === 'exotic_flamer') { ctx.globalAlpha = b.opacity !== undefined ? b.opacity : 1.0; ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.isOvercharge ? 30 : b.width; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.globalAlpha = (b.opacity !== undefined ? b.opacity : 1.0) * 0.6; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0; ctx.shadowBlur = 0; }
-            else if (b.weaponId === 'exotic_rainbow_spread') { const radius = b.width / 2; const maxRad = b.isOvercharge ? 300 : 100; const opacity = Math.max(0.1, 1.0 - (radius / maxRad)); ctx.globalAlpha = opacity; if (b.isOvercharge) { ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 30; const colors = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7']; colors.forEach((c, i) => { const r = radius - (i * 3); if (r > 0) { ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.stroke(); } }); ctx.shadowBlur = 0; } else { const rot = Math.atan2(b.vy, b.vx); ctx.rotate(rot); ctx.shadowColor = b.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity * 0.7; ctx.strokeStyle = b.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, radius, -Math.PI/2, Math.PI/2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, radius * 0.7, -Math.PI/2, Math.PI/2); ctx.stroke(); ctx.shadowBlur = 0; } ctx.globalAlpha = 1; } 
-            else if (b.weaponId === 'exotic_electric') { ctx.strokeStyle = '#00ffff'; ctx.shadowColor = '#00ffff'; ctx.shadowBlur = b.isOvercharge ? 30 : 10; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, -b.height/2); let ly = -b.height/2; while(ly < b.height/2) { ly += 5; ctx.lineTo((Math.random()-0.5)*b.width, ly); } ctx.stroke(); ctx.shadowBlur = 0; } 
-            else if (b.weaponId === 'exotic_wave') { ctx.strokeStyle = b.color; ctx.lineWidth = 3; ctx.shadowColor = b.color; ctx.shadowBlur = b.isOvercharge ? 30 : 5; ctx.beginPath(); ctx.arc(0, 0, b.width, 0, Math.PI*2); ctx.stroke(); ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(0, 0, b.width * 0.6, 0, Math.PI*2); ctx.stroke(); ctx.globalAlpha = 1; ctx.shadowBlur = 0; } 
-            else if (b.weaponId === 'exotic_plasma_orb') { const grad = ctx.createRadialGradient(0,0, b.width*0.2, 0,0, b.width); grad.addColorStop(0, '#fff'); grad.addColorStop(0.5, b.color); grad.addColorStop(1, 'transparent'); ctx.fillStyle = grad; ctx.shadowColor = b.color; ctx.shadowBlur = b.isOvercharge ? 30 : 0; ctx.beginPath(); ctx.arc(0,0, b.width, 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; } 
-            else if (b.type === 'laser') { if (Math.abs(b.vx) > 0.1) { const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); } ctx.fillStyle = b.color; if (b.isOvercharge) { ctx.lineCap = 'round'; ctx.lineWidth = b.width; ctx.strokeStyle = b.color; ctx.shadowBlur = b.glowIntensity || 10; ctx.shadowColor = b.color; ctx.beginPath(); ctx.moveTo(0, -b.height/2); ctx.lineTo(0, b.height/2); ctx.stroke(); ctx.lineWidth = b.width/2; ctx.strokeStyle = '#fff'; ctx.shadowBlur = 0; ctx.stroke(); } else { ctx.fillRect(-b.width/2, -b.height/2, b.width, b.height); } } 
-            else if (b.type === 'firework_shell') { const trailLen = 20; const trailGrad = ctx.createLinearGradient(0,0,0, trailLen); trailGrad.addColorStop(0, '#ffffff'); trailGrad.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = trailGrad; ctx.fillRect(-1, 0, 2, trailLen); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(0,0, 2, 0, Math.PI*2); ctx.fill(); } 
-            else { const angle = Math.atan2(b.vy, b.vx) - Math.PI/2; ctx.rotate(angle); const trailLen = 30 + Math.random() * 10; const trailWidth = b.width; const trailGrad = ctx.createLinearGradient(0, 0, 0, -trailLen); trailGrad.addColorStop(0, 'rgba(200, 200, 200, 0.8)'); trailGrad.addColorStop(0.5, 'rgba(150, 150, 150, 0.4)'); trailGrad.addColorStop(1, 'rgba(100, 100, 100, 0)'); ctx.fillStyle = trailGrad; ctx.beginPath(); ctx.moveTo(-trailWidth/2, 0); ctx.lineTo(trailWidth/2, 0); ctx.lineTo(0, -trailLen); ctx.fill(); const headGrad = ctx.createRadialGradient(0, 0, 1, 0, 0, b.width/2); headGrad.addColorStop(0, '#e2e8f0'); headGrad.addColorStop(1, '#78350f'); ctx.fillStyle = headGrad; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(-b.width/4, -b.width/4, b.width/6, 0, Math.PI*2); ctx.fill(); } ctx.restore(); 
-        });
-        
-        s.particles.forEach(p => { ctx.save(); ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.translate(p.x, p.y); ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill(); ctx.restore(); });
-        if (targetRef.current) { ctx.save(); ctx.strokeStyle = '#10b981'; ctx.lineWidth = 2; const tSize = 15; const tx = targetRef.current.x; const ty = targetRef.current.y; const rot = s.frame * 0.1; ctx.translate(tx, ty); ctx.rotate(rot); ctx.beginPath(); ctx.moveTo(-tSize, -tSize/2); ctx.lineTo(-tSize, -tSize); ctx.lineTo(-tSize/2, -tSize); ctx.moveTo(tSize, -tSize/2); ctx.lineTo(tSize, -tSize); ctx.lineTo(tSize/2, -tSize); ctx.moveTo(-tSize, tSize/2); ctx.lineTo(-tSize, tSize); ctx.lineTo(-tSize/2, tSize); ctx.moveTo(tSize, tSize/2); ctx.lineTo(tSize, tSize); ctx.lineTo(tSize/2, tSize); ctx.stroke(); ctx.fillStyle = `rgba(16, 185, 129, ${0.5 + Math.sin(s.frame * 0.2) * 0.3})`; ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI*2); ctx.fill(); ctx.restore(); }
-        ctx.restore();
+        renderGame(ctx, s, width, height, activeShip, quadrant);
 
         if (s.frame % 10 === 0) { 
             let totalMagAmmo = 0; let reloading = false; Object.values(s.gunStates).forEach((g: any) => { totalMagAmmo += g.mag; if (g.reloadTimer > 0) reloading = true; });
@@ -1536,33 +1096,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     };
   }, []);
 
-  const takeDamage = (amt: number, type: string = 'generic') => {
-      const s = state.current;
-      if (s.rescueMode) return;
-      s.shakeX = 15; s.shakeY = 15;
-      let activeShieldColor = ''; if (s.sh1 > 0 && shield) activeShieldColor = shield.color; else if (s.sh2 > 0 && secondShield) activeShieldColor = secondShield.color;
-      let finalDmg = 0;
-      
-      // CHECK SHIELD TOGGLE
-      const shieldActive = s.shieldsEnabled && (s.sh1 > 0 || s.sh2 > 0);
-
-      if (shieldActive) {
-          finalDmg = calculateDamage(amt, type, 'shield', activeShieldColor);
-          if (s.sh1 > 0) { s.sh1 = Math.max(0, s.sh1 - finalDmg); } else { s.sh2 = Math.max(0, s.sh2 - finalDmg); }
-          s.wasShieldHit = true; 
-      } else {
-          // Direct Hull Hit
-          finalDmg = calculateDamage(amt, type, 'hull'); s.hp = Math.max(0, s.hp - finalDmg);
-          if (s.hp <= 0) {
-              const s = state.current; s.hp = 0; s.rescueMode = true; s.asteroids = []; s.bullets = [];
-              audioService.updateReactorHum(false, 0); 
-              createExplosion(s.px, s.py, '#ef4444', 50, 'boss'); 
-              audioService.playExplosion(0, 2.0, 'player'); 
-              setHud(h => ({...h, alert: "CRITICAL FAILURE - CAPSULE EJECTED", alertType: 'alert'}));
-          }
-      }
-  };
-
   return (
     <div 
         className="relative w-full h-full bg-black overflow-hidden cursor-crosshair touch-none select-none"
@@ -1571,204 +1104,27 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     >
         <canvas ref={canvasRef} className="block w-full h-full" />
         
-        {showExitDialog && (
-            <div className="fixed inset-0 z-[6000] bg-black/80 flex items-center justify-center backdrop-blur-sm">
-                <div className="bg-zinc-900 border-2 border-red-500 p-8 rounded-xl flex flex-col items-center gap-6 shadow-[0_0_50px_rgba(220,38,38,0.5)] max-w-sm w-full">
-                    <h2 className="text-3xl font-black text-red-500 uppercase tracking-widest retro-font">GAME PAUSED</h2>
-                    <div className="flex flex-col w-full gap-3">
-                        <button 
-                            onClick={() => { 
-                                state.current.isExitDialogOpen = false; 
-                                setShowExitDialog(false); 
-                                togglePause(false); 
-                            }} 
-                            className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-widest rounded border border-emerald-400 transition-all shadow-lg"
-                        >
-                            RESUME
-                        </button>
-                        <button 
-                            onClick={handleExit} 
-                            className="w-full py-4 bg-zinc-800 hover:bg-red-900/50 text-zinc-400 hover:text-red-200 font-black uppercase tracking-widest rounded border border-zinc-600 hover:border-red-500 transition-all"
-                        >
-                            EXIT GAME
-                        </button>
-                    </div>
-                </div>
-            </div>
-        )}
-
-        {/* HUD LAYOUT */}
-        <div className="absolute inset-0 pointer-events-none p-2 sm:p-4 flex flex-col justify-between z-10">
-            {/* PAUSE OVERLAY (Standard) - Only show if Exit Dialog is NOT open */}
-            {hud.isPaused && !showExitDialog && (
-                <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/50 backdrop-blur-sm pointer-events-none">
-                    <h2 className="text-4xl md:text-6xl font-black text-white uppercase tracking-widest drop-shadow-lg mb-4 animate-pulse">GAME PAUSED</h2>
-                    <p className="text-sm md:text-xl text-emerald-400 font-mono uppercase tracking-[0.2em] bg-black/80 px-4 py-2 rounded border border-emerald-500/50">Press P to Resume</p>
-                </div>
-            )}
-
-            {/* TOP BAR */}
-            <div className="flex justify-between items-start pointer-events-auto relative z-[60]">
-                <div className="flex flex-col gap-1 w-32 sm:w-48">
-                    <div className="flex flex-col gap-1">
-                        {/* HP BAR (HORIZONTAL) */}
-                        <LEDMeter value={hud.hp} max={100} colorStart="#10b981" label="H" vertical={false} />
-                        {/* SHIELD BARS (HORIZONTAL) */}
-                        {hud.sh1 > 0 && <LEDMeter value={hud.sh1} max={shield?.capacity || 100} colorStart={hud.shieldsOnline ? (shield?.color || '#3b82f6') : '#52525b'} label="S" vertical={false} />}
-                        {hud.sh2 > 0 && <LEDMeter value={hud.sh2} max={secondShield?.capacity || 100} colorStart={hud.shieldsOnline ? (secondShield?.color || '#a855f7') : '#52525b'} label="S" vertical={false} />}
-                    </div>
-                </div>
-
-                {!hud.boss && (
-                    <div className="absolute left-1/2 -translate-x-1/2 top-0 flex flex-col items-center bg-black/60 px-6 py-2 rounded-b-xl border-x border-b border-zinc-800/50 backdrop-blur-sm pointer-events-none">
-                        <div className={`${hudTimer} font-mono font-black text-red-500 tabular-nums tracking-widest drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] leading-none`}>
-                            {Math.floor(hud.timer / 60).toString().padStart(2, '0')}:{Math.floor(hud.timer % 60).toString().padStart(2, '0')}
-                        </div>
-                        <div className={`${hudScore} font-black text-emerald-400 drop-shadow-[0_0_5px_rgba(16,185,129,0.5)] tabular-nums mt-1 leading-none`}>
-                            {Math.floor(hud.score).toLocaleString()}
-                        </div>
-                    </div>
-                )}
-
-                <div className="bg-zinc-900/80 backdrop-blur-md border border-zinc-700 p-2 rounded-lg flex flex-col items-end gap-2 shadow-lg min-w-[100px]">
-                    <div className="flex flex-col sm:flex-row gap-2 w-full">
-                        <button onClick={(e) => {
-                            e.stopPropagation();
-                            e.currentTarget.blur();
-                            togglePause();
-                        }} className="flex-1 py-2 sm:px-4 bg-zinc-800 border border-zinc-600 text-white text-[10px] font-bold hover:bg-zinc-700 hover:border-white transition-colors uppercase">
-                            {hud.isPaused ? "RESUME" : "PAUSE"}
-                        </button>
-                        <button onClick={(e) => {
-                            e.stopPropagation();
-                            e.currentTarget.blur();
-                            const s = state.current;
-                            onGameOver(false, hud.score, true, { health: s.hp, fuel: s.fuel, water: s.water });
-                        }} className="flex-1 py-2 sm:px-4 bg-red-900/50 border border-red-600 text-red-200 text-[10px] font-bold hover:bg-red-800 transition-colors uppercase">
-                            ABORT
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {hud.boss && (
-                <div className="absolute top-20 left-1/2 -translate-x-1/2 w-64 flex flex-col items-center pointer-events-none">
-                    <div className="w-full flex justify-between text-[9px] font-black uppercase text-red-500 mb-1">
-                        <span>{hud.boss.config.name}</span>
-                        <span>{Math.ceil(hud.boss.hp)}</span>
-                    </div>
-                    <div className="w-full h-3 bg-black border-2 border-red-900 rounded-sm overflow-hidden mb-1 relative z-10">
-                        <div className="h-full bg-red-600 transition-all duration-200" style={{ width: `${Math.max(0, (hud.boss.hp / hud.boss.maxHp) * 100)}%` }} />
-                    </div>
-                    <div className="w-full flex flex-col gap-[1px]">
-                        {hud.boss.shieldLayers.map((l: any, i: number) => (
-                            <div key={i} className="w-full h-1.5 bg-black border border-zinc-800 relative">
-                                <div className="h-full transition-all duration-200 opacity-80" style={{ width: `${(l.current/l.max)*100}%`, backgroundColor: l.color }} />
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
-            {/* LEFT HUD: CAPACITOR (C) & ENERGY (E) */}
-            <div className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
-                {!hud.rescueMode && <LEDMeter value={hud.overload} max={100} colorStart={hud.capacitorLocked ? '#52525b' : '#10b981'} label={hud.capacitorLocked ? "LCK" : "C"} vertical={true} reverseColor={true} />}
-                <LEDMeter value={hud.energy} max={maxEnergy} colorStart="#22d3ee" label="E" vertical={true} />
-            </div>
-
-            {/* RIGHT HUD: FUEL & WATER - F & W */}
-            <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
-                <LEDMeter value={hud.fuel} max={maxFuel} colorStart="#f97316" label="F" vertical={true} />
-                <LEDMeter value={hud.water} max={maxWater} colorStart="#3b82f6" label="W" vertical={true} />
-            </div>
-
-            {/* BOTTOM BAR - Mobile Optimization: Allow wrap if needed, shrink padding/gap */}
-            <div className="absolute bottom-2 sm:bottom-4 left-0 right-0 flex justify-center items-end pointer-events-auto">
-                <div className="flex justify-between items-end w-full px-2 sm:px-4 gap-2">
-                    
-                    {/* LEFT CORNER: MAIN GUN & AMMO */}
-                    <div className="flex items-end gap-2 shrink-0">
-                        {hasGuns && !hud.rescueMode && (
-                            <HudButton 
-                                label={hud.powerMode ? "POWER" : "NORMAL"} 
-                                subLabel={hud.capacitorLocked ? "JAMMED" : (hud.powerMode ? "CAPSLOCK" : "AUTO")} 
-                                onDown={() => { if(!hud.capacitorLocked) inputRef.current.main = true; }}
-                                onUp={() => { inputRef.current.main = false; }}
-                                colorClass={hud.capacitorLocked ? 'text-zinc-500' : (hud.powerMode ? 'text-orange-500 animate-pulse' : 'text-emerald-400')}
-                                borderClass={hud.capacitorLocked ? 'border-zinc-700 bg-zinc-950' : (hud.powerMode ? 'border-orange-500' : 'border-emerald-600')}
-                                active={inputRef.current.main}
-                            />
-                        )}
-                        
-                        {hasAmmoWeapons && !hud.rescueMode && (
-                             <HudButton 
-                                label="AMMO" 
-                                subLabel={hud.isReloading ? "RELOAD" : "AUTO"}
-                                onDown={() => { inputRef.current.secondary = true; }}
-                                onUp={() => { inputRef.current.secondary = false; }}
-                                colorClass={hud.isReloading ? 'text-amber-500 animate-pulse' : 'text-blue-400'}
-                                borderClass={hud.isReloading ? 'border-amber-600' : 'border-blue-600'}
-                                active={inputRef.current.secondary}
-                                count={hud.ammoCount}
-                                maxCount={maxAmmoInMags > 0 ? maxAmmoInMags : 1}
-                            />
-                        )}
-                    </div>
-
-                    {/* CENTER: ALERT MESSAGE */}
-                    <div className="flex-1 flex justify-center pb-2 w-full sm:w-auto">
-                        {hud.alert && (
-                            <div className="text-center bg-black/60 border-y border-zinc-500/30 backdrop-blur-sm px-4 py-1 sm:px-6 sm:py-2 max-w-[200px] sm:max-w-none">
-                                <span className={`${hudAlertText} font-black uppercase tracking-[0.1em] leading-tight whitespace-pre-wrap ${hud.alertType === 'alert' ? 'text-red-500 animate-pulse' : (hud.alertType === 'warning' ? 'text-amber-500' : 'text-emerald-400')}`}>
-                                    {hud.alert}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* RIGHT ORDNANCE CLUSTER - Shrink gaps on mobile */}
-                    {!hud.rescueMode && (
-                        <div className="flex gap-1 sm:gap-2 items-end shrink-0 justify-end flex-wrap sm:flex-nowrap max-w-[220px] sm:max-w-none">
-                            {hud.missiles > 0 && (
-                                <HudButton 
-                                    label="MISSILE" 
-                                    subLabel={`x${hud.missiles}`}
-                                    onClick={fireMissile}
-                                    colorClass="text-white"
-                                    borderClass="border-zinc-700 hover:border-zinc-500"
-                                    count={hud.missiles}
-                                    maxCount={10}
-                                />
-                            )}
-
-                            {hud.mines > 0 && (
-                                <HudButton 
-                                    label="MINE" 
-                                    subLabel={`x${hud.mines}`}
-                                    onClick={fireMine}
-                                    colorClass="text-white"
-                                    borderClass="border-zinc-700 hover:border-zinc-500"
-                                    count={hud.mines}
-                                    maxCount={10}
-                                />
-                            )}
-
-                            {hud.redMines > 0 && (
-                                <HudButton 
-                                    label="OMEGA" 
-                                    subLabel={`x${hud.redMines}`}
-                                    onClick={fireRedMine}
-                                    colorClass="text-red-500 animate-pulse"
-                                    borderClass="border-red-900 hover:border-red-500"
-                                    count={hud.redMines}
-                                    maxCount={5}
-                                />
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
+        <GameHUD 
+            hud={hud}
+            shield={shield}
+            secondShield={secondShield}
+            maxEnergy={maxEnergy}
+            maxFuel={maxFuel}
+            maxWater={maxWater}
+            hasGuns={hasGuns}
+            hasAmmoWeapons={hasAmmoWeapons}
+            maxAmmoInMags={maxAmmoInMags}
+            fontSize={fontSize}
+            onPauseToggle={() => togglePause()}
+            onAbort={() => { const s = state.current; onGameOver(false, hud.score, true, { health: s.hp, fuel: s.fuel, water: s.water }); }}
+            onExitDialogClose={() => { state.current.isExitDialogOpen = false; setShowExitDialog(false); togglePause(false); }}
+            onExitGame={handleExit}
+            showExitDialog={showExitDialog}
+            fireMissile={() => fireMissile(state.current)}
+            fireMine={() => fireMine(state.current)}
+            fireRedMine={() => fireRedMine(state.current, setHud)}
+            inputRef={inputRef}
+        />
     </div>
   );
 };
