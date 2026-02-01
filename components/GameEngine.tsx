@@ -1,4 +1,3 @@
-
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData, AmmoType } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
@@ -304,7 +303,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           // Allow reload if magazine isn't full and not currently reloading
           if (gun.mag < gun.maxMag && gun.reloadTimer === 0) {
               const defType = wDef.defaultAmmo || 'iron';
-              const hasAmmo = (s.ammo[defType] || 0) > 0 || Object.values(s.ammo).some(v => v > 0);
+              const hasAmmo = (s.ammo[defType] || 0) > 0 || Object.values(s.ammo).some((v: number) => v > 0);
               
               if (hasAmmo) { 
                   // Manual reload takes 3 seconds (3000ms)

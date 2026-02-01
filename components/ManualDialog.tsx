@@ -49,23 +49,25 @@ export const ManualDialog: React.FC<ManualDialogProps> = ({ isOpen, onClose, man
                           <h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Flight Systems</h3>
                           <ul className="list-disc pl-4 space-y-2">
                               <li><span className="text-emerald-400">Arrow Keys / Numpad</span>: Navigation Thrusters</li>
-                              <li><span className="text-emerald-400">Spacebar</span>: Main Cannons (Auto-fire)</li>
-                              <li><span className="text-emerald-400">Tab / Backslash</span>: Launch Missile (Homing)</li>
-                              <li><span className="text-emerald-400">Shift</span>: Deploy Mine (Proximity)</li>
+                              <li><span className="text-emerald-400">Spacebar</span>: Main Energy Weapons (Auto-fire)</li>
+                              <li><span className="text-blue-400">Ctrl / Numpad 0 / .</span>: Secondary Weapons (Ammo Based)</li>
                               <li><span className="text-purple-400">Caps Lock</span>: Capacitor Overdrive (Power Shot)</li>
                               <li><span className="text-purple-400">S Key</span>: Toggle Shields (Silent Running)</li>
+                              <li><span className="text-zinc-400">P Key</span>: Pause Simulation</li>
                           </ul>
                       </section>
                       <section>
-                          <h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Ship Status</h3>
+                          <h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1 mt-4">Ordnance & Systems</h3>
                           <ul className="list-disc pl-4 space-y-2">
-                              <li><span className="text-blue-400">Energy Reactor</span>: Powers weapons and shields. Regenerates over time. Heavy fire drains this rapidly.</li>
-                              <li><span className="text-amber-400">Fuel Reserves</span>: Consumed by movement. If depleted, you drift helplessly. Refuel at stations or collect blue canisters.</li>
-                              <li><span className="text-red-400">Hull Integrity</span>: Your life. Reaches 0% = Critical Failure. Repair using Nanite Packs or at docking bays.</li>
+                              <li><span className="text-red-400">Tab / Numpad +</span>: Launch Homing Missile</li>
+                              <li><span className="text-amber-400">Shift</span>: Deploy Mine (Directional)</li>
+                              <li><span className="text-amber-400">Enter</span>: Deploy Dual Mines</li>
+                              <li><span className="text-red-500 font-bold">B Key</span>: Omega Mine (Mass Destruction)</li>
+                              <li><span className="text-blue-300">F / H / E / R</span>: Manual Inject (Fuel, Water, Energy, Reload)</li>
                           </ul>
                       </section>
                       <div className="mt-4 p-2 bg-zinc-900/50 border border-zinc-700/50 rounded text-center">
-                          <p className="text-zinc-500 italic text-[9px]">"See Classified Protocols (Pg 3-4) for Advanced Systems"</p>
+                          <p className="text-zinc-500 italic text-[9px]">"Manual injection requires resources in Cargo Hold"</p>
                       </div>
                   </>
               );
@@ -134,7 +136,18 @@ export const ManualDialog: React.FC<ManualDialogProps> = ({ isOpen, onClose, man
           case 5: // STRATEGY
               return (
                   <>
-                      <section><h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Advanced Maneuvers</h3><ul className="list-disc pl-4 space-y-2"><li><span className="text-purple-400">Turbo Warp</span>: Press UP while at the top of the screen to engage warp speed. Consumes fuel rapidly but speeds up travel time.</li><li><span className="text-purple-400">Shield Harmonics</span>: Shields absorb damage but drain energy. Different shield colors offer no resistance bonus yet, but look cool.</li></ul></section>
+                      <section><h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Command Directive</h3>
+                          <div className="bg-emerald-900/20 border border-emerald-500/30 p-3 rounded mb-4">
+                              <p className="text-emerald-300 font-bold mb-2">Before battle, equip your spaceship with items from the galactic market.</p>
+                              <ul className="list-disc pl-4 space-y-1 text-emerald-100/80">
+                                  <li>Make sure you have a <span className="text-blue-300">Shield Generator</span> installed.</li>
+                                  <li>Stockpile <span className="text-blue-300">Water</span> and <span className="text-orange-300">Fuel</span> for long engagements.</li>
+                                  <li>Ensure sufficient <span className="text-amber-300">Ammo</span> for ballistic weapons.</li>
+                                  <li>Load <span className="text-red-300">Ordnance</span> (Missiles/Mines) for heavy targets.</li>
+                              </ul>
+                              <p className="text-emerald-300 font-bold mt-2">Be prepared for any battle. Make commerce and defend our galaxy.</p>
+                          </div>
+                      </section>
                       <section><h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Combat Intel</h3><ul className="list-disc pl-4 space-y-2"><li><span className="text-yellow-400">Scavenging</span>: Destroyed asteroids drop resources. Use your tractor beam (automatic when close) to collect Gold, Platinum, and Ordnance.</li><li><span className="text-yellow-400">Boss Encounters</span>: Capital ships have massive shielding. Use EMP mines to strip shields before unleashing missiles.</li><li><span className="text-yellow-400">Market Economy</span>: Buy low, sell high. Resource prices fluctuate between systems.</li></ul></section>
                   </>
               );

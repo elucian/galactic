@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from './types.ts';
 import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from './constants.ts';
@@ -18,8 +19,9 @@ import LaunchSequence from './components/LaunchSequence.tsx';
 import WarpSequence from './components/WarpSequence.tsx';
 import GameEngine from './components/GameEngine.tsx';
 import { LandingScene } from './components/LandingScene.tsx';
+import { VictoryScene } from './components/VictoryScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_34'; 
+const SAVE_KEY = 'galactic_defender_beta_35'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -109,7 +111,7 @@ export default function App() {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
-      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: false, testMode: false, fontSize: 'medium', speedMode: 'normal' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
+      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: true, testMode: false, fontSize: 'medium', speedMode: 'normal' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
       marketListingsByPlanet: {}, marketRefreshes: {},
       messages: [initialMessage],
       leaderboard: [],
@@ -157,12 +159,10 @@ export default function App() {
 
         if (parsed.pilotZoom === undefined) parsed.pilotZoom = 1.0;
 
-        // Truncate messages on load if they exceeded limit in storage
         if (parsed.messages && parsed.messages.length > MAX_MESSAGE_HISTORY) {
             parsed.messages = parsed.messages.slice(0, MAX_MESSAGE_HISTORY);
         }
 
-        // --- ALIEN INVASION PROGRESSION LOGIC ---
         const now = Date.now();
         const lastSave = parsed.lastSaveTime || now;
         const elapsedHours = (now - lastSave) / (1000 * 60 * 60);
@@ -215,20 +215,19 @@ export default function App() {
     return createInitialState();
   });
 
-  const [screen, setScreen] = useState<'intro' | 'hangar' | 'map' | 'launch' | 'game' | 'landing' | 'warp'>('intro');
+  const [screen, setScreen] = useState<'intro' | 'hangar' | 'map' | 'launch' | 'game' | 'landing' | 'warp' | 'victory'>('intro');
   const [activeSlotIndex, setActiveSlotIndex] = useState(0);
   const [activeFittingSlot, setActiveFittingSlot] = useState(0);
   const [launchDestination, setLaunchDestination] = useState<'map' | 'planet'>('map');
   const [gameMode, setGameMode] = useState<'combat' | 'drift'>('combat');
   const [warpDestination, setWarpDestination] = useState<'game' | 'hangar' | 'landing'>('game'); 
+  const [victoryMode, setVictoryMode] = useState<'cinematic' | 'simple'>('simple');
 
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
   
-  // Intro Pause State
   const [isIntroPaused, setIsIntroPaused] = useState(false);
 
-  // Handle Escape key on Intro Screen
   useEffect(() => {
     if (screen !== 'intro') {
         setIsIntroPaused(false);
@@ -372,7 +371,6 @@ export default function App() {
               if (g.id === 'gun_repeater' && planet.difficulty < 3) return;
               if (g.id === 'gun_hyper' && planet.difficulty < 5) return;
               
-              // New High-Tier Standard Weapons (Class 7, 10, 12)
               if (['gun_rail_titan', 'gun_doomsday', 'gun_shredder'].includes(g.id) && planet.difficulty <= 6) return;
 
               const isHighTier = g.price > 50000;
@@ -550,7 +548,8 @@ export default function App() {
     else if (screen === 'hangar') audioService.playTrack('command');
     else if (screen === 'map') audioService.playTrack('map');
     else if (screen === 'game') audioService.playTrack('combat');
-    else if (screen !== 'warp') audioService.stop(); // Only stop if NOT in warp screen, preserving sound continuity
+    else if (screen === 'victory') audioService.playTrack('victory');
+    else if (screen !== 'warp') audioService.stop(); 
   }, [screen]);
 
   
@@ -645,7 +644,27 @@ export default function App() {
        if (success) { pEntry.wins += 1; pEntry.losses = 0; if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { pEntry.status = 'friendly'; pEntry.wins = 0; newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); } else { newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); } if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } } else { if (!aborted) { pEntry.losses += 1; if (pEntry.losses >= 1) { pEntry.losses = 0; const pIndex = PLANETS.findIndex(p => p.id === currentPId); if (pIndex > 0) { const prevPId = PLANETS[pIndex - 1].id; const prevEntry = { ...reg[prevPId] }; let regressionHappened = false; if (prevEntry.status === 'friendly') { prevEntry.status = 'siege'; regressionHappened = true; } else if (prevEntry.status === 'siege') { prevEntry.status = 'occupied'; regressionHappened = true; } if (regressionHappened) { reg[prevPId] = prevEntry; newMessages.unshift({ id: `loss_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, timestamp: Date.now() }); } } } } } reg[currentPId] = pEntry;
        return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
     });
-    if (aborted) { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; const currentQuad = gameState.currentQuadrant; const showTrans = gameState.settings.showTransitions; if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } else { setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } } else { if (payload?.health > 0 && gameState.settings.showTransitions && success) { setScreen('landing'); } else { setScreen('hangar'); audioService.playTrack('command'); } }
+    
+    if (aborted) { 
+        const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); 
+        const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; 
+        const currentQuad = gameState.currentQuadrant; 
+        const showTrans = gameState.settings.showTransitions; 
+        if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } 
+        else { setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } 
+    } else { 
+        if (success && gameState.currentPlanet?.id === 'p12') {
+            // Victory on Last Planet
+            const useCinematic = gameState.settings.showTransitions;
+            setVictoryMode(useCinematic ? 'cinematic' : 'simple');
+            setScreen('victory');
+        }
+        else if (payload?.health > 0 && gameState.settings.showTransitions && success) { 
+            setScreen('landing'); 
+        } else { 
+            setScreen('hangar'); audioService.playTrack('command'); 
+        } 
+    }
   };
 
   const handlePlanetSelection = (planet: Planet) => { const status = gameState.planetRegistry[planet.id]?.status || 'occupied'; const isFriendly = status === 'friendly'; const isSameQuadrant = planet.quadrant === gameState.currentQuadrant; const showTransitions = gameState.settings.showTransitions; const shouldUpdateQuadrantNow = !isSameQuadrant && !showTransitions; setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: shouldUpdateQuadrantNow ? planet.quadrant : prev.currentQuadrant })); setLaunchDestination('planet'); if (isFriendly) { if (isSameQuadrant) { setScreen('landing'); } else { setWarpDestination('landing'); if (showTransitions) { setScreen('warp'); } else { setScreen('landing'); } } } else { setGameMode('combat'); setWarpDestination('game'); if (isSameQuadrant) { setScreen('game'); audioService.playTrack('combat'); } else { if (showTransitions) { setScreen('warp'); } else { setScreen('game'); audioService.playTrack('combat'); } } } };
@@ -904,7 +923,19 @@ export default function App() {
                     </div>
                 </div>
 
-                <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em]`}>Beta 34 - January 2026</div>
+                <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em] pointer-events-auto`}>
+                  Beta 35 - February <span 
+                      onClick={() => { 
+                          if(gameState.settings.testMode) { 
+                              setVictoryMode(gameState.settings.showTransitions ? 'cinematic' : 'simple'); 
+                              setScreen('victory'); 
+                          } 
+                      }} 
+                      className={gameState.settings.testMode ? "cursor-pointer hover:text-emerald-400 transition-colors underline decoration-dotted underline-offset-4" : ""}
+                  >
+                      2026
+                  </span>
+                </div>
 
               </div>
             </>
@@ -1049,6 +1080,27 @@ export default function App() {
               equippedWeapons={gameState.shipFittings[activeShipId].weapons}
               currentFuel={gameState.shipFittings[activeShipId].fuel}
               maxFuel={selectedShipConfig.maxFuel}
+          />
+      )}
+
+      {screen === 'victory' && (
+          <VictoryScene 
+              mode={victoryMode}
+              onExit={() => { 
+                  try {
+                      if (window.history.length > 1) {
+                          window.history.back();
+                      } else {
+                          window.close();
+                      }
+                  } catch (e) {
+                      console.warn("Could not close window", e);
+                  }
+              }}
+              onRestart={() => {
+                  setScreen('intro');
+                  audioService.playTrack('intro');
+              }}
           />
       )}
 

@@ -25,6 +25,7 @@ class AudioService {
       'command': `${this.baseUrl}/music/hangar.mp3`,
       'map': `${this.baseUrl}/music/map.mp3`,
       'combat': `${this.baseUrl}/music/combat.mp3`,
+      'victory': `${this.baseUrl}/music/victory.mp3`,
   };
 
   private reactorOsc: OscillatorNode | null = null;
@@ -89,6 +90,7 @@ class AudioService {
           'command': `${this.baseUrl}/${folder}/hangar.mp3`,
           'map': `${this.baseUrl}/${folder}/map.mp3`,
           'combat': `${this.baseUrl}/${folder}/combat.mp3`,
+          'victory': `${this.baseUrl}/${folder}/victory.mp3`,
       };
   }
 
@@ -125,6 +127,7 @@ class AudioService {
           case 'command': return 'hangar.mp3';
           case 'map': return 'map.mp3';
           case 'combat': return 'combat.mp3';
+          case 'victory': return 'victory.mp3';
           default: return 'intro.mp3';
       }
   }
