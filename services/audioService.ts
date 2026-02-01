@@ -167,8 +167,14 @@ class AudioService {
                   console.warn(`Audio theme '${this.currentTheme}' file missing for ${trackId}. Falling back to default.`);
                   audio.src = fallbackPath;
                   audio.play().catch(e => {});
+                  return; // Allow fallback attempt
               }
           }
+          
+          // Critical Failure: Default failed or Fallback failed
+          console.warn(`Audio track ${trackId} failed to load. Muting music.`);
+          this.setMusicVolume(0);
+          this.setMusicEnabled(false);
       };
 
       audio.play().catch(e => {});

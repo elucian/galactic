@@ -66,6 +66,9 @@ export const renderGame = (
                 ...s.movement, 
                 up: s.phase === 'boss' ? false : s.movement.up 
             };
+            
+            // In Boss phase, player's main jets are forced off
+            const playerForceMainJetsOff = s.phase === 'boss';
 
             drawShip(ctx, { 
                 config: activeShip.config, 
@@ -81,14 +84,52 @@ export const renderGame = (
                 equippedWeapons: activeShip.fitting.weapons,
                 weaponFireTimes: s.weaponFireTimes,
                 weaponHeat: s.weaponHeat
-            }, true, visualMovement, s.usingWater, s.rescueMode);
+            }, true, visualMovement, s.usingWater, s.rescueMode, playerForceMainJetsOff);
             
             if (s.shieldsEnabled && (s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) { 
                 if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
                 if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
             }
         } else if (item.type === 'enemy') {
-            const e = item.obj as Enemy; ctx.translate(e.x, e.y); ctx.scale(scale, scale); ctx.rotate(Math.PI); const alienCols = getAlienColors(quadrant); drawShip(ctx, { config: e.config, fitting: null, color: e.type==='boss'?'#a855f7':alienCols.hull, wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, gunColor: '#ef4444', equippedWeapons: e.equippedWeapons }, false);
+            const e = item.obj as Enemy; 
+            ctx.translate(e.x, e.y); 
+            ctx.scale(scale, scale); 
+            ctx.rotate(Math.PI); 
+            const alienCols = getAlienColors(quadrant); 
+            
+            let enemyMovement = { up: false, down: false, left: false, right: false };
+            let forceEnemyJetsOff = false;
+
+            if (e.type === 'boss') {
+                if (e.y < 100) {
+                    // Entering Phase: Main Jets ON
+                    enemyMovement.up = true;
+                    forceEnemyJetsOff = false;
+                } else {
+                    // Battle Phase: Main Jets OFF, use thrusters for movement
+                    forceEnemyJetsOff = true;
+                    // INVERTED LOGIC for rotated enemy
+                    // Screen Left (vx < 0) -> Local Right -> Needs Left Thruster (movement.right)
+                    if (e.vx < -0.5) enemyMovement.right = true; 
+                    if (e.vx > 0.5) enemyMovement.left = true;
+                }
+            } else {
+                // Standard enemies main jets always on
+                enemyMovement.up = true;
+                // Infer strafe for visual flair (Inverted for rotation)
+                if (e.vx < -0.5) enemyMovement.right = true;
+                if (e.vx > 0.5) enemyMovement.left = true;
+            }
+
+            drawShip(ctx, { 
+                config: e.config, 
+                fitting: null, 
+                color: e.type==='boss'?'#a855f7':alienCols.hull, 
+                wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, 
+                gunColor: '#ef4444', 
+                equippedWeapons: e.equippedWeapons 
+            }, false, enemyMovement, false, false, forceEnemyJetsOff);
+
             if (e.shieldLayers.length > 0) { 
                 e.shieldLayers.forEach((layer, idx) => { 
                     if (layer.current <= 0) return; 

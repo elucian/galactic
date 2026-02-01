@@ -87,7 +87,15 @@ export const drawJet = (ctx: CanvasRenderingContext2D, x: number, y: number, ang
     ctx.restore();
 };
 
-export const drawShip = (ctx: CanvasRenderingContext2D, shipData: any, isPlayer = false, movement?: { up: boolean, down: boolean, left: boolean, right: boolean }, usingWater = false, isRescue = false) => { 
+export const drawShip = (
+    ctx: CanvasRenderingContext2D, 
+    shipData: any, 
+    isPlayer = false, 
+    movement?: { up: boolean, down: boolean, left: boolean, right: boolean }, 
+    usingWater = false, 
+    isRescue = false,
+    forceMainJetsOff = false
+) => { 
     const { config, color: hullColor, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, fitting, equippedWeapons, weaponFireTimes, weaponHeat } = shipData; 
     const scale = isPlayer ? 0.6 : 0.5; 
     
@@ -121,9 +129,9 @@ export const drawShip = (ctx: CanvasRenderingContext2D, shipData: any, isPlayer 
         ctx.fillStyle = engineColor || '#334155';
         ctx.fillRect(-6, 28, 12, 6);
         
-        if (movement?.up) {
+        if (movement?.up && !forceMainJetsOff) {
              drawJet(ctx, 0, 34, 0, 1.4, usingWater, 50);
-        } else {
+        } else if (!forceMainJetsOff) {
              drawJet(ctx, 0, 34, 0, 0.7, usingWater, 40);
         }
         ctx.restore();
@@ -159,8 +167,8 @@ export const drawShip = (ctx: CanvasRenderingContext2D, shipData: any, isPlayer 
         // Longer lengths: Idle ~50px, Thrust ~90px
         const mainLength = usingWater ? 120 : 90;
         
-        // Only draw main jets if NOT moving down (braking)
-        if (!movement?.down) {
+        // Only draw main jets if NOT moving down (braking) AND NOT forced off
+        if (!movement?.down && !forceMainJetsOff) {
             engineLocs.forEach(eng => {
                 const isAlien = config.isAlien;
                 const nozzleH = isAlien ? 6 : 5;

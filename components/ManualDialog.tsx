@@ -14,7 +14,7 @@ export const ManualDialog: React.FC<ManualDialogProps> = ({ isOpen, onClose, man
 
   const titleSize = fontSize === 'small' ? 'text-[11px]' : (fontSize === 'large' ? 'text-[16px]' : 'text-[13px]');
   const btnSize = fontSize === 'small' ? 'text-[10px]' : (fontSize === 'large' ? 'text-[14px]' : 'text-[12px]');
-  const maxPages = 4;
+  const maxPages = 6;
 
   const renderContent = () => {
       switch(manualPage) {
@@ -45,18 +45,100 @@ export const ManualDialog: React.FC<ManualDialogProps> = ({ isOpen, onClose, man
           case 2: // CONTROLS
               return (
                   <>
-                      <section><h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Flight Systems</h3><ul className="list-disc pl-4 space-y-2"><li><span className="text-emerald-400">WASD / Arrows</span>: Navigation Thrusters</li><li><span className="text-emerald-400">Spacebar</span>: Main Cannons (Auto-fire)</li><li><span className="text-emerald-400">Hold Spacebar</span>: Charge Mega-Shot (Consumes Energy)</li><li><span className="text-emerald-400">Tab / Backslash</span>: Launch Missile (Homing)</li><li><span className="text-emerald-400">Enter / CapsLock</span>: Deploy Mine (Proximity)</li></ul></section>
-                      <section><h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Ship Status</h3><ul className="list-disc pl-4 space-y-2"><li><span className="text-blue-400">Energy Reactor</span>: Powers weapons and shields. Regenerates over time. Heavy fire drains this rapidly.</li><li><span className="text-amber-400">Fuel Reserves</span>: Consumed by movement. If depleted, you drift helplessly. Refuel at stations or collect blue canisters.</li><li><span className="text-red-400">Hull Integrity</span>: Your life. Reaches 0% = Critical Failure. Repair using Nanite Packs or at docking bays.</li></ul></section>
+                      <section>
+                          <h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Flight Systems</h3>
+                          <ul className="list-disc pl-4 space-y-2">
+                              <li><span className="text-emerald-400">Arrow Keys / Numpad</span>: Navigation Thrusters</li>
+                              <li><span className="text-emerald-400">Spacebar</span>: Main Cannons (Auto-fire)</li>
+                              <li><span className="text-emerald-400">Tab / Backslash</span>: Launch Missile (Homing)</li>
+                              <li><span className="text-emerald-400">Shift</span>: Deploy Mine (Proximity)</li>
+                              <li><span className="text-purple-400">Caps Lock</span>: Capacitor Overdrive (Power Shot)</li>
+                              <li><span className="text-purple-400">S Key</span>: Toggle Shields (Silent Running)</li>
+                          </ul>
+                      </section>
+                      <section>
+                          <h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Ship Status</h3>
+                          <ul className="list-disc pl-4 space-y-2">
+                              <li><span className="text-blue-400">Energy Reactor</span>: Powers weapons and shields. Regenerates over time. Heavy fire drains this rapidly.</li>
+                              <li><span className="text-amber-400">Fuel Reserves</span>: Consumed by movement. If depleted, you drift helplessly. Refuel at stations or collect blue canisters.</li>
+                              <li><span className="text-red-400">Hull Integrity</span>: Your life. Reaches 0% = Critical Failure. Repair using Nanite Packs or at docking bays.</li>
+                          </ul>
+                      </section>
+                      <div className="mt-4 p-2 bg-zinc-900/50 border border-zinc-700/50 rounded text-center">
+                          <p className="text-zinc-500 italic text-[9px]">"See Classified Protocols (Pg 3-4) for Advanced Systems"</p>
+                      </div>
                   </>
               );
-          case 3: // STRATEGY
+          case 3: // SECRET PROTOCOLS: ENERGY
+              return (
+                  <div className="space-y-6">
+                      <section>
+                          <h3 className="text-purple-400 font-black mb-4 border-b border-purple-900/50 pb-2">CLASSIFIED PROTOCOLS: ENERGY</h3>
+                          <ul className="list-none space-y-4">
+                              <li className="bg-zinc-900/50 p-3 rounded border border-zinc-800">
+                                  <div className="flex justify-between items-center mb-1">
+                                      <span className="text-white font-bold">CAPACITOR OVERDRIVE</span>
+                                      <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded border border-purple-700">CAPSLOCK</span>
+                                  </div>
+                                  <p className="text-zinc-400">Locks capacitor output to "Weapon Mode". Main guns fire high-yield Power Shots automatically. <span className="text-red-400">Warning: Drains Energy rapidly.</span></p>
+                              </li>
+                              <li className="bg-zinc-900/50 p-3 rounded border border-zinc-800">
+                                  <div className="flex justify-between items-center mb-1">
+                                      <span className="text-white font-bold">SILENT RUNNING</span>
+                                      <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded border border-purple-700">S KEY</span>
+                                  </div>
+                                  <p className="text-zinc-400">Toggles Shields ON/OFF. Disabling shields eliminates their passive energy drain, allowing significantly faster Capacitor recharge for offensive strikes.</p>
+                              </li>
+                              <li className="bg-zinc-900/50 p-3 rounded border border-zinc-800">
+                                  <div className="flex justify-between items-center mb-1">
+                                      <span className="text-white font-bold">TACTICAL PAUSE</span>
+                                      <span className="text-xs bg-purple-900/50 text-purple-300 px-2 py-0.5 rounded border border-purple-700">P KEY</span>
+                                  </div>
+                                  <p className="text-zinc-400">Freezes the battle simulation to assess tactical positioning or take a break.</p>
+                              </li>
+                          </ul>
+                      </section>
+                  </div>
+              );
+          case 4: // SECRET PROTOCOLS: ORDNANCE
+              return (
+                  <div className="space-y-6">
+                      <section>
+                          <h3 className="text-red-400 font-black mb-4 border-b border-red-900/50 pb-2">CLASSIFIED PROTOCOLS: ORDNANCE</h3>
+                          <ul className="list-none space-y-4">
+                              <li className="bg-zinc-900/50 p-3 rounded border border-zinc-800">
+                                  <div className="flex justify-between items-center mb-1">
+                                      <span className="text-white font-bold">OMEGA DROP</span>
+                                      <span className="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded border border-red-700">B KEY</span>
+                                  </div>
+                                  <p className="text-zinc-400">Deploys the <span className="text-red-400 font-bold">Omega Mine</span>. Requires Red Mine inventory. Creates a massive area-of-effect blast that clears most screens.</p>
+                              </li>
+                              <li className="bg-zinc-900/50 p-3 rounded border border-zinc-800">
+                                  <div className="flex justify-between items-center mb-1">
+                                      <span className="text-white font-bold">DUAL DEPLOYMENT</span>
+                                      <span className="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded border border-red-700">ENTER</span>
+                                  </div>
+                                  <p className="text-zinc-400">Releases two standard mines simultaneously from both wing mounts, creating a pincer trap for pursuing hostiles.</p>
+                              </li>
+                              <li className="bg-zinc-900/50 p-3 rounded border border-zinc-800">
+                                  <div className="flex justify-between items-center mb-1">
+                                      <span className="text-white font-bold">WING INDEPENDENT FIRE</span>
+                                      <span className="text-xs bg-red-900/50 text-red-300 px-2 py-0.5 rounded border border-red-700">NUMPAD 0 / .</span>
+                                  </div>
+                                  <p className="text-zinc-400">Manually triggers left (0) or right (.) auxiliary wing weapons without firing the main gun. Critical for conserving main reactor energy while maintaining suppression.</p>
+                              </li>
+                          </ul>
+                      </section>
+                  </div>
+              );
+          case 5: // STRATEGY
               return (
                   <>
                       <section><h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Advanced Maneuvers</h3><ul className="list-disc pl-4 space-y-2"><li><span className="text-purple-400">Turbo Warp</span>: Press UP while at the top of the screen to engage warp speed. Consumes fuel rapidly but speeds up travel time.</li><li><span className="text-purple-400">Shield Harmonics</span>: Shields absorb damage but drain energy. Different shield colors offer no resistance bonus yet, but look cool.</li></ul></section>
                       <section><h3 className="text-white font-black mb-2 border-b border-zinc-800 pb-1">Combat Intel</h3><ul className="list-disc pl-4 space-y-2"><li><span className="text-yellow-400">Scavenging</span>: Destroyed asteroids drop resources. Use your tractor beam (automatic when close) to collect Gold, Platinum, and Ordnance.</li><li><span className="text-yellow-400">Boss Encounters</span>: Capital ships have massive shielding. Use EMP mines to strip shields before unleashing missiles.</li><li><span className="text-yellow-400">Market Economy</span>: Buy low, sell high. Resource prices fluctuate between systems.</li></ul></section>
                   </>
               );
-          case 4: // CREDITS
+          case 6: // CREDITS
               return (
                   <div className="flex flex-col items-center justify-center h-full text-center space-y-8">
                       <div>
@@ -94,8 +176,10 @@ export const ManualDialog: React.FC<ManualDialogProps> = ({ isOpen, onClose, man
               <h2 className={`retro-font text-emerald-400 ${titleSize} uppercase`}>
                   {manualPage === 1 && "Mission Background"}
                   {manualPage === 2 && "Flight Controls"}
-                  {manualPage === 3 && "Tactical Data"}
-                  {manualPage === 4 && "System Credits"}
+                  {manualPage === 3 && "Secret Protocols I"}
+                  {manualPage === 4 && "Secret Protocols II"}
+                  {manualPage === 5 && "Tactical Data"}
+                  {manualPage === 6 && "System Credits"}
                   <span className="ml-4 text-zinc-600 text-[10px] font-mono tracking-widest">PG {manualPage}/{maxPages}</span>
               </h2>
               <button onClick={onClose} className={`text-zinc-500 ${btnSize} font-black hover:text-white`}>DONE</button>

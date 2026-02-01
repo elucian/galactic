@@ -60,12 +60,19 @@ export class Asteroid {
 
         if (['water', 'fuel', 'gold', 'platinum', 'lithium', 'iron', 'copper', 'chromium', 'titanium', 'energy'].includes(finalType)) {
             let qty = 1;
+            let id = finalType; // Default ID is type name
+            
+            // Special Cases for IDs
+            if (finalType === 'fuel') id = 'can_fuel';
+            if (finalType === 'energy') id = 'batt_cell';
+            if (finalType === 'water') id = 'water';
+
             if (variant.type === 'ice' && finalType === 'water') qty = 5;
             if (variant.type === 'ice' && finalType === 'fuel') qty = 2;
             
-            this.loot = { type: finalType, name: capType, quantity: qty };
+            this.loot = { type: finalType, id, name: capType, quantity: qty };
         } else {
-            this.loot = { type: 'goods', name: capType, quantity: 1 };
+            this.loot = { type: 'goods', id: finalType, name: capType, quantity: 1 };
         }
     }
 
