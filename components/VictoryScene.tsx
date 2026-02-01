@@ -12,16 +12,16 @@ interface VictorySceneProps {
 
 export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRestart }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const [uiVisible, setUiVisible] = useState(false); 
-    const [showButton, setShowButton] = useState(false);
     
-    // Use Refs for animation state to avoid re-running effects on state changes
+    // UI Visibility: Immediate for simple, delayed for cinematic
+    const [uiVisible, setUiVisible] = useState(() => mode === 'simple'); 
+    const [showButton, setShowButton] = useState(() => mode === 'simple');
+    
     const animState = useRef({
         fireworksActive: false,
         startTime: Date.now()
     });
     
-    // Stable callback ref
     const onRestartRef = useRef(onRestart);
     useEffect(() => { onRestartRef.current = onRestart; }, [onRestart]);
 
@@ -39,20 +39,25 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
             size: Math.random() * 2 + 0.5,
             alpha: Math.random() * 0.8 + 0.2
         }));
-        animState.current.startTime = Date.now();
     }, []);
 
     // Sequence Logic
     useEffect(() => {
+        animState.current.startTime = Date.now();
+        animState.current.fireworksActive = false;
+
         if (mode === 'cinematic') {
+            setUiVisible(false);
+            setShowButton(false);
+
             audioService.playTrack('victory');
             
-            // 2s: Start Fireworks (Update Ref, no re-render needed for canvas)
+            // 4s: Start Fireworks (Delayed per request)
             const t1 = setTimeout(() => { 
                 animState.current.fireworksActive = true; 
-            }, 2000);
+            }, 4000);
             
-            // 15s: Show UI (Triggers re-render, but canvas effect ignores it)
+            // 15s: Show UI Text
             const t2 = setTimeout(() => { 
                 setUiVisible(true); 
             }, 15000); 
@@ -62,6 +67,7 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
                 setShowButton(true); 
             }, 16000);
             
+            // Auto-restart backup (2 mins)
             const t4 = setTimeout(() => {
                 onRestartRef.current();
             }, 120000);
@@ -71,17 +77,16 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
                 audioService.stop();
             };
         } else {
+            // Simple Mode: Visible immediately
             setUiVisible(true);
             setShowButton(true);
             const t = setTimeout(() => { onRestartRef.current(); }, 60000);
             return () => clearTimeout(t);
         }
-    }, [mode]); // Only depend on mode, ignoring onRestart changes
+    }, [mode]); 
 
     // Animation Loop
     useEffect(() => {
-        if (mode !== 'cinematic') return;
-
         const canvas = canvasRef.current;
         if (!canvas) return;
         const ctx = canvas.getContext('2d');
@@ -98,9 +103,10 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
 
             ctx.clearRect(0, 0, w, h);
 
-            // 1. Draw Stars
+            // 1. Draw Stars (Always)
             ctx.fillStyle = '#ffffff';
             stars.current.forEach(star => {
+                // Twinkle effect
                 ctx.globalAlpha = star.alpha * (0.8 + Math.sin(now * 0.002 + star.x * 10) * 0.2);
                 ctx.beginPath();
                 ctx.arc(star.x * w, star.y * h, star.size, 0, Math.PI * 2);
@@ -108,7 +114,7 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
             });
             ctx.globalAlpha = 1.0;
 
-            // 2. Draw Red Planet (Centered)
+            // 2. Draw Red Planet (Centered) - Always
             const planetX = w * 0.5;
             const planetY = h * 0.5; 
             const planetRadius = Math.min(w, h) * 0.15; 
@@ -130,73 +136,132 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
             ctx.stroke();
             ctx.shadowBlur = 0;
 
-            // 3. Update Ships
-            const orbitRx = w * 0.45; 
-            const orbitRy = h * 0.35; 
-            const speed = 0.3; 
+            // 3. Draw Moons
             
-            const t = (elapsed * speed) % (Math.PI * 2);
-            const tilt = 0.2;
+            // Moon 1: Inner Circular
+            // Orbit Diameter ~ Width/Height of screen (clamped for visibility)
+            // Reduced Speed: 20%
+            const m1OrbitR = Math.min(w, h) * 0.35; 
+            const m1Size = 8;
+            const m1Speed = 0.2; // 20% speed
+            const m1Angle = elapsed * m1Speed;
             
-            const rawX = Math.cos(t) * orbitRx;
-            const rawY = Math.sin(t) * orbitRy;
+            const m1X = planetX + Math.cos(m1Angle) * m1OrbitR;
+            const m1Y = planetY + Math.sin(m1Angle) * m1OrbitR;
+
+            // Draw Orbit Line (Subtle)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(planetX, planetY, m1OrbitR, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Draw Moon 1
+            ctx.fillStyle = '#94a3b8'; // Light Grey
+            ctx.beginPath();
+            ctx.arc(m1X, m1Y, m1Size, 0, Math.PI*2);
+            ctx.fill();
+            // Moon 1 Shadow
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.beginPath();
+            ctx.arc(m1X - 2, m1Y + 2, m1Size, 0, Math.PI*2);
+            ctx.fill();
+
+
+            // Moon 2: Peripheral Elliptical (Screen Edges)
+            // Smaller Size
+            // Reduced Speed: 30%
+            const m2OrbitRx = w * 0.48; // Near width edge
+            const m2OrbitRy = h * 0.48; // Near height edge
+            const m2Size = 5; // Smaller
+            const m2Speed = 0.15; // Even slower (30% relative to typical 0.5)
+            const m2Angle = (elapsed * m2Speed) + Math.PI; // Start opposite
             
-            const lx = planetX + (rawX * Math.cos(tilt) - rawY * Math.sin(tilt));
-            const ly = planetY + (rawX * Math.sin(tilt) + rawY * Math.cos(tilt));
-            
-            const dRawX = -Math.sin(t) * orbitRx;
-            const dRawY = Math.cos(t) * orbitRy;
-            const dx = dRawX * Math.cos(tilt) - dRawY * Math.sin(tilt);
-            const dy = dRawX * Math.sin(tilt) + dRawY * Math.cos(tilt);
-            const angle = Math.atan2(dy, dx) + (Math.PI / 2);
+            const m2X = planetX + Math.cos(m2Angle) * m2OrbitRx;
+            const m2Y = planetY + Math.sin(m2Angle) * m2OrbitRy;
 
-            const isFront = rawY > 0;
-            const zIndex = isFront ? 30 : 10;
-            const depthFactor = (Math.sin(t) + 1) / 2;
-            const baseScale = 0.5 + (depthFactor * 0.5); 
-            const opacity = 0.6 + (depthFactor * 0.4);
+            // Draw Moon 2
+            ctx.fillStyle = '#64748b'; // Darker Grey
+            ctx.beginPath();
+            ctx.arc(m2X, m2Y, m2Size, 0, Math.PI*2);
+            ctx.fill();
 
-            [0, 1, 2].forEach(i => {
-                const el = shipRefs.current[i];
-                if (el) {
-                    let sx = lx;
-                    let sy = ly;
-                    let sScale = baseScale;
+            // 4. Update Ships (Cinematic Only)
+            if (mode === 'cinematic') {
+                const orbitRx = w * 0.45; 
+                const orbitRy = h * 0.35; 
+                const speed = 0.3; 
+                
+                const t = (elapsed * speed) % (Math.PI * 2);
+                const tilt = 0.2;
+                
+                const rawX = Math.cos(t) * orbitRx;
+                const rawY = Math.sin(t) * orbitRy;
+                
+                const lx = planetX + (rawX * Math.cos(tilt) - rawY * Math.sin(tilt));
+                const ly = planetY + (rawX * Math.sin(tilt) + rawY * Math.cos(tilt));
+                
+                const dRawX = -Math.sin(t) * orbitRx;
+                const dRawY = Math.cos(t) * orbitRy;
+                const dx = dRawX * Math.cos(tilt) - dRawY * Math.sin(tilt);
+                const dy = dRawX * Math.sin(tilt) + dRawY * Math.cos(tilt);
+                const angle = Math.atan2(dy, dx) + (Math.PI / 2);
 
-                    if (i === 0) {
-                        sScale *= 1.0;
-                    } else {
-                        const offsetMag = 50 * baseScale;
-                        const side = i === 1 ? -1 : 1; 
-                        const shipRot = angle - (Math.PI/2);
-                        const offsetX = side * offsetMag; 
-                        const offsetY = offsetMag; 
-                        
-                        const rotX = offsetX * Math.cos(shipRot) - offsetY * Math.sin(shipRot);
-                        const rotY = offsetX * Math.sin(shipRot) + offsetY * Math.cos(shipRot);
-                        
-                        sx += rotX;
-                        sy += rotY;
-                        sScale *= 0.7;
-                    }
-
-                    el.style.zIndex = zIndex.toString();
-                    el.style.transform = `translate(-50%, -50%) translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) rotate(${angle.toFixed(3)}rad) scale(${sScale.toFixed(3)})`;
-                    el.style.opacity = opacity.toFixed(2);
+                const isFront = rawY > 0;
+                const zIndex = isFront ? 30 : 10;
+                const depthFactor = (Math.sin(t) + 1) / 2;
+                const baseScale = 0.5 + (depthFactor * 0.5); 
+                
+                // Fade in ships starting at 2 seconds
+                const SHIP_START_DELAY = 2.0;
+                let opacity = 0;
+                if (elapsed > SHIP_START_DELAY) {
+                    const fadeProgress = Math.min(1, (elapsed - SHIP_START_DELAY) / 2.0);
+                    opacity = (0.6 + (depthFactor * 0.4)) * fadeProgress;
                 }
-            });
 
-            // 4. Fireworks (Check Ref)
-            if (animState.current.fireworksActive) {
+                [0, 1, 2].forEach(i => {
+                    const el = shipRefs.current[i];
+                    if (el) {
+                        let sx = lx;
+                        let sy = ly;
+                        let sScale = baseScale;
+
+                        if (i === 0) {
+                            sScale *= 1.0;
+                        } else {
+                            const offsetMag = 50 * baseScale;
+                            const side = i === 1 ? -1 : 1; 
+                            const shipRot = angle - (Math.PI/2);
+                            const offsetX = side * offsetMag; 
+                            const offsetY = offsetMag; 
+                            
+                            const rotX = offsetX * Math.cos(shipRot) - offsetY * Math.sin(shipRot);
+                            const rotY = offsetX * Math.sin(shipRot) + offsetY * Math.cos(shipRot);
+                            
+                            sx += rotX;
+                            sy += rotY;
+                            sScale *= 0.7;
+                        }
+
+                        el.style.zIndex = zIndex.toString();
+                        el.style.transform = `translate(-50%, -50%) translate(${sx.toFixed(1)}px, ${sy.toFixed(1)}px) rotate(${angle.toFixed(3)}rad) scale(${sScale.toFixed(3)})`;
+                        el.style.opacity = opacity.toFixed(2);
+                        // Hide element completely if opacity is 0 to avoid blocking or ghosts
+                        el.style.display = opacity > 0.01 ? 'block' : 'none';
+                    }
+                });
+            }
+
+            // 5. Fireworks (Cinematic Only)
+            if (mode === 'cinematic' && animState.current.fireworksActive) {
                 if (Math.random() < 0.05) {
                     const exX = w * 0.1 + Math.random() * w * 0.8;
                     const exY = h * 0.1 + Math.random() * h * 0.6;
                     const color = colors[Math.floor(Math.random() * colors.length)];
                     const count = 40 + Math.floor(Math.random() * 60);
                     
-                    if (Math.random() < 0.3) {
-                        audioService.playExplosion(0, 0.5, 'fireworks'); 
-                    }
+                    audioService.playExplosion(0, 0.5, 'fireworks');
 
                     for(let i=0; i<count; i++) {
                         const a = Math.random() * Math.PI * 2;
@@ -214,6 +279,7 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
                 }
             }
 
+            // Draw Particles
             particles.current.forEach(p => {
                 p.x += p.vx;
                 p.y += p.vy;
@@ -236,43 +302,32 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
         };
         animId = requestAnimationFrame(loop);
         return () => cancelAnimationFrame(animId);
-    }, [mode]); // Depend only on mode
+    }, [mode]);
 
     const handleExitClick = () => {
         try { window.close(); } catch(e) { }
         onExit(); 
     };
 
-    if (mode === 'simple') {
-        return (
-            <div className="absolute inset-0 z-[6000] flex flex-col items-center justify-center bg-black/90 p-8 text-center pointer-events-auto">
-                <h1 className="text-4xl md:text-6xl text-emerald-500 font-black uppercase mb-4 retro-font">Game Over</h1>
-                <h2 className="text-2xl md:text-4xl text-white/70 font-bold uppercase mb-8 retro-font">Victory Achieved</h2>
-                <div className="flex gap-6">
-                    <button onClick={handleExitClick} className="px-8 py-4 bg-zinc-800 border-2 border-zinc-600 text-zinc-300 font-black uppercase hover:bg-red-900/50 hover:text-white hover:border-red-500 transition-all rounded w-40">Exit</button>
-                    <button onClick={onRestart} className="px-8 py-4 bg-emerald-600 border-2 border-emerald-500 text-white font-black uppercase hover:bg-emerald-500 transition-all rounded w-40">Restart</button>
-                </div>
-            </div>
-        );
-    }
-
     return (
         <div className="absolute inset-0 z-[5000] overflow-hidden pointer-events-auto bg-black/95">
             <canvas ref={canvasRef} className="absolute inset-0 z-20 pointer-events-none" />
             
-            {/* Ships Container */}
-            <div className="absolute inset-0 pointer-events-none">
-                {[0, 1, 2].map((_, i) => (
-                    <div 
-                        key={i}
-                        ref={(el) => { shipRefs.current[i] = el; }}
-                        className="absolute w-32 h-32 will-change-transform"
-                        style={{ left: '0', top: '0', transform: 'translate(-1000px, -1000px)' }}
-                    >
-                        <ShipIcon config={shipConfig} showJets={true} jetType="combustion" forceShieldScale={true} className="w-full h-full drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]" />
-                    </div>
-                ))}
-            </div>
+            {/* Ships Container - Only rendered in DOM for cinematic logic to control */}
+            {mode === 'cinematic' && (
+                <div className="absolute inset-0 pointer-events-none">
+                    {[0, 1, 2].map((_, i) => (
+                        <div 
+                            key={i}
+                            ref={(el) => { shipRefs.current[i] = el; }}
+                            className="absolute w-32 h-32 will-change-transform"
+                            style={{ left: '0', top: '0', transform: 'translate(-1000px, -1000px)', opacity: 0, display: 'none' }}
+                        >
+                            <ShipIcon config={shipConfig} showJets={true} jetType="combustion" forceShieldScale={true} className="w-full h-full drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]" />
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* UI LAYER - High Z-Index */}
             <div className={`absolute inset-0 z-[100] transition-opacity duration-1000 flex flex-col items-center justify-center pointer-events-none ${uiVisible ? 'opacity-100 bg-black/40' : 'opacity-0'}`}>
