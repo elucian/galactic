@@ -4,7 +4,7 @@ class AudioService {
   private masterGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   
-  private musicVolume: number = 0.3;
+  private musicVolume: number = 0.0;
   private sfxVolume: number = 0.5;
   private musicEnabled: boolean = true;
   private sfxEnabled: boolean = true;
