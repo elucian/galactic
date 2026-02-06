@@ -167,6 +167,76 @@ export const drawPlatform = (ctx: CanvasRenderingContext2D, x: number, y: number
     ctx.restore();
 };
 
+export const drawScorpion = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number, walkCycle: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale, scale);
+    ctx.fillStyle = '#573a25'; 
+    // Body
+    ctx.beginPath(); ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI*2); ctx.fill();
+    // Tail - Curled up
+    ctx.strokeStyle = '#573a25'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(4, 0);
+    ctx.quadraticCurveTo(8, -5, 2, -8);
+    ctx.stroke();
+    // Stinger
+    ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(2, -8, 1, 0, Math.PI*2); ctx.fill();
+    // Legs - Animated
+    ctx.strokeStyle = '#292524'; ctx.lineWidth = 0.8;
+    const legOffset = Math.sin(walkCycle) * 2;
+    for(let i=0; i<3; i++) {
+        const lx = -2 + i*2;
+        ctx.beginPath(); ctx.moveTo(lx, 1); ctx.lineTo(lx - 2, 4 + (i%2===0?legOffset:-legOffset)); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(lx, 1); ctx.lineTo(lx + 2, 4 + (i%2===0?-legOffset:legOffset)); ctx.stroke(); 
+    }
+    // Claws
+    ctx.strokeStyle = '#573a25';
+    ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-8, -2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(-9, -3, 1.5, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+};
+
+export const drawLizard = (ctx: CanvasRenderingContext2D, x: number, y: number, scale: number, walkCycle: number, dir: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(scale * dir, scale); 
+    ctx.fillStyle = '#3f6212'; 
+    // Body
+    ctx.beginPath(); ctx.ellipse(0, 0, 8, 3, 0, 0, Math.PI*2); ctx.fill();
+    // Head
+    ctx.beginPath(); ctx.ellipse(9, -1, 3, 2, 0, 0, Math.PI*2); ctx.fill();
+    // Tail - Sinuous
+    ctx.strokeStyle = '#3f6212'; ctx.lineWidth = 2;
+    const tailWag = Math.sin(walkCycle) * 3;
+    ctx.beginPath(); ctx.moveTo(-6, 0); ctx.quadraticCurveTo(-12, tailWag, -18, 0); ctx.stroke();
+    // Legs
+    ctx.lineWidth = 1; ctx.strokeStyle = '#1a2e05';
+    const l1 = Math.sin(walkCycle) * 2;
+    const l2 = Math.cos(walkCycle) * 2;
+    ctx.beginPath(); ctx.moveTo(4, 2); ctx.lineTo(6 + l1, 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-4, 2); ctx.lineTo(-2 + l2, 6); ctx.stroke();
+    ctx.restore();
+};
+
+export const drawLargeBird = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, bank: number) => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(bank);
+    ctx.fillStyle = '#1e293b'; 
+    ctx.beginPath();
+    // V shape body/wings silhouette
+    ctx.moveTo(0, 0);
+    ctx.lineTo(-size, -size * 0.2);
+    ctx.quadraticCurveTo(-size * 1.5, size * 0.5, -size * 0.2, 0); // Left Wing
+    ctx.lineTo(0, size * 0.2); // Body tail
+    ctx.lineTo(size * 0.2, 0);
+    ctx.quadraticCurveTo(size * 1.5, size * 0.5, size, -size * 0.2); // Right Wing
+    ctx.lineTo(0, 0);
+    ctx.fill();
+    ctx.restore();
+};
+
 export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, alpha: number, color: string = '#ffffff', puffs: any[] = [], vStretch: number = 1.0) => {
     ctx.save();
     ctx.translate(x, y);
@@ -592,6 +662,8 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const rng = createSeededRandom(planet.id);
     const col = planet.color.toLowerCase();
 
+    // Planet Type Logic
+    const isToxic = col === '#a3e635' || planet.name === 'Toxicus';
     const isReddish = ['#ef4444', '#f97316', '#d97706', '#fbbf24', '#7c2d12', '#78350f', '#991b1b', '#b91c1c'].includes(col);
     const isBluish = ['#3b82f6', '#0ea5e9', '#06b6d4', '#60a5fa', '#1e3a8a', '#1e40af', '#172554'].includes(col);
     const isGreenish = ['#10b981', '#064e3b', '#15803d', '#22c55e', '#84cc16', '#065f46', '#a3e635'].includes(col);
@@ -601,8 +673,11 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const isDay = rng() > 0.5; 
     const isOcean = isBluish && rng() > 0.3; 
     const isBarren = isReddish || ['#d97706', '#a16207', '#78350f'].includes(col) || isPurple; 
-    const isLush = isGreenish || (isBluish && !isOcean && !isBarren && !isWhite); 
+    const isLush = !isToxic && (isGreenish || (isBluish && !isOcean && !isBarren && !isWhite)); 
     
+    // Specifically define Desert as non-toxic barren reddish/orange planets
+    const isDesert = isBarren && !isToxic && !isPurple && isReddish;
+
     const hasTrains = rng() > 0.4;
     const hasDomes = isBarren || rng() > 0.7;
     const hasWindmills = isLush && rng() > 0.3;
@@ -610,7 +685,11 @@ export const generatePlanetEnvironment = (planet: Planet) => {
 
     const isRainy = isLush && rng() > 0.7; 
     const isStormy = isRainy && rng() > 0.5; 
-    const hasBirds = isLush && !isRainy && rng() > 0.2; 
+    
+    // Environmental Life Rules
+    const hasSmallBirds = (isLush || isOcean) && isDay && !isRainy && !isStormy && !isToxic;
+    const hasLargeBirds = (isLush || isOcean || isDesert) && isDay && !isStormy && !isToxic;
+    const hasCritters = isDesert && isDay && !isToxic;
 
     let skyGradient = ['#000000', '#000000'];
     let cloudColors = ['#ffffff']; 
@@ -755,5 +834,10 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const wanderers: {x: number, y: number, size: number, color: string}[] = []; if (!isDay && rng() > 0.5) { const wCount = 1 + Math.floor(rng() * 2); for(let i=0; i<wCount; i++) { wanderers.push({ x: rng(), y: rng() * 0.4, size: 1 + rng() * 2, color: '#94a3b8' }); } }
     const streetLights: {x: number, h: number}[] = []; if (hills[4]?.hasRoad) { for(let k=0; k<15; k++) { streetLights.push({ x: -1400 + (k * 200) + (rng() * 20), h: 25 }); } }
 
-    return { isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush, sunColor, skyGradient, cloudColor: cloudColors[0], cloudColors, hillColors, stars, clouds, hills, features, cars, trains, groundColor, powerLines, quadrant: planet.quadrant, weather: { isRainy, isStormy }, hasBirds, wanderers, streetLights };
+    return { 
+        isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush, isDesert, isToxic,
+        sunColor, skyGradient, cloudColor: cloudColors[0], cloudColors, hillColors, stars, clouds, hills, features, cars, trains, groundColor, powerLines, 
+        quadrant: planet.quadrant, weather: { isRainy, isStormy }, 
+        hasSmallBirds, hasLargeBirds, hasCritters, wanderers, streetLights 
+    };
 };

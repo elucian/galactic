@@ -5,7 +5,7 @@ import { SHIPS, ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { audioService } from '../services/audioService.ts';
 import { LandingGear } from './LandingGear.tsx';
-import { drawDome, drawPlatform, getEngineCoordinates, drawPowerPlant, drawBoulder, generatePlanetEnvironment, drawBuilding, drawVehicle, drawStreetLight, drawTower, drawCloud, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning } from '../utils/drawingUtils.ts';
+import { drawDome, drawPlatform, getEngineCoordinates, drawPowerPlant, drawBoulder, generatePlanetEnvironment, drawBuilding, drawVehicle, drawStreetLight, drawTower, drawCloud, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning, drawScorpion, drawLizard, drawLargeBird } from '../utils/drawingUtils.ts';
 import { SequenceStatusBar } from './SequenceStatusBar.tsx';
 
 interface LandingSceneProps {
@@ -88,6 +88,8 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
     rain: [] as {x: number, y: number, len: number, speed: number}[],
     lightning: { active: false, x: 0, timer: 0 },
     birdFlock: [] as {x: number, y: number, vx: number, vy: number, flap: number}[],
+    largeBirds: [] as {x: number, y: number, radius: number, angle: number, speed: number, size: number}[],
+    critters: [] as {x: number, y: number, type: 'scorpion'|'lizard', vx: number, frame: number, dir: number}[],
     // Night Logic
     isNightLanding: false,
     wanderers: [] as {x: number, y: number, size: number, color: string}[],
@@ -127,7 +129,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       const h = window.innerHeight;
       
       // --- NIGHT LANDING LOGIC ---
-      // 60% probability for Delta, 50% for others (or keep consistent)
       if (planet.quadrant === QuadrantType.DELTA) {
           s.isNightLanding = Math.random() < 0.6;
       } else {
@@ -136,32 +137,21 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       
       // Initialize Celestial Bodies for Night Mode
       if (s.isNightLanding) {
-          // Two Wanderers (Other planets in quadrant)
           s.wanderers = [
-              { x: w * 0.2 + (Math.random() * w * 0.2), y: h * 0.15, size: 3, color: '#fca5a5' }, // Small, distant
-              { x: w * 0.6 + (Math.random() * w * 0.3), y: h * 0.25, size: 5, color: '#93c5fd' }  // Slightly larger
+              { x: w * 0.2 + (Math.random() * w * 0.2), y: h * 0.15, size: 3, color: '#fca5a5' }, 
+              { x: w * 0.6 + (Math.random() * w * 0.3), y: h * 0.25, size: 5, color: '#93c5fd' }  
           ];
           
-          // MOON GENERATION
           let moonsToShow = 0;
-
-          // DELTA SECTOR OVERRIDE: Fixed Moon Counts
           if (planet.quadrant === QuadrantType.DELTA) {
-              if (planet.id === 'p10') moonsToShow = 1;      // Void Edge: 1 Moon
-              else if (planet.id === 'p11') moonsToShow = 1; // Obsidian: 1 Moon
-              else if (planet.id === 'p12') moonsToShow = 2; // Omega Prime: 2 Moons
-              else moonsToShow = 1; // Fallback
+              if (planet.id === 'p10') moonsToShow = 1;      
+              else if (planet.id === 'p11') moonsToShow = 1; 
+              else if (planet.id === 'p12') moonsToShow = 2; 
+              else moonsToShow = 1; 
           } else {
-              // STANDARD PROCEDURAL LOGIC FOR OTHER SECTORS
-              // Use planet-specific data count if available, otherwise procedural fallback based on ID
               const dataCount = planet.moons ? planet.moons.length : 0;
-              // Deterministic fallback based on planet ID to ensure specific count per planet
               const procCount = 1 + (planet.id.charCodeAt(planet.id.length - 1) % 3); 
               const totalPotential = dataCount > 0 ? dataCount : procCount;
-              
-              // Probability Logic:
-              // 90% chance to see at least 1 moon (if potential exists)
-              // 50% chance to see 2 or 3 if potential allows
               if (totalPotential > 0 && Math.random() < 0.9) {
                   moonsToShow = 1;
                   if (totalPotential > 1 && Math.random() < 0.5) {
@@ -172,28 +162,22 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
 
           s.moons = [];
           for (let i = 0; i < moonsToShow; i++) {
-              let r = 4 + Math.random() * 6; // Radius 4-10px (Diameter 8-20px)
-              
-              // DELTA SPECIFIC SIZING (Omega Prime)
+              let r = 4 + Math.random() * 6; 
               if (planet.quadrant === QuadrantType.DELTA && planet.id === 'p12') {
-                  if (i === 0) r = 9; // Large close moon
-                  else r = 4.5;       // Small far moon
+                  if (i === 0) r = 9; 
+                  else r = 4.5;       
               }
-              
-              // Larger moons (> 6px radius) show phases
               const type = r > 6 ? 'phaser' : 'static';
-              
               s.moons.push({
                   x: w * (0.15 + (i * 0.25) + (Math.random() * 0.1)), 
                   y: h * (0.1 + (Math.random() * 0.2)), 
                   size: r,
-                  color: '#e2e8f0', // Silver/White
+                  color: '#e2e8f0', 
                   type: type,
-                  phase: Math.random() // 0 to 1
+                  phase: Math.random() 
               });
           }
 
-          // Gamma Quadrant Comet (Night Only)
           if (env.quadrant === QuadrantType.GAMA) {
               s.comet = {
                   x: w * 0.1 + (Math.random() * w * 0.8),
@@ -211,10 +195,20 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       }
 
       s.birds = []; s.flock = [];
-      if (env.powerLines.length > 0) { const numBirds = 12 + Math.floor(Math.random() * 8); const chain = env.powerLines[0]; const minX = Math.min(chain[0].x, chain[chain.length-1].x); const maxX = Math.max(chain[0].x, chain[chain.length-1].x); for(let i=0; i<numBirds; i++) { const birdX = minX + (Math.random() * (maxX - minX)); s.birds.push({ x: birdX, y: -100, vx: 0, vy: 0, state: 'sit', flapSpeed: 0.2 + Math.random() * 0.1, timer: Math.random() * 100 }); } }
+      // Powerline birds (Small) - Only if Day and Has Small Birds
+      if (env.powerLines.length > 0 && env.hasSmallBirds && !s.isNightLanding) { 
+          const numBirds = 12 + Math.floor(Math.random() * 8); 
+          const chain = env.powerLines[0]; 
+          const minX = Math.min(chain[0].x, chain[chain.length-1].x); 
+          const maxX = Math.max(chain[0].x, chain[chain.length-1].x); 
+          for(let i=0; i<numBirds; i++) { 
+              const birdX = minX + (Math.random() * (maxX - minX)); 
+              s.birds.push({ x: birdX, y: -100, vx: 0, vy: 0, state: 'sit', flapSpeed: 0.2 + Math.random() * 0.1, timer: Math.random() * 100 }); 
+          } 
+      }
       
-      // Init Birds Flock
-      if (env.hasBirds) {
+      // Init Small Bird Flock - Only if Day and Has Small Birds
+      if (env.hasSmallBirds && !s.isNightLanding) {
           const count = 5 + Math.floor(Math.random() * 5);
           for(let i=0; i<count; i++) {
               s.birdFlock.push({
@@ -223,6 +217,36 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   vx: (Math.random() > 0.5 ? 1 : -1) * (2 + Math.random() * 2),
                   vy: (Math.random() - 0.5) * 0.5,
                   flap: Math.random() * 10
+              });
+          }
+      }
+
+      // Init Large Birds - Only if Day and Has Large Birds
+      if (env.hasLargeBirds && !s.isNightLanding) {
+          const count = 1 + Math.floor(Math.random() * 2);
+          for(let i=0; i<count; i++) {
+              s.largeBirds.push({
+                  x: Math.random() * 2000 - 1000, // Center of circle
+                  y: 200 + Math.random() * 300,   // Altitude
+                  radius: 100 + Math.random() * 100,
+                  angle: Math.random() * Math.PI * 2,
+                  speed: 0.01 + Math.random() * 0.01,
+                  size: 6 + Math.random() * 4
+              });
+          }
+      }
+
+      // Init Critters - Only if Has Critters (Desert Day)
+      if (env.hasCritters && !s.isNightLanding) {
+          const count = 2 + Math.floor(Math.random() * 3);
+          for(let i=0; i<count; i++) {
+              s.critters.push({
+                  x: (Math.random() - 0.5) * 800, // Spread out on ground
+                  y: 0, // Will be adjusted relative to groundY
+                  type: Math.random() > 0.6 ? 'scorpion' : 'lizard',
+                  vx: (Math.random() > 0.5 ? 1 : -1) * (0.2 + Math.random() * 0.3),
+                  frame: Math.random() * 100,
+                  dir: Math.random() > 0.5 ? 1 : -1
               });
           }
       }
@@ -255,6 +279,38 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
 
       const loop = () => {
           const env = envRef.current; const dpr = window.devicePixelRatio || 1; const w = canvas.width / dpr; const h = canvas.height / dpr; const cx = w / 2; const s = stateRef.current;
+          
+          const drawCloudsByLayer = (targetLayer: number, targetCtx: CanvasRenderingContext2D) => {
+              const spaceTransitionHeight = 3000;
+              const spaceRatio = Math.min(1, Math.max(0, (s.viewY - 500) / spaceTransitionHeight));
+              
+              if (env.clouds && env.clouds.length > 0 && spaceRatio < 0.95) {
+                  const stretchFactor = 1.0;
+                  const wrapWidth = w + 1000;
+                  const wrapOffset = 500;
+                  const groundY = h - 90;
+
+                  env.clouds.forEach((c: any) => {
+                      if (c.layer !== targetLayer) return;
+                      const yOff = s.viewY * (1 - (c.parallaxFactor + 0.1));
+                      const drawY = -c.altitude - yOff;
+                      
+                      let distMoved = s.frame * c.speed * c.direction;
+                      let rawX = (c.x + distMoved) % wrapWidth;
+                      if (rawX < 0) rawX += wrapWidth;
+                      const cloudX = rawX - wrapOffset;
+                      
+                      const pulse = Math.sin((s.frame * 0.01) + (c.id || 0));
+                      const opacity = Math.max(0, Math.min(1, c.baseAlpha * (0.8 + 0.2 * pulse) * (1 - spaceRatio)));
+                      const screenY = (groundY + s.viewY + s.shake) + drawY;
+
+                      if (screenY > -200 && screenY < h + 200 && opacity > 0.01) {
+                          drawCloud(targetCtx, cloudX, drawY, c.w, opacity, c.color, c.puffs, stretchFactor);
+                      }
+                  });
+              }
+          };
+
           s.frame++; const groundY = h - 90; const padHeight = 20; const padSurfaceY = groundY - padHeight; const touchY = padSurfaceY - (LEG_OFFSET - 4); let currentScale = 0.1; 
           
           if (s.viewY > 1000) { if (phaseRef.current !== 'reentry') { setPhase('reentry'); phaseRef.current = 'reentry'; } s.velocity = 20; s.viewY -= s.velocity; currentScale = 0.1 + (1.0 - (s.viewY / 2000)) * 0.3; s.shipY = h * 0.3; s.shake = (Math.random() - 0.5) * 4; s.reEntryHeat = Math.min(1, s.reEntryHeat + 0.05); s.isThrusting = false; s.thrustIntensity = 0; setStatus("RE-ENTRY INTERFACE"); audioService.updateReEntryWind(s.reEntryHeat); } 
@@ -280,6 +336,8 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
 
           if (fgCtx) fgCtx.clearRect(0, 0, w, h);
           
+          const worldY = groundY + s.viewY + s.shake;
+          
           // SKY RENDERING
           const spaceTransitionHeight = 3000; 
           const spaceRatio = Math.min(1, Math.max(0, (s.viewY - 500) / spaceTransitionHeight));
@@ -288,7 +346,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           const effectiveIsDay = env.isDay && !s.isNightLanding;
           const effectiveIsNight = !effectiveIsDay;
 
-          // Gradient Base
           const baseSky1 = effectiveIsNight ? '#020617' : env.skyGradient[0];
           const baseSky2 = effectiveIsNight ? '#1e293b' : env.skyGradient[1];
 
@@ -296,21 +353,16 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           const sky2 = mixColor(baseSky2, '#000000', spaceRatio);
           const grad = ctx.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, sky1); grad.addColorStop(1, sky2); ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
 
-          // Star Visibility Logic
           let starVis = 0; 
           if (effectiveIsNight) {
-              // At night, stars are visible even on ground (0.8), increasing to 1.0 in space
               starVis = 0.8 + (spaceRatio * 0.2); 
           } else {
-              // Day: stars fade out earlier
               const baseStarOpacity = Math.min(1, Math.max(0, (s.viewY - 500) / 2000)); 
               starVis = Math.max(baseStarOpacity, spaceRatio); 
           }
           
-          // DELTA SKY LOGIC (Black Hole System)
           const sunY = h * 0.2 + (s.viewY * 0.05); const sunX = w * 0.7; let dimFactor = 0;
           
-          // Only show Black Hole if Delta AND NOT Night
           if (env.quadrant === QuadrantType.DELTA && !s.isNightLanding) { 
               const time = Date.now();
               const cyclePos = time % 35000;
@@ -331,7 +383,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               starVis = Math.max(starVis, eclipseFactor * 0.8);
 
               if (starVis > 0) { 
-                  // Delta star parallax
                   const starParallax = s.viewY * 0.02;
                   ctx.fillStyle = '#ffffff'; 
                   env.stars.forEach(star => { 
@@ -361,24 +412,17 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               if (isBehind) { drawDwarf(); drawJets(); drawBlackHole(); } else { drawJets(); drawBlackHole(); drawDwarf(); } 
           } 
           else { 
-              // STANDARD SYSTEM & NIGHT WANDERERS & DELTA NIGHT
-              // Draw Stars if visibility > 0 or if there are "shiny" stars visible in day
               if (starVis > 0 || (effectiveIsDay && spaceRatio < 0.2)) { 
-                  // Slower parallax: 0.02 factor vs sun's 0.05
                   const starParallax = s.viewY * 0.02;
                   ctx.fillStyle = '#ffffff'; 
                   env.stars.forEach(star => { 
                       const sy = (star.y * h + starParallax) % h; 
-                      
-                      // Calculate individual visibility
                       let individualVis = starVis;
                       if (effectiveIsDay && starVis < 0.2) {
-                          // Allow shiny stars (large or high alpha) to persist in day/low altitude
                           if (star.size > 0.7 || star.alpha > 0.8) {
                               individualVis = 0.3; 
                           }
                       }
-
                       if (individualVis > 0) {
                           ctx.globalAlpha = star.alpha * individualVis; 
                           ctx.beginPath(); ctx.arc(star.x * w, (sy < 0 ? sy + h : sy), star.size, 0, Math.PI*2); ctx.fill(); 
@@ -387,79 +431,54 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   ctx.globalAlpha = 1.0; 
               }
 
-              // DRAW WANDERERS & MOONS (Only if Night Mode is Active or in Space)
               if (s.isNightLanding || spaceRatio > 0.5) {
-                  // Wanderers (Planets) - Farther (Low Parallax)
                   s.wanderers.forEach(wnd => {
-                      const parallaxY = s.viewY * 0.04; // Very slight movement
+                      const parallaxY = s.viewY * 0.04; 
                       ctx.fillStyle = wnd.color;
                       ctx.beginPath(); 
                       ctx.arc(wnd.x, wnd.y + parallaxY, wnd.size, 0, Math.PI*2); 
                       ctx.fill();
                   });
 
-                  // MOON RENDERING (With Realistic Ellipse Phases)
                   s.moons.forEach(mn => {
                       const parallaxY = s.viewY * 0.08;
                       const my = mn.y + parallaxY;
-                      
-                      // 1. Draw Base Dark Moon (The "shadowed" part)
-                      // Using a dark grey to represent unlit side visible against sky
                       ctx.fillStyle = '#475569'; 
                       ctx.beginPath(); 
                       ctx.arc(mn.x, my, mn.size, 0, Math.PI*2); 
                       ctx.fill();
 
                       if (mn.type === 'phaser') {
-                          // Slow phase cycle
                           const time = Date.now();
-                          
-                          // SPEED LOGIC CHANGE HERE
                           const isDelta = env.quadrant === QuadrantType.DELTA;
-                          // Delta: Quick cycle (~5s)
-                          // Others: Almost static (very slow drift ~200s+)
                           const speedFactor = isDelta ? 0.0002 : 0.000002;
-                          
                           const phaseOffset = time * speedFactor;
                           let p = ((mn.phase || 0) + phaseOffset) % 1; 
-                          if (p < 0) p += 1; // Normalize 0..1
+                          if (p < 0) p += 1; 
 
                           const r = mn.size;
                           const brightColor = mn.color;
-                          const darkColor = '#475569'; // Must match base color above
+                          const darkColor = '#475569'; 
 
                           ctx.fillStyle = brightColor;
-
-                          // Waxing (0 -> 0.5) vs Waning (0.5 -> 1.0)
                           if (p <= 0.5) {
-                              // Waxing: Light on Right side
-                              ctx.beginPath(); ctx.arc(mn.x, my, r, -Math.PI/2, Math.PI/2); ctx.fill(); // Right Semicircle
-                              
-                              // Ellipse width varies from r (New) to 0 (Quarter) to -r (Full)
-                              // We use cos(p * 2PI). At p=0, cos=1. At p=0.25, cos=0.
-                              const w = r * Math.cos(p * 2 * Math.PI); 
-                              
+                              ctx.beginPath(); ctx.arc(mn.x, my, r, -Math.PI/2, Math.PI/2); ctx.fill(); 
+                              const width = r * Math.cos(p * 2 * Math.PI); 
                               ctx.beginPath(); 
-                              ctx.ellipse(mn.x, my, Math.abs(w), r, 0, 0, Math.PI*2);
-                              // If p < 0.25 (New -> Quarter), ellipse is Dark (cuts into light)
+                              ctx.ellipse(mn.x, my, Math.abs(width), r, 0, 0, Math.PI*2);
                               if (p < 0.25) ctx.fillStyle = darkColor;
-                              else ctx.fillStyle = brightColor; // Adds to light
+                              else ctx.fillStyle = brightColor;
                               ctx.fill();
                           } else {
-                              // Waning: Light on Left side
-                              ctx.beginPath(); ctx.arc(mn.x, my, r, Math.PI/2, -Math.PI/2); ctx.fill(); // Left Semicircle
-                              
-                              const w = r * Math.cos(p * 2 * Math.PI); 
-                              
+                              ctx.beginPath(); ctx.arc(mn.x, my, r, Math.PI/2, -Math.PI/2); ctx.fill(); 
+                              const width = r * Math.cos(p * 2 * Math.PI); 
                               ctx.beginPath();
-                              ctx.ellipse(mn.x, my, Math.abs(w), r, 0, 0, Math.PI*2);
-                              // If p < 0.75 (Full -> Last Quarter), ellipse is Bright
+                              ctx.ellipse(mn.x, my, Math.abs(width), r, 0, 0, Math.PI*2);
                               if (p < 0.75) ctx.fillStyle = brightColor;
-                              else ctx.fillStyle = darkColor; // Cuts into light
+                              else ctx.fillStyle = darkColor; 
                               ctx.fill();
                           }
                       } else {
-                          // Static small moon - Just full bright circle
                           ctx.fillStyle = mn.color;
                           ctx.beginPath(); 
                           ctx.arc(mn.x, my, mn.size, 0, Math.PI*2); 
@@ -468,7 +487,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   });
               }
 
-              // Sun (Standard Day Only)
               if (effectiveIsDay) { 
                   const sunR = 40; 
                   const sGrad = ctx.createRadialGradient(sunX, sunY, sunR*0.2, sunX, sunY, sunR*2.5); 
@@ -481,96 +499,41 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                   ctx.globalAlpha = 1.0; 
               } 
               
-              // COMET (Gamma Night Special)
               if (s.comet) {
                   s.comet.x += s.comet.vx;
                   s.comet.y += s.comet.vy;
-                  
                   ctx.save();
-                  // PARALLAX FIX: Farther distance -> 0.02 (matches stars)
                   const parallaxY = s.viewY * 0.02;
                   ctx.translate(s.comet.x, s.comet.y + parallaxY);
-                  
-                  // Rotate for tail (pointing right/slightly up as it falls down-left)
                   ctx.rotate(-0.1); 
-                  
-                  // Glow/Tail
                   const tailGrad = ctx.createLinearGradient(0, 0, s.comet.tailLen, 0);
                   tailGrad.addColorStop(0, 'rgba(253, 224, 71, 0.5)'); 
                   tailGrad.addColorStop(1, 'rgba(253, 224, 71, 0)');
-                  
                   ctx.fillStyle = tailGrad;
-                  ctx.shadowColor = '#facc15';
-                  ctx.shadowBlur = 15; // "Glowing atmosphere"
-                  
-                  ctx.beginPath();
-                  ctx.moveTo(0, 0);
-                  // Teardrop shape trailing
-                  ctx.quadraticCurveTo(s.comet.tailLen * 0.3, -4, s.comet.tailLen, 0);
-                  ctx.quadraticCurveTo(s.comet.tailLen * 0.3, 4, 0, 0);
-                  ctx.fill();
-                  
-                  // Nucleus - Small 4px diameter
-                  ctx.shadowBlur = 0;
-                  ctx.fillStyle = '#ffffff';
-                  ctx.beginPath();
-                  ctx.arc(0, 0, 2, 0, Math.PI*2); 
-                  ctx.fill();
-                  
+                  ctx.shadowColor = '#facc15'; ctx.shadowBlur = 15; 
+                  ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(s.comet.tailLen * 0.3, -4, s.comet.tailLen, 0); ctx.quadraticCurveTo(s.comet.tailLen * 0.3, 4, 0, 0); ctx.fill();
+                  ctx.shadowBlur = 0; ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI*2); ctx.fill();
                   ctx.restore();
               }
           }
 
           if (env.wanderers && env.wanderers.length > 0 && starVis > 0.3) { env.wanderers.forEach(wd => { const wx = (wd.x * w + s.startTime * 0.005) % (w + 100) - 50; const wy = wd.y * h; ctx.fillStyle = wd.color || '#e5e7eb'; ctx.shadowColor = '#ffffff'; ctx.shadowBlur = 2; ctx.globalAlpha = starVis; ctx.beginPath(); ctx.arc(wx, wy, Math.min(2.5, wd.size), 0, Math.PI*2); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1.0; }); }
 
-          // UPDATED: Draw Clouds with Wrapping & Stretching
-          const drawCloudsByLayer = (targetLayer: number, targetCtx: CanvasRenderingContext2D) => {
-              if (env.clouds && env.clouds.length > 0) {
-                  // Stretch disabled for descent
-                  const stretchFactor = 1.0;
+          // BACKGROUND LARGE BIRDS (Gliding High)
+          if (env.hasLargeBirds && s.viewY < 4000) {
+              const bgCtx = ctx;
+              s.largeBirds.forEach(bird => {
+                  bird.angle += bird.speed;
+                  const bx = bird.x + Math.cos(bird.angle) * bird.radius + cx;
+                  const by = bird.y + Math.sin(bird.angle * 0.3) * 50 + worldY - 1500; // Offset higher up
                   
-                  // Strict fade in for atmosphere boundary
-                  const spaceStart = 8000;
-                  const spaceEnd = 12000;
-                  let altitudeVisibility = 1.0;
-                  
-                  if (s.viewY > spaceStart) {
-                      altitudeVisibility = 1.0 - Math.min(1, (s.viewY - spaceStart) / (spaceEnd - spaceStart));
+                  if (bx > -50 && bx < w + 50 && by > -50 && by < h + 50) {
+                      const bank = Math.sin(bird.angle) * 0.3;
+                      drawLargeBird(bgCtx, bx, by, bird.size, bank);
                   }
-                  
-                  if (altitudeVisibility <= 0) return; // Don't draw if fully in space
+              });
+          }
 
-                  const wrapWidth = w + 1000;
-                  const wrapOffset = 500;
-                  const verticalSpan = 5000;
-
-                  env.clouds.forEach((c: any) => {
-                      if (c.layer !== targetLayer) return;
-                      
-                      const loopH = h + 800;
-                      let progress = (c.altitude + s.viewY * (1 + c.parallaxFactor)) % loopH;
-                      if (progress < 0) progress += loopH;
-                      
-                      const drawY = -s.viewY + progress - 400; // Centered
-                      
-                      // Horizontal Wrapping
-                      let distMoved = s.frame * c.speed * c.direction;
-                      let rawX = (c.x + distMoved) % wrapWidth;
-                      if (rawX < 0) rawX += wrapWidth;
-                      const cloudX = rawX - wrapOffset;
-                      
-                      const pulse = Math.sin((s.frame * 0.01) + (c.id || 0));
-                      // Combine pulse opacity with altitude visibility
-                      const opacity = Math.max(0, Math.min(1, c.baseAlpha * (0.8 + 0.2 * pulse))) * altitudeVisibility;
-
-                      if (drawY > -s.viewY - 2000 && drawY < -s.viewY + 2000 && opacity > 0.01) {
-                          drawCloud(targetCtx, cloudX, drawY, c.w, opacity, c.color, c.puffs, stretchFactor);
-                      }
-                  });
-              }
-          };
-
-          const worldY = groundY + s.viewY + s.shake;
           ctx.save(); ctx.translate(cx, worldY); 
           const drawHillItem = (hill: any, i: number) => {
               const pFactor = hill.parallaxFactor; const yOff = (s.viewY * (1 - pFactor)); ctx.fillStyle = hill.color; ctx.beginPath(); ctx.moveTo(-w, h); 
@@ -651,7 +614,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                               } else {
                                   foundationH = drop;
                               }
-                              // Use position as seed for stable lights (segIdx and offset are constant per tree)
                               const lightSeed = (t.segIdx * 1000) + Math.floor(t.offset * 100);
                               drawResort(ctx, tx, drawY, t.scale, effectiveIsDay, foundationH, lightSeed); 
                           }
@@ -664,7 +626,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               if (hill.cityBuildings) { hill.cityBuildings.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff; drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h }, effectiveIsDay, false); }); }
           };
 
-          // LAYER 0 (DISTANT) - BEFORE HILLS
           if (s.lightning.active) {
               const opacity = Math.min(1, s.lightning.timer / 10);
               ctx.fillStyle = `rgba(255, 255, 255, ${opacity * 0.3})`;
@@ -674,14 +635,13 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
           drawCloudsByLayer(0, ctx);
           
           if (s.lightning.active && s.lightning.timer > 5 && s.lightning.x) {
-              const ly = 200; // Sky area
+              const ly = 200; 
               drawLightning(ctx, cx + s.lightning.x, ly, 600);
           }
 
           if (env.hills[0]) drawHillItem(env.hills[0], 0); 
           if (env.hills[1]) drawHillItem(env.hills[1], 1);
           
-          // LAYER 1 (MID) - AFTER FAR HILLS
           drawCloudsByLayer(1, ctx);
           
           for (let i = 2; i < env.hills.length; i++) { drawHillItem(env.hills[i], i); }
@@ -698,9 +658,30 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               else if (f.type === 'power_plant') drawPowerPlant(ctx, f.x, fy, f.scale, f.isUnderground);
           });
           if (env.powerLines) { env.powerLines.forEach((chain: any[]) => { ctx.strokeStyle = '#18181b'; ctx.lineWidth = 1; for (let k=0; k<chain.length-1; k++) { const p1 = chain[k]; const p2 = chain[k+1]; const y1 = -p1.h + (p1.yOff || 0); const y2 = -p2.h + (p2.yOff || 0); for(let wIdx=0; wIdx<3; wIdx++) { const sag = 15 + (wIdx * 5); const midX = (p1.x + p2.x) / 2; const midY = Math.max(y1, y2) + sag; ctx.beginPath(); ctx.moveTo(p1.x, y1 + (wIdx * 4)); ctx.quadraticCurveTo(midX, midY + (wIdx * 4), p2.x, y2 + (wIdx * 4)); ctx.stroke(); } } }); }
+          
+          // GROUND CRITTERS
+          if (env.hasCritters && s.viewY < 500) {
+              s.critters.forEach(c => {
+                  if (Math.random() < 0.02) c.vx = (Math.random() > 0.5 ? 1 : -1) * (0.2 + Math.random() * 0.3);
+                  if (Math.random() < 0.05) c.vx = 0; 
+                  
+                  c.x += c.vx;
+                  if (c.x < -800) c.vx = Math.abs(c.vx) + 0.1;
+                  if (c.x > 800) c.vx = -Math.abs(c.vx) - 0.1;
+                  
+                  if (Math.abs(c.vx) > 0.01) {
+                      c.frame += 0.2;
+                      c.dir = c.vx > 0 ? 1 : -1;
+                  }
+                  
+                  // Ground Y is relative to 0 at pad surface
+                  if (c.type === 'scorpion') drawScorpion(ctx, c.x, 0, 1.0, c.frame);
+                  else drawLizard(ctx, c.x, 0, 1.0, c.frame, c.dir);
+              });
+          }
+
           ctx.restore();
 
-          // RAIN & BIRDS UPDATE
           if (env.weather?.isStormy) {
               if (s.lightning.active) {
                   s.lightning.timer--;
@@ -728,7 +709,8 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               rainCtx.stroke();
           }
 
-          if (env.hasBirds && s.viewY < 1500) {
+          // SMALL BIRDS FLOCK
+          if (env.hasSmallBirds && s.viewY < 1500) {
               const birdCtx = fgCtx || ctx;
               s.birdFlock.forEach(b => {
                   b.x += b.vx; b.y += b.vy;
@@ -789,7 +771,6 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
              });
              fgCtx.restore();
 
-             // Layer 2 (Closest) on FG - AFTER SHIP
              drawCloudsByLayer(2, fgCtx);
           } else {
              drawCloudsByLayer(2, ctx);
