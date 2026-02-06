@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState } from 'react';
 import { Shield, ShipFitting, EquippedWeapon, Planet, QuadrantType, WeaponType, CargoItem, PlanetStatusData, AmmoType } from '../types.ts';
 import { audioService } from '../services/audioService.ts';
@@ -410,6 +411,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (speedMode === 'slow') speedMult = 0.6;
         if (speedMode === 'fast') speedMult = 1.4;
 
+        // SCALE FACTOR FOR INTERFACE SIZE
+        const sizeScale = fontSize === 'small' ? 0.8 : (fontSize === 'large' ? 1.25 : (fontSize === 'extra-large' ? 1.5 : 1.0));
+
         const baseRegen = (2.0 + (activeShip.config.price / 100000)) * 1.5;
         
         const isStress = s.wasShieldHit && s.isShooting;
@@ -527,12 +531,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             } else if (s.energizeTimer % 30 === 0) {
                 setHud(h => ({...h, alert: `INJECTING POWER... ${Math.floor(progress*100)}%`, alertType: 'info'}));
             }
-        } else if (s.energy < maxEnergy * 0.1 && s.frame % 600 === 0) {
-            // Auto-inject logic fallback (if implemented before, keep it simple here)
-            // Existing logic had instant injection, removing it to favor manual 'E' or critical auto?
-            // The prompt says "Otherwise these operations will happen automaticly with a delay of 10 seconds."
-            // We'll stick to manual 'E' for now or the critical fuel check above. 
-            // Existing code had an auto-inject block, effectively replaced by this manual system or player action.
         }
 
         const isDistress = !s.rescueMode && s.fuel <= fuelLimit && s.water <= 0 && !s.isRefueling;
@@ -624,7 +622,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             s.usingWater = isIonMode;
 
             // Permanent idle drain (simulating reactor/engine hold)
-            // Drain varies by mode to ensure fairness
             const idleDrain = 0.002;
             if (isIonMode) {
                 // Idle Water/Energy Drain
@@ -645,8 +642,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 } else if (s.fuel > fuelLimit) {
                     s.fuel = Math.max(fuelLimit, s.fuel - effort); 
                 } else {
-                    // Out of fuel/water/energy -> Cannot accelerate effectively
-                    // Although drift physics still apply, we reduce control
                     isMoving = false; 
                 }
             }
@@ -837,7 +832,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             a.y += a.vy * worldSpeedFactor * speedMult; 
             a.z += a.vz * speedMult; 
             a.ax += a.vax; a.ay += a.vay; a.az += a.vaz;
-            if (Math.abs(a.z) < 50 && Math.hypot(a.x-s.px, a.y-s.py) < a.size + 30 && !s.rescueMode) {
+            if (Math.abs(a.z) < 50 && Math.hypot(a.x-s.px, a.y-s.py) < a.size + (30 * sizeScale) && !s.rescueMode) {
                 takeDamage(s, 20, 'collision', shield, secondShield, setHud);
                 a.hp = 0;
                 audioService.playImpact(a.material, 1.0);
@@ -873,7 +868,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     }
                 }
                 
-                if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < 60) {
+                if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < (60 * sizeScale)) {
                     takeDamage(s, 30, 'collision', shield, secondShield, setHud);
                     if(e.type !== 'boss') e.hp = 0;
                     audioService.playImpact('metal', 1.0);
@@ -1082,13 +1077,13 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             }
 
             if (b.isEnemy && !s.rescueMode) { 
-                if (Math.hypot(b.x-s.px, b.y-s.py) < 30) { takeDamage(s, b.damage, b.type, shield, secondShield, setHud); b.life = 0; createExplosion(s, b.x, b.y, b.color, 3); } 
+                if (Math.hypot(b.x-s.px, b.y-s.py) < (30 * sizeScale)) { takeDamage(s, b.damage, b.type, shield, secondShield, setHud); b.life = 0; createExplosion(s, b.x, b.y, b.color, 3); } 
             } else if (!b.isEnemy) { 
                 let hit = false; 
                 s.enemies.forEach(e => { 
                     const isOrdnance = b.type.includes('missile') || b.type.includes('mine');
-                    const hullRadius = e.type === 'boss' ? 80 : 40;
-                    const shieldRadius = e.shieldLayers.length > 0 ? (hullRadius + 20) : 0; 
+                    const hullRadius = (e.type === 'boss' ? 80 : 40) * sizeScale;
+                    const shieldRadius = e.shieldLayers.length > 0 ? (hullRadius + (20 * sizeScale)) : 0; 
                     const zDist = Math.abs((b.z || 0) - e.z);
 
                     const dist2d = Math.hypot(b.x-e.x, b.y-e.y);
@@ -1263,7 +1258,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         
         s.particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life -= 0.02; }); s.particles = s.particles.filter(p => p.life > 0);
 
-        renderGame(ctx, s, width, height, activeShip, quadrant);
+        renderGame(ctx, s, width, height, activeShip, quadrant, sizeScale);
 
         if (s.frame % 10 === 0) { 
             let totalMagAmmo = 0; let reloading = false; Object.values(s.gunStates).forEach((g: any) => { totalMagAmmo += g.mag; if (g.reloadTimer > 0) reloading = true; });

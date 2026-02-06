@@ -12,7 +12,8 @@ export const renderGame = (
     width: number, 
     height: number, 
     activeShip: any,
-    quadrant: QuadrantType
+    quadrant: QuadrantType,
+    globalScale: number = 1.0
 ) => {
     const s = state;
     
@@ -84,11 +85,12 @@ export const renderGame = (
                 equippedWeapons: activeShip.fitting.weapons,
                 weaponFireTimes: s.weaponFireTimes,
                 weaponHeat: s.weaponHeat
-            }, true, visualMovement, s.usingWater, s.rescueMode, playerForceMainJetsOff);
+            }, true, visualMovement, s.usingWater, s.rescueMode, playerForceMainJetsOff, globalScale);
             
             if (s.shieldsEnabled && (s.sh1 > 0 || s.sh2 > 0) && !s.rescueMode) { 
-                if (s.sh1 > 0) { ctx.save(); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
-                if (s.sh2 > 0) { ctx.save(); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
+                const shieldScale = globalScale;
+                if (s.sh1 > 0) { ctx.save(); ctx.scale(shieldScale, shieldScale); ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 3; ctx.shadowColor = '#3b82f6'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh1 / 250) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 56, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
+                if (s.sh2 > 0) { ctx.save(); ctx.scale(shieldScale, shieldScale); ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 3; ctx.shadowColor = '#a855f7'; ctx.shadowBlur = 10; ctx.globalAlpha = Math.min(1, s.sh2 / 500) * 0.6; ctx.beginPath(); ctx.arc(0, 0, 64, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } 
             }
         } else if (item.type === 'enemy') {
             const e = item.obj as Enemy; 
@@ -128,12 +130,13 @@ export const renderGame = (
                 wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, 
                 gunColor: '#ef4444', 
                 equippedWeapons: e.equippedWeapons 
-            }, false, enemyMovement, false, false, forceEnemyJetsOff);
+            }, false, enemyMovement, false, false, forceEnemyJetsOff, globalScale);
 
             if (e.shieldLayers.length > 0) { 
+                const shieldScale = globalScale;
                 e.shieldLayers.forEach((layer, idx) => { 
                     if (layer.current <= 0) return; 
-                    const radius = 48 + (idx * 8); const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; ctx.beginPath();
+                    const radius = (48 + (idx * 8)) * shieldScale; const opacity = Math.min(1, layer.current / layer.max); ctx.strokeStyle = layer.color; ctx.lineWidth = 3; ctx.shadowColor = layer.color; ctx.shadowBlur = 10; ctx.globalAlpha = opacity; ctx.beginPath();
                     if (layer.type === 'full') { if (layer.wobble > 0.01) { const steps = 40; const wobbleFreq = 8; const wobbleAmp = 5 * layer.wobble; const timeOffset = s.frame * 0.5; for(let i=0; i<=steps; i++) { const angle = (i / steps) * Math.PI * 2; const rOff = Math.sin(angle * wobbleFreq + timeOffset) * wobbleAmp; const r = radius + rOff; const x = Math.cos(angle) * r; const y = Math.sin(angle) * r; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); } ctx.closePath(); } else { ctx.arc(0, 0, radius, 0, Math.PI * 2); } } else if (layer.type === 'front') { const arcRad = (140 * Math.PI) / 180; const start = (-Math.PI / 2) - (arcRad / 2) + layer.rotation; const end = (-Math.PI / 2) + (arcRad / 2) + layer.rotation; ctx.arc(0, 0, radius, start, end); } else if (layer.type === 'tri') { const segSize = Math.PI / 2; const gapSize = Math.PI / 6; for (let k = 0; k < 3; k++) { const start = layer.rotation + (k * (segSize + gapSize)); const end = start + segSize; ctx.moveTo(Math.cos(start) * radius, Math.sin(start) * radius); ctx.arc(0, 0, radius, start, end); } } else if (layer.type === 'hex') { const segSize = Math.PI / 4; const gapSize = Math.PI / 12; for (let k = 0; k < 6; k++) { const start = layer.rotation + (k * (segSize + gapSize)); const end = start + segSize; ctx.moveTo(Math.cos(start) * radius, Math.sin(start) * radius); ctx.arc(0, 0, radius, start, end); } }
                     ctx.stroke(); if (layer.type === 'full') { ctx.fillStyle = layer.color; ctx.globalAlpha = opacity * 0.1; ctx.fill(); } ctx.shadowBlur = 0; ctx.globalAlpha = 1; 
                 }); 
@@ -163,11 +166,6 @@ export const renderGame = (
     });
     
     s.particles.forEach(p => { ctx.save(); ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.translate(p.x, p.y); ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill(); ctx.restore(); });
-    
-    // Draw Touch Target (if available)
-    // Note: Since targetRef is in main engine, we can't easily draw it unless passed down.
-    // The previous implementation accessed targetRef.current. For now, assume cursor drawing is less critical or handled via UI overlay if needed.
-    // Or pass target pos as prop.
     
     ctx.restore();
 }

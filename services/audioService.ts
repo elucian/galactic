@@ -46,7 +46,8 @@ class AudioService {
       minor: [0, 2, 3, 5, 7, 8, 10, 12],
       major: [0, 2, 4, 5, 7, 9, 11, 12],
       pentatonic: [0, 3, 5, 7, 10, 12],
-      diminished: [0, 3, 6, 9, 12]
+      diminished: [0, 3, 6, 9, 12],
+      dorian: [0, 2, 3, 5, 7, 9, 10, 12]
   };
 
   init() {
@@ -118,15 +119,78 @@ class AudioService {
       gain.connect(this.musicGain);
       osc.connect(gain);
       
+      // Smoother Attack (0.015s) to prevent pop
       gain.gain.setValueAtTime(0, startTime);
-      gain.gain.linearRampToValueAtTime(vol, startTime + 0.01);
+      gain.gain.linearRampToValueAtTime(vol, startTime + 0.015);
+      
       if (decay) {
+          // Exponential decay to very low value
           gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
       } else {
-          gain.gain.setValueAtTime(vol, startTime + duration - 0.01);
-          gain.gain.linearRampToValueAtTime(0, startTime + duration);
+          // Sustain and release
+          gain.gain.setValueAtTime(vol, startTime + duration - 0.02);
+          gain.gain.linearRampToValueAtTime(0.001, startTime + duration);
       }
       
+      osc.start(startTime);
+      // Stop slightly after the envelope finishes to ensure 0 gain
+      osc.stop(startTime + duration + 0.02);
+  }
+
+  // New method for Bass to filter out harsh high frequencies causing "cracks"
+  private playBass(freq: number, startTime: number, duration: number, vol: number) {
+      if (!this.ctx || !this.musicGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      // Lowpass filter to smooth the sawtooth
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(600, startTime);
+      filter.Q.value = 1;
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.musicGain);
+
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(vol, startTime + 0.02); // Slower attack
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration); // Plucky decay
+
+      osc.start(startTime);
+      osc.stop(startTime + duration + 0.05);
+  }
+
+  private playPad(freq: number, startTime: number, duration: number, vol: number) {
+      if (!this.ctx || !this.musicGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      const filter = this.ctx.createBiquadFilter();
+
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, startTime);
+
+      // Warm lowpass
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(800, startTime);
+      filter.Q.value = 0.5;
+
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.musicGain);
+
+      // Very Slow Attack/Decay envelope for "Swell" effect
+      const attack = duration * 0.4;
+      const release = duration * 0.4;
+      
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(vol, startTime + attack);
+      gain.gain.setValueAtTime(vol, startTime + duration - release);
+      gain.gain.linearRampToValueAtTime(0, startTime + duration);
+
       osc.start(startTime);
       osc.stop(startTime + duration);
   }
@@ -161,7 +225,9 @@ class AudioService {
           filter.connect(gain);
           gain.connect(this.musicGain);
           
-          gain.gain.setValueAtTime(0.4, startTime);
+          // Smoother attack for snare to avoid click
+          gain.gain.setValueAtTime(0, startTime);
+          gain.gain.linearRampToValueAtTime(0.4, startTime + 0.005);
           gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
           
           src.start(startTime);
@@ -225,9 +291,10 @@ class AudioService {
           // E Minor
           const root = 40; // E2
           
-          // Driving Bass (16th notes)
+          // Driving Bass (16th notes) - Using filtered bass to reduce cracks
           const bassNote = [root, root, root+12, root][measurePos % 4];
-          this.playTone(this.noteToFreq(bassNote - 12), time, stepDuration/2, 'sawtooth', 0.3);
+          // Shorter duration to prevent overlap clicks (staccato)
+          this.playBass(this.noteToFreq(bassNote - 12), time, stepDuration * 0.7, 0.4);
           
           // Drums
           if (measurePos % 4 === 0) this.playDrum(1, time); // Kick
@@ -238,43 +305,91 @@ class AudioService {
           if (Math.random() > 0.4) {
               const scale = this.SCALES.pentatonic;
               const note = root + 12 + scale[Math.floor(Math.random() * scale.length)];
-              this.playTone(this.noteToFreq(note), time, stepDuration, 'square', 0.15);
+              // Smoother envelope for lead
+              this.playTone(this.noteToFreq(note), time, stepDuration * 0.9, 'square', 0.15);
           }
       }
       else if (this.currentTrackId === 'command') {
-          // Industrial, slow, heavy
-          const root = 38; // D2
+          // Optimistic, Cheerful, "Ready for Action" (C Major)
+          const root = 48; // C3
           
-          // Heavy Kick
-          if (measurePos === 0 || measurePos === 10) this.playDrum(1, time);
-          if (measurePos === 8) this.playDrum(2, time);
+          // 1. Drums: Steady 4-on-the-floor beat
+          if (measurePos % 4 === 0) this.playDrum(1, time); // Kick
+          if (measurePos % 8 === 4) this.playDrum(2, time); // Snare
+          if (measurePos % 2 === 0) this.playDrum(3, time); // Hi-hats
           
-          // Bass Drone
-          if (measurePos === 0) {
-              this.playTone(this.noteToFreq(root - 12), time, stepDuration * 8, 'sawtooth', 0.3, false);
-          }
+          // 2. Bass Line: Walking major progression
+          // Bar 0: C, Bar 1: F, Bar 2: G, Bar 3: C
+          let bassNote = root - 12; // C2
+          if (barPos === 1) bassNote = root - 12 + 5; // F2
+          if (barPos === 2) bassNote = root - 12 + 7; // G2
           
-          // Beeps
+          // Play bass on quarter notes
           if (measurePos % 4 === 0) {
-              this.playTone(this.noteToFreq(root + 24), time, 0.05, 'sine', 0.1);
+              this.playTone(this.noteToFreq(bassNote), time, stepDuration * 3, 'triangle', 0.35, false);
+          }
+
+          // 3. Melody: Arpeggiated bleeps (C Major 7th feel)
+          // Offsets: 0(C), 4(E), 7(G), 11(B)
+          const arp = [0, 4, 7, 11, 12, 11, 7, 4];
+          let arpShift = 0;
+          if (barPos === 1) arpShift = 5; // F Major shift
+          if (barPos === 2) arpShift = 7; // G Major shift
+          
+          // Play melody on 8th notes
+          if (measurePos % 2 === 0) {
+              const idx = (measurePos / 2) % arp.length;
+              // Add randomness to make it sound more like computer chatter
+              if (Math.random() > 0.1) {
+                  const note = root + 12 + arp[idx] + arpShift;
+                  // Square wave for retro tech feel
+                  this.playTone(this.noteToFreq(note), time, 0.1, 'square', 0.08); 
+              }
           }
       }
       else if (this.currentTrackId === 'map') {
-          // Ambient, Spacey
-          const root = 45; // A2
-          
-          // Slow Bass Pad
-          if (measurePos === 0 && barPos % 2 === 0) {
-              this.playTone(this.noteToFreq(root - 12), time, stepDuration * 16, 'triangle', 0.2, false);
+          // Deep Space Ambient - D Minor Dorian feel
+          // Scale: D Dorian (D, E, F, G, A, B, C)
+          const root = 50; // D3
+          const scale = this.SCALES.dorian; 
+
+          // 1. Deep Drone (Sub-bass) - Every 4 bars (64 steps)
+          if (this.current16thNote % 64 === 0) {
+              const freq = this.noteToFreq(root - 24); // D1
+              // Very long sustain
+              this.playPad(freq, time, 16.0 * stepDuration, 0.3); // Drone 4 bars
+              // Subtle 5th harmonic for texture
+              this.playPad(freq * 1.5, time, 16.0 * stepDuration, 0.05); 
           }
-          
-          // Random Echoes
-          if (Math.random() < 0.2) {
-              const scale = this.SCALES.minor;
-              const note = root + 12 + scale[Math.floor(Math.random() * scale.length)];
-              this.playTone(this.noteToFreq(note), time, stepDuration * 2, 'sine', 0.15);
-              // Delay/Echo effect simulation
-              this.playTone(this.noteToFreq(note), time + 0.2, stepDuration * 2, 'sine', 0.05);
+
+          // 2. Ethereal Pad Swells - Random long chords
+          if (measurePos % 16 === 0 && Math.random() > 0.4) {
+              // Pick notes for a cluster
+              const notes = [0, 3, 5, 7].map(i => scale[i]); 
+              // Play a dyad
+              const count = 2;
+              const duration = 8.0 * stepDuration;
+              for(let i=0; i<count; i++) {
+                  const idx = Math.floor(Math.random() * notes.length);
+                  const note = root + notes[idx] + (Math.random() > 0.5 ? 12 : 0);
+                  this.playPad(this.noteToFreq(note), time + (i * 0.1), duration, 0.08);
+              }
+          }
+
+          // 3. Generative Melody / Sparkles (High register with echo)
+          // Sparse: check every beat
+          if (measurePos % 4 === 0 && Math.random() < 0.25) {
+              const noteIdx = Math.floor(Math.random() * scale.length);
+              // High register D5 - D6
+              const note = root + 24 + scale[noteIdx]; 
+              
+              // Simple Sine pluck
+              const dur = 1.0;
+              this.playTone(this.noteToFreq(note), time, dur, 'sine', 0.12);
+              
+              // Delay/Echo effect (manual schedule)
+              this.playTone(this.noteToFreq(note), time + 0.33, dur, 'sine', 0.06); // Echo 1
+              this.playTone(this.noteToFreq(note), time + 0.66, dur, 'sine', 0.03); // Echo 2
           }
       }
       else if (this.currentTrackId === 'victory') {
@@ -312,7 +427,9 @@ class AudioService {
           this.scheduleNote(this.current16thNote, this.nextNoteTime);
           this.nextNoteTime += stepDuration;
           this.current16thNote++;
-          if (this.current16thNote === 16 * 4) { // Reset every 4 bars to keep numbers manageable
+          // Reset only after many bars to allow long drones to re-trigger correctly
+          // Using 256 (16 bars) cycle to keep numbers manageable but allow long phrases
+          if (this.current16thNote >= 256) { 
               this.current16thNote = 0;
           }
       }
@@ -345,8 +462,8 @@ class AudioService {
       if (type === 'combat') this.tempo = 140;
       else if (type === 'victory') this.tempo = 110;
       else if (type === 'intro') this.tempo = 90;
-      else if (type === 'command') this.tempo = 100;
-      else if (type === 'map') this.tempo = 60;
+      else if (type === 'command') this.tempo = 110;
+      else if (type === 'map') this.tempo = 60; // Slow ambient tempo
       else this.tempo = 120;
 
       if (!this.isPlaying && this.musicEnabled) {

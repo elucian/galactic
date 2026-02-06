@@ -94,10 +94,11 @@ export const drawShip = (
     movement?: { up: boolean, down: boolean, left: boolean, right: boolean }, 
     usingWater = false, 
     isRescue = false,
-    forceMainJetsOff = false
+    forceMainJetsOff = false,
+    globalScale: number = 1.0
 ) => { 
     const { config, color: hullColor, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, fitting, equippedWeapons, weaponFireTimes, weaponHeat } = shipData; 
-    const scale = isPlayer ? 0.6 : 0.5; 
+    const scale = (isPlayer ? 0.6 : 0.5) * globalScale; 
     
     ctx.save(); 
     ctx.scale(scale, scale); 
