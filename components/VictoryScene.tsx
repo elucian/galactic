@@ -140,10 +140,10 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
             
             // Moon 1: Inner Circular
             // Orbit Diameter ~ Width/Height of screen (clamped for visibility)
-            // Reduced Speed: 20%
+            // Reduced Speed: 0.05 (approx 20% of typical 0.25)
             const m1OrbitR = Math.min(w, h) * 0.35; 
             const m1Size = 8;
-            const m1Speed = 0.2; // 20% speed
+            const m1Speed = 0.05; 
             const m1Angle = elapsed * m1Speed;
             
             const m1X = planetX + Math.cos(m1Angle) * m1OrbitR;
@@ -170,11 +170,11 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
 
             // Moon 2: Peripheral Elliptical (Screen Edges)
             // Smaller Size
-            // Reduced Speed: 30%
+            // Reduced Speed: 0.08 (approx 30% of typical 0.25)
             const m2OrbitRx = w * 0.48; // Near width edge
             const m2OrbitRy = h * 0.48; // Near height edge
             const m2Size = 5; // Smaller
-            const m2Speed = 0.15; // Even slower (30% relative to typical 0.5)
+            const m2Speed = 0.08; 
             const m2Angle = (elapsed * m2Speed) + Math.PI; // Start opposite
             
             const m2X = planetX + Math.cos(m2Angle) * m2OrbitRx;

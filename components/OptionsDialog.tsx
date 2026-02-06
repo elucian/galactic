@@ -92,11 +92,6 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
       setGameState(prev => ({ ...prev, settings: { ...prev.settings, speedMode: mode } }));
   };
 
-  const updateAudioTheme = (theme: 'retro' | 'classic' | 'modern') => {
-      setGameState(prev => ({ ...prev, settings: { ...prev.settings, audioTheme: theme } }));
-      audioService.setTheme(theme);
-  };
-
   const handleAvatarSelect = (avatar: typeof AVATAR_LIST[0]) => {
       const isDefaultName = AVATAR_LIST.some(a => a.label === gameState.pilotName) || gameState.pilotName === 'STRATOS';
       const newName = isDefaultName ? avatar.label : gameState.pilotName;
@@ -282,24 +277,6 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                                     className="w-32 h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-amber-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:bg-amber-400"
                                 />
                                 <span className="text-[10px] font-mono text-amber-400 w-8 text-right">{Math.round(gameState.settings.sfxVolume * 100)}%</span>
-                            </div>
-                        </div>
-
-                        {/* Audio Theme Selector - Horizontal Alignment */}
-                        <div className="flex justify-between items-center pt-4 border-t border-zinc-800">
-                            <div className="flex flex-col">
-                                <span className={`font-black uppercase text-white ${titleSize}`}>Audio Theme</span>
-                            </div>
-                            <div className="flex gap-1 bg-zinc-800 p-1 rounded overflow-x-auto">
-                                {(['retro', 'classic', 'modern'] as const).map(theme => (
-                                    <button 
-                                        key={theme} 
-                                        onClick={() => updateAudioTheme(theme)}
-                                        className={`min-w-[60px] px-2 py-2 rounded text-[9px] font-black uppercase transition-colors ${gameState.settings.audioTheme === theme ? 'bg-emerald-600 text-white shadow-lg' : 'text-zinc-400 hover:text-white hover:bg-zinc-700'}`}
-                                    >
-                                        {theme}
-                                    </button>
-                                ))}
                             </div>
                         </div>
                      </div>

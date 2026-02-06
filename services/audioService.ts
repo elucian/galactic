@@ -2,59 +2,78 @@
 class AudioService {
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
+  private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
   
-  private musicVolume: number = 0.0;
+  private musicVolume: number = 0.3;
   private sfxVolume: number = 0.5;
   private musicEnabled: boolean = true;
   private sfxEnabled: boolean = true;
   
-  private introAudio: HTMLAudioElement | null = null;
-  private intendedTrack: string | null = null;
+  // Procedural Music State
+  private currentTrackId: string | null = null;
+  private isPlaying: boolean = false;
+  private nextNoteTime: number = 0;
+  private current16thNote: number = 0;
+  private tempo: number = 120;
+  private lookahead: number = 25.0; // ms
+  private scheduleAheadTime: number = 0.1; // s
+  private timerID: number | null = null;
   
   private noiseBuffer: AudioBuffer | null = null;
 
-  private currentTheme: string = 'music'; // Default folder
+  // Track State
+  private bassSeq: number[] = [];
+  private leadSeq: number[] = [];
+  private drumSeq: number[] = []; // 0=none, 1=kick, 2=snare, 3=hihat
 
-  // Base URL for assets
-  private readonly baseUrl = 'https://mthwbpvmznxexpm4.public.blob.vercel-storage.com';
-
-  // Track Mapping
-  private tracks: Record<string, string> = {
-      'intro': `${this.baseUrl}/music/intro.mp3`,
-      'command': `${this.baseUrl}/music/hangar.mp3`,
-      'map': `${this.baseUrl}/music/map.mp3`,
-      'combat': `${this.baseUrl}/music/combat.mp3`,
-      'victory': `${this.baseUrl}/music/victory.mp3`,
-  };
-
+  // SFX State
   private reactorOsc: OscillatorNode | null = null;
   private reactorGain: GainNode | null = null;
-  
   private lastSfxTime: number = 0;
-
-  // Procedural Loops State
   private launchNodes: any = null;
-  private landingNodes: any = null;
   private reEntryNodes: any = null;
+  private landingNodes: any = null;
   private warpNodes: any = null;
+
+  // Music Theory Helpers
+  private noteToFreq(note: number): number {
+      return 440 * Math.pow(2, (note - 69) / 12);
+  }
+
+  // Scales (Root C=0)
+  private readonly SCALES = {
+      minor: [0, 2, 3, 5, 7, 8, 10, 12],
+      major: [0, 2, 4, 5, 7, 9, 11, 12],
+      pentatonic: [0, 3, 5, 7, 10, 12],
+      diminished: [0, 3, 6, 9, 12]
+  };
 
   init() {
     if (!this.ctx) {
         const AudioContextClass = (window.AudioContext || (window as any).webkitAudioContext);
         if (AudioContextClass) {
             this.ctx = new AudioContextClass();
+            
+            // Master Mix
             this.masterGain = this.ctx.createGain();
+            this.masterGain.gain.value = 1.0;
             this.masterGain.connect(this.ctx.destination);
+            
+            // Music Mix
+            this.musicGain = this.ctx.createGain();
+            this.musicGain.connect(this.masterGain);
+            
+            // SFX Mix
             this.sfxGain = this.ctx.createGain();
             this.sfxGain.connect(this.masterGain);
-            this.updateSfxState();
+
+            this.updateVolumes();
 
             // GENERATE PURE WHITE NOISE BUFFER (5 seconds)
             const bufferSize = this.ctx.sampleRate * 5; 
             this.noiseBuffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
             const data = this.noiseBuffer.getChannelData(0);
-            
             for (let i = 0; i < bufferSize; i++) {
                 data[i] = (Math.random() * 2 - 1); 
             }
@@ -63,146 +82,301 @@ class AudioService {
     if (this.ctx && this.ctx.state === 'suspended') {
         this.ctx.resume().catch(e => {});
     }
-    this.updateMusicState();
   }
 
-  setTheme(theme: string) {
-      // Map theme names to folder names
-      let folder = 'music'; // Default 'Retro'
-      if (theme === 'classic') folder = 'Classic';
-      if (theme === 'modern') folder = 'Modern';
+  private updateVolumes() {
+      if (this.ctx) {
+          const now = this.ctx.currentTime;
+          if (this.musicGain) this.musicGain.gain.setTargetAtTime(this.musicEnabled ? this.musicVolume * 0.6 : 0, now, 0.1);
+          if (this.sfxGain) this.sfxGain.gain.setTargetAtTime(this.sfxEnabled ? this.sfxVolume : 0, now, 0.1);
+      }
+  }
+
+  setMusicVolume(v: number) { this.musicVolume = v; this.updateVolumes(); }
+  setSfxVolume(v: number) { this.sfxVolume = v; this.updateVolumes(); }
+  setMusicEnabled(e: boolean) { 
+      this.musicEnabled = e; 
+      this.updateVolumes(); 
+      if (e && this.currentTrackId && !this.isPlaying) {
+          this.startScheduler();
+      } else if (!e) {
+          this.stopScheduler();
+      }
+  }
+  setSfxEnabled(e: boolean) { this.sfxEnabled = e; this.updateVolumes(); }
+
+  // --- PROCEDURAL MUSIC ENGINE ---
+
+  private playTone(freq: number, startTime: number, duration: number, type: OscillatorType, vol: number, decay: boolean = true) {
+      if (!this.ctx || !this.musicGain) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
       
-      if (this.currentTheme !== folder) {
-          this.currentTheme = folder;
-          this.updateTrackPaths();
-          
-          // Reload current track if playing
-          if (this.intendedTrack && this.musicEnabled) {
-              this.loadAndPlay(this.intendedTrack);
-          }
-      }
-  }
-
-  private updateTrackPaths() {
-      const folder = this.currentTheme;
-      this.tracks = {
-          'intro': `${this.baseUrl}/${folder}/intro.mp3`,
-          'command': `${this.baseUrl}/${folder}/hangar.mp3`,
-          'map': `${this.baseUrl}/${folder}/map.mp3`,
-          'combat': `${this.baseUrl}/${folder}/combat.mp3`,
-          'victory': `${this.baseUrl}/${folder}/victory.mp3`,
-      };
-  }
-
-  private updateMusicState() {
-      if (this.introAudio) {
-          this.introAudio.volume = this.musicVolume;
-          if (this.musicEnabled) {
-              if (this.introAudio.paused && this.introAudio.src) {
-                  this.introAudio.play().catch(e => { });
-              }
-          } else {
-              this.introAudio.pause();
-          }
-      } else if (this.musicEnabled && this.intendedTrack && this.musicVolume > 0) {
-          this.loadAndPlay(this.intendedTrack);
-      }
-  }
-
-  private updateSfxState() {
-      if (this.sfxGain && this.ctx) {
-          const target = this.sfxEnabled ? this.sfxVolume : 0;
-          this.sfxGain.gain.setTargetAtTime(target, this.ctx.currentTime, 0.1);
-      }
-  }
-
-  setMusicVolume(v: number) { this.musicVolume = v; this.updateMusicState(); }
-  setSfxVolume(v: number) { this.sfxVolume = v; this.updateSfxState(); }
-  setMusicEnabled(e: boolean) { this.musicEnabled = e; this.updateMusicState(); }
-  setSfxEnabled(e: boolean) { this.sfxEnabled = e; this.updateSfxState(); }
-
-  private getFileName(trackId: string): string {
-      switch(trackId) {
-          case 'intro': return 'intro.mp3';
-          case 'command': return 'hangar.mp3';
-          case 'map': return 'map.mp3';
-          case 'combat': return 'combat.mp3';
-          case 'victory': return 'victory.mp3';
-          default: return 'intro.mp3';
-      }
-  }
-
-  private loadAndPlay(trackId: string) {
-      const path = this.tracks[trackId];
-      if (!path) return;
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, startTime);
       
-      if (this.introAudio) {
-          const currentSrc = this.introAudio.src;
-          // Check if same URL (same file and same theme folder)
-          if (currentSrc === path) { 
-               if (this.introAudio.paused && this.musicEnabled && this.musicVolume > 0) {
-                   this.introAudio.play().catch(e => { });
-               }
-               return; 
-          }
-          this.introAudio.volume = 0;
-          this.introAudio.pause();
-          this.introAudio.removeAttribute('src');
-          this.introAudio.load();
-          this.introAudio = null;
+      gain.connect(this.musicGain);
+      osc.connect(gain);
+      
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(vol, startTime + 0.01);
+      if (decay) {
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      } else {
+          gain.gain.setValueAtTime(vol, startTime + duration - 0.01);
+          gain.gain.linearRampToValueAtTime(0, startTime + duration);
       }
+      
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+  }
 
-      if (!this.musicEnabled || this.musicVolume <= 0) return;
+  private playDrum(type: number, startTime: number) {
+      if (!this.ctx || !this.musicGain) return;
+      
+      if (type === 1) { // Kick
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.connect(gain);
+          gain.connect(this.musicGain);
+          
+          osc.frequency.setValueAtTime(150, startTime);
+          osc.frequency.exponentialRampToValueAtTime(0.01, startTime + 0.5);
+          gain.gain.setValueAtTime(0.8, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.5);
+          
+          osc.start(startTime);
+          osc.stop(startTime + 0.5);
+      } 
+      else if (type === 2) { // Snare (Noise burst)
+          if (!this.noiseBuffer) return;
+          const src = this.ctx.createBufferSource();
+          src.buffer = this.noiseBuffer;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.value = 1000;
+          const gain = this.ctx.createGain();
+          
+          src.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.musicGain);
+          
+          gain.gain.setValueAtTime(0.4, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.2);
+          
+          src.start(startTime);
+          src.stop(startTime + 0.2);
+      }
+      else if (type === 3) { // Hi-hat
+          if (!this.noiseBuffer) return;
+          const src = this.ctx.createBufferSource();
+          src.buffer = this.noiseBuffer;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'highpass';
+          filter.frequency.value = 5000;
+          const gain = this.ctx.createGain();
+          
+          src.connect(filter);
+          filter.connect(gain);
+          gain.connect(this.musicGain);
+          
+          gain.gain.setValueAtTime(0.15, startTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.05);
+          
+          src.start(startTime);
+          src.stop(startTime + 0.05);
+      }
+  }
 
-      const audio = new Audio(path);
-      audio.crossOrigin = "anonymous";
-      audio.loop = true;
-      audio.volume = this.musicVolume;
+  private scheduleNote(beatNumber: number, time: number) {
+      const secondsPerBeat = 60.0 / this.tempo;
+      const stepDuration = secondsPerBeat / 4; // 16th note duration
 
-      // Fallback Logic: If themed music fails, load from default 'music' folder
-      audio.onerror = () => {
-          // If we are NOT already using the default 'music' folder, try fallback
-          if (this.currentTheme !== 'music') {
-              const fallbackPath = `${this.baseUrl}/music/${this.getFileName(trackId)}`;
-              
-              // Only retry if we haven't already retried to this path
-              if (audio.src !== fallbackPath) {
-                  console.warn(`Audio theme '${this.currentTheme}' file missing for ${trackId}. Falling back to default.`);
-                  audio.src = fallbackPath;
-                  audio.play().catch(e => {});
-                  return; // Allow fallback attempt
-              }
+      // --- GENERATE PATTERNS ON THE FLY BASED ON TRACK ID ---
+      // We use beatNumber (0-15 usually) to determine sequence
+      const measurePos = beatNumber % 16;
+      const barPos = Math.floor(beatNumber / 16) % 4; // 4 bar phrases
+
+      if (this.currentTrackId === 'intro') {
+          // Slow, atmospheric, Arpeggios
+          // C Minor: C(36), Eb(39), G(43), C(48)
+          const root = 36; // C2
+          const notes = [root, root+3, root+7, root+10, root+12, root+7, root+3, root];
+          
+          // Bass Pulse
+          if (measurePos % 8 === 0) {
+              this.playTone(this.noteToFreq(root - 12), time, stepDuration * 4, 'triangle', 0.4, false);
           }
           
-          // Critical Failure: Default failed or Fallback failed
-          console.warn(`Audio track ${trackId} failed to load. Muting music.`);
-          this.setMusicVolume(0);
-          this.setMusicEnabled(false);
-      };
+          // Arpeggio
+          const noteIdx = beatNumber % 8;
+          // Only play some notes for space
+          if (measurePos % 2 === 0) {
+              this.playTone(this.noteToFreq(notes[noteIdx] + 12), time, stepDuration, 'sine', 0.2);
+          }
+          
+          // Occasional high blip
+          if (Math.random() < 0.1) {
+              this.playTone(this.noteToFreq(root + 24 + notes[noteIdx]), time, stepDuration/2, 'square', 0.05);
+          }
+      }
+      else if (this.currentTrackId === 'combat') {
+          // Fast, driving bass
+          // E Minor
+          const root = 40; // E2
+          
+          // Driving Bass (16th notes)
+          const bassNote = [root, root, root+12, root][measurePos % 4];
+          this.playTone(this.noteToFreq(bassNote - 12), time, stepDuration/2, 'sawtooth', 0.3);
+          
+          // Drums
+          if (measurePos % 4 === 0) this.playDrum(1, time); // Kick
+          if (measurePos % 8 === 4) this.playDrum(2, time); // Snare
+          if (measurePos % 2 === 0) this.playDrum(3, time); // Hihat
+          
+          // Random Melody (Pentatonic)
+          if (Math.random() > 0.4) {
+              const scale = this.SCALES.pentatonic;
+              const note = root + 12 + scale[Math.floor(Math.random() * scale.length)];
+              this.playTone(this.noteToFreq(note), time, stepDuration, 'square', 0.15);
+          }
+      }
+      else if (this.currentTrackId === 'command') {
+          // Industrial, slow, heavy
+          const root = 38; // D2
+          
+          // Heavy Kick
+          if (measurePos === 0 || measurePos === 10) this.playDrum(1, time);
+          if (measurePos === 8) this.playDrum(2, time);
+          
+          // Bass Drone
+          if (measurePos === 0) {
+              this.playTone(this.noteToFreq(root - 12), time, stepDuration * 8, 'sawtooth', 0.3, false);
+          }
+          
+          // Beeps
+          if (measurePos % 4 === 0) {
+              this.playTone(this.noteToFreq(root + 24), time, 0.05, 'sine', 0.1);
+          }
+      }
+      else if (this.currentTrackId === 'map') {
+          // Ambient, Spacey
+          const root = 45; // A2
+          
+          // Slow Bass Pad
+          if (measurePos === 0 && barPos % 2 === 0) {
+              this.playTone(this.noteToFreq(root - 12), time, stepDuration * 16, 'triangle', 0.2, false);
+          }
+          
+          // Random Echoes
+          if (Math.random() < 0.2) {
+              const scale = this.SCALES.minor;
+              const note = root + 12 + scale[Math.floor(Math.random() * scale.length)];
+              this.playTone(this.noteToFreq(note), time, stepDuration * 2, 'sine', 0.15);
+              // Delay/Echo effect simulation
+              this.playTone(this.noteToFreq(note), time + 0.2, stepDuration * 2, 'sine', 0.05);
+          }
+      }
+      else if (this.currentTrackId === 'victory') {
+          // Major Key, Uplifting
+          const root = 48; // C3
+          const scale = this.SCALES.major;
+          
+          // Chords Arp
+          const chordNotes = [0, 4, 7, 12]; // Major
+          const noteIdx = measurePos % 4;
+          const note = root + chordNotes[noteIdx];
+          
+          this.playTone(this.noteToFreq(note), time, stepDuration, 'square', 0.15);
+          this.playTone(this.noteToFreq(note + 12), time, stepDuration, 'triangle', 0.1);
+          
+          // Bass
+          if (measurePos === 0 || measurePos === 8) {
+              this.playTone(this.noteToFreq(root - 12), time, stepDuration * 2, 'sawtooth', 0.2);
+          }
+          
+          // Drums
+          if (measurePos % 4 === 0) this.playDrum(1, time);
+          if (measurePos % 8 === 4) this.playDrum(2, time);
+      }
+  }
 
-      audio.play().catch(e => {});
-      this.introAudio = audio;
+  private scheduler() {
+      if (!this.ctx || !this.isPlaying) return;
+      
+      const secondsPerBeat = 60.0 / this.tempo;
+      const stepDuration = secondsPerBeat / 4; // 16th note
+
+      // Schedule notes that fall within the lookahead window
+      while (this.nextNoteTime < this.ctx.currentTime + this.scheduleAheadTime) {
+          this.scheduleNote(this.current16thNote, this.nextNoteTime);
+          this.nextNoteTime += stepDuration;
+          this.current16thNote++;
+          if (this.current16thNote === 16 * 4) { // Reset every 4 bars to keep numbers manageable
+              this.current16thNote = 0;
+          }
+      }
+      
+      this.timerID = window.setTimeout(this.scheduler.bind(this), this.lookahead);
+  }
+
+  private startScheduler() {
+      if (this.isPlaying || !this.ctx || !this.musicEnabled) return;
+      this.isPlaying = true;
+      this.current16thNote = 0;
+      this.nextNoteTime = this.ctx.currentTime + 0.1;
+      this.scheduler();
+  }
+
+  private stopScheduler() {
+      this.isPlaying = false;
+      if (this.timerID) {
+          window.clearTimeout(this.timerID);
+          this.timerID = null;
+      }
   }
 
   playTrack(type: string) {
-    this.intendedTrack = type;
-    if (this.musicEnabled && this.musicVolume > 0) this.loadAndPlay(type);
+      if (this.currentTrackId === type && this.isPlaying) return;
+      
+      this.currentTrackId = type;
+      
+      // Set Tempo per track
+      if (type === 'combat') this.tempo = 140;
+      else if (type === 'victory') this.tempo = 110;
+      else if (type === 'intro') this.tempo = 90;
+      else if (type === 'command') this.tempo = 100;
+      else if (type === 'map') this.tempo = 60;
+      else this.tempo = 120;
+
+      if (!this.isPlaying && this.musicEnabled) {
+          this.init(); // Ensure ctx is ready
+          if (this.ctx?.state === 'running') {
+              this.startScheduler();
+          } else if (this.ctx) {
+              this.ctx.resume().then(() => this.startScheduler());
+          }
+      }
   }
 
-  pauseMusic() { if (this.introAudio) this.introAudio.pause(); }
-  resumeMusic() { if (this.musicEnabled && this.introAudio && this.introAudio.src) this.introAudio.play().catch(e => console.warn("Resume failed", e)); }
+  pauseMusic() { 
+      this.stopScheduler();
+  }
+  
+  resumeMusic() { 
+      if (this.currentTrackId && this.musicEnabled) {
+          if (this.ctx?.state === 'suspended') this.ctx.resume();
+          this.startScheduler(); 
+      }
+  }
 
   stop() {
-      if (this.introAudio) {
-          this.introAudio.volume = 0;
-          this.introAudio.pause();
-          this.introAudio.removeAttribute('src');
-          this.introAudio.load();
-          this.introAudio = null;
-      }
-      this.intendedTrack = null; 
+      this.stopScheduler();
+      this.currentTrackId = null;
       this.stopBattleSounds();
   }
+
+  // --- EXISTING SFX LOGIC (UNCHANGED) ---
 
   stopBattleSounds() {
       this.updateReactorHum(false, 0);
@@ -347,7 +521,6 @@ class AudioService {
       }
   }
 
-  // UPDATED: High-fidelity impact sounds
   playImpact(material: 'rock' | 'metal' | 'ice' | 'shield', intensity: number = 1.0) {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       this.registerSfx();
@@ -489,9 +662,9 @@ class AudioService {
 
   updateReactorHum(charging: boolean, level: number) {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
-      const musicActive = this.introAudio && !this.introAudio.paused && this.introAudio.volume > 0;
       const recentSfx = Date.now() - this.lastSfxTime < 400; 
-      if (musicActive || recentSfx) {
+      // If busy with other SFX, duck the hum
+      if (recentSfx && !charging) {
           if (this.reactorGain) {
               this.reactorGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.05);
           }
@@ -513,7 +686,6 @@ class AudioService {
       }
   }
 
-  // --- RE-ENTRY WIND ---
   startReEntryWind() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.noiseBuffer) return;
       this.stopReEntryWind();
@@ -558,7 +730,6 @@ class AudioService {
       this.reEntryNodes = null;
   }
 
-  // --- LAUNCH ENGINE ---
   playLaunchSequence() {
       this.stopLaunchSequence(); 
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
@@ -639,8 +810,6 @@ class AudioService {
       this.launchNodes = null;
   }
 
-  // --- WARP SOUND: WOUP WOUP EFFECT ---
-  // Uses LFO modulated filter to create resonant "woup woup" sweep
   playWarpHum() {
       this.stopWarpHum(false);
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
@@ -650,51 +819,40 @@ class AudioService {
 
       const now = this.ctx.currentTime;
 
-      // Master Gain for Warp
       const master = this.ctx.createGain();
       master.connect(this.sfxGain);
       master.gain.setValueAtTime(0, now);
-      master.gain.linearRampToValueAtTime(0.5, now + 0.5); // Fast Fade in
+      master.gain.linearRampToValueAtTime(0.5, now + 0.5); 
 
-      // 1. Source Oscillator (Deep Drone)
       const carrier = this.ctx.createOscillator();
       carrier.type = 'sawtooth';
-      carrier.frequency.setValueAtTime(55, now); // Low reactor rumble (55Hz)
-      // Slight pitch variance to make it dynamic
+      carrier.frequency.setValueAtTime(55, now); 
       carrier.frequency.linearRampToValueAtTime(80, now + 2.0);
       carrier.frequency.linearRampToValueAtTime(45, now + 4.0);
 
-      // 2. Filter for "Woup" sound (Resonant Lowpass)
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.Q.value = 6; // High resonance for "Woup" vowel-like sound
-      filter.frequency.setValueAtTime(400, now); // Base cutoff center
+      filter.Q.value = 6; 
+      filter.frequency.setValueAtTime(400, now); 
 
-      // 3. LFO for "Woup" modulation (Modulates Filter Frequency)
       const lfo = this.ctx.createOscillator();
       lfo.type = 'sine';
-      lfo.frequency.setValueAtTime(3, now); // Start slow (woup... woup)
-      // Speed up during acceleration
-      lfo.frequency.exponentialRampToValueAtTime(10, now + 2.0); // (wupwupwup)
-      // Slow down during deceleration
-      lfo.frequency.linearRampToValueAtTime(2, now + 4.5); // (wap... wap)
+      lfo.frequency.setValueAtTime(3, now); 
+      lfo.frequency.exponentialRampToValueAtTime(10, now + 2.0); 
+      lfo.frequency.linearRampToValueAtTime(2, now + 4.5); 
 
-      // LFO Depth (How much it sweeps the filter)
       const lfoGain = this.ctx.createGain();
-      lfoGain.gain.setValueAtTime(300, now); // Sweep range +/- 300Hz around 400Hz
+      lfoGain.gain.setValueAtTime(300, now); 
 
-      // Wiring
       lfo.connect(lfoGain);
       lfoGain.connect(filter.frequency);
       
       carrier.connect(filter);
       filter.connect(master);
 
-      // Start
       carrier.start(now);
       lfo.start(now);
 
-      // Store references
       this.warpNodes = { master, carrier, lfo, lfoGain };
   }
 
@@ -704,7 +862,6 @@ class AudioService {
           const { master, carrier, lfo, hissSrc, hissGain } = this.warpNodes; 
 
           if (playTail) {
-              // --- START TAIL SEQUENCE (Gradual Stop + Steam) ---
               if (master && carrier && lfo) {
                   master.gain.cancelScheduledValues(now);
                   master.gain.setValueAtTime(master.gain.value, now);
@@ -719,7 +876,6 @@ class AudioService {
                   lfo.frequency.linearRampToValueAtTime(0.5, now + 2.0);
               }
 
-              // Create Steam/Hiss (Woush sh sh)
               let newHissSrc = null;
               let newHissGain = null;
               
@@ -738,17 +894,15 @@ class AudioService {
                   newHissGain.connect(this.sfxGain);
 
                   newHissGain.gain.setValueAtTime(0, now);
-                  newHissGain.gain.linearRampToValueAtTime(0.4, now + 0.5); // Attack
-                  newHissGain.gain.exponentialRampToValueAtTime(0.001, now + 2.5); // Decay
+                  newHissGain.gain.linearRampToValueAtTime(0.4, now + 0.5); 
+                  newHissGain.gain.exponentialRampToValueAtTime(0.001, now + 2.5); 
 
                   newHissSrc.start(now);
                   newHissSrc.stop(now + 2.6);
               }
 
-              // Update stored nodes to include hiss so it can be killed if needed
               this.warpNodes = { ...this.warpNodes, hissSrc: newHissSrc, hissGain: newHissGain };
 
-              // Cleanup timeout
               setTimeout(() => {
                   if (this.warpNodes && this.warpNodes.master === master) {
                       if (carrier) carrier.stop();
@@ -759,7 +913,6 @@ class AudioService {
               }, 2600);
 
           } else {
-              // --- IMMEDIATE STOP (Clean Kill) ---
               if (master) {
                   master.gain.cancelScheduledValues(now);
                   master.gain.setValueAtTime(master.gain.value, now);
@@ -786,7 +939,6 @@ class AudioService {
       }
   }
 
-  // --- LANDING THRUSTER ---
   startLandingThruster() {
       this.stopLandingThruster(); 
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.noiseBuffer) return;
@@ -864,8 +1016,6 @@ class AudioService {
       }
       this.landingNodes = null;
   }
-
-  // --- ONE-SHOT SFX ---
 
   playLaunchBang() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
