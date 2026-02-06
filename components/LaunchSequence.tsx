@@ -5,7 +5,7 @@ import { ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { audioService } from '../services/audioService.ts';
 import { LandingGear } from './LandingGear.tsx';
-import { getEngineCoordinates, generatePlanetEnvironment, drawCloud, drawVehicle, drawStreetLight, drawPlatform, drawTower, drawDome, drawBuilding, drawPowerPlant, drawBoulder, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning, drawScorpion, drawLizard, drawLargeBird } from '../utils/drawingUtils.ts';
+import { getEngineCoordinates, generatePlanetEnvironment, drawCloud, drawVehicle, drawStreetLight, drawPlatform, drawTower, drawDome, drawBuilding, drawPowerPlant, drawRock, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning, drawScorpion, drawLizard, drawLargeBird } from '../utils/drawingUtils.ts';
 import { SequenceStatusBar } from './SequenceStatusBar.tsx';
 
 interface LaunchSequenceProps {
@@ -92,7 +92,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
     birdFlock: [] as {x: number, y: number, vx: number, vy: number, flap: number, flapSpeed: number, parallax: number, size: number, color: string}[],
     largeBirds: [] as {x: number, y: number, radius: number, angle: number, speed: number, size: number}[],
     critters: [] as {x: number, y: number, type: 'scorpion'|'lizard', vx: number, frame: number, dir: number}[],
-    rocks: [] as {x: number, y: number, size: number, color: string}[],
     isNight: false
   });
 
@@ -176,22 +175,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                   vx: (Math.random() > 0.5 ? 1 : -1) * (0.2 + Math.random() * 0.3),
                   frame: Math.random() * 100,
                   dir: Math.random() > 0.5 ? 1 : -1
-              });
-          }
-      }
-
-      // Init Rocks (New)
-      s.rocks = [];
-      if (env.isDesert || env.isBarren) {
-          const count = 15 + Math.floor(Math.random() * 10);
-          for(let i=0; i<count; i++) {
-              const rockColor = env.isReddish ? '#7f1d1d' : '#4b5563';
-              const varColor = Math.random() > 0.5 ? rockColor : (env.isReddish ? '#991b1b' : '#374151');
-              s.rocks.push({
-                  x: (Math.random() - 0.5) * 2000,
-                  y: 0,
-                  size: 10 + Math.random() * 30,
-                  color: varColor
               });
           }
       }
@@ -569,10 +552,15 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
 
               ctx.fillStyle = env.groundColor; ctx.fillRect(-w, 0, w*2, h*2); drawPlatform(ctx, 0, 0, env.isOcean);
               
-              // Draw Rocks
-              if (s.rocks.length > 0 && s.viewY < 500) {
-                  s.rocks.forEach(r => {
-                      drawBoulder(ctx, r.x, r.y, r.size, r.color);
+              // Draw Rocks from environment (Consistent)
+              if (env.rocks && env.rocks.length > 0 && s.viewY < 800) {
+                  env.rocks.forEach(r => {
+                      const shiftY = s.viewY * r.parallax;
+                      
+                      const rockScreenY = groundY + shiftY + s.shake;
+                      if (rockScreenY > -50 && rockScreenY < h + 50) {
+                          drawRock(ctx, r.x, rockScreenY - worldY, r.size, r.color, r.type, r.critter);
+                      }
                   });
               }
 

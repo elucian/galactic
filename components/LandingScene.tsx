@@ -5,7 +5,7 @@ import { SHIPS, ExtendedShipConfig } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { audioService } from '../services/audioService.ts';
 import { LandingGear } from './LandingGear.tsx';
-import { drawDome, drawPlatform, getEngineCoordinates, drawPowerPlant, drawBoulder, generatePlanetEnvironment, drawBuilding, drawVehicle, drawStreetLight, drawTower, drawCloud, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning, drawScorpion, drawLizard, drawLargeBird } from '../utils/drawingUtils.ts';
+import { drawDome, drawPlatform, getEngineCoordinates, drawPowerPlant, drawRock, generatePlanetEnvironment, drawBuilding, drawVehicle, drawStreetLight, drawTower, drawCloud, drawResort, drawMining, getShipHullWidths, drawBird, drawLightning, drawScorpion, drawLizard, drawLargeBird } from '../utils/drawingUtils.ts';
 import { SequenceStatusBar } from './SequenceStatusBar.tsx';
 
 interface LandingSceneProps {
@@ -648,6 +648,17 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
 
           ctx.fillStyle = env.groundColor; ctx.fillRect(-w, 0, w*2, h*2); drawPlatform(ctx, 0, 0, env.isOcean);
           
+          // Draw Rocks from environment (Consistent)
+          if (env.rocks && env.rocks.length > 0 && s.viewY < 800) {
+              env.rocks.forEach(r => {
+                  const shiftY = s.viewY * r.parallax;
+                  const rockScreenY = groundY + shiftY + s.shake;
+                  if (rockScreenY > -50 && rockScreenY < h + 50) {
+                      drawRock(ctx, r.x, rockScreenY - worldY, r.size, r.color, r.type, r.critter);
+                  }
+              });
+          }
+
           env.features.forEach(f => {
               if (f.isForeground) return;
               const fy = f.yOff || 0; 

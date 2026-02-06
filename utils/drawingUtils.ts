@@ -26,13 +26,15 @@ const mixColor = (c1: string, c2: string, weight: number) => {
     return `rgb(${r},${g},${b})`;
 };
 
-const hexToRgbaStr = (hex: string, alpha: number) => {
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-    if (!result) return `rgba(255,255,255,${alpha})`;
-    const r = parseInt(result[1], 16);
-    const g = parseInt(result[2], 16);
-    const b = parseInt(result[3], 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+const MINERAL_COLORS = {
+    gold: '#fbbf24',
+    lithium: '#e879f9',
+    chromium: '#94a3b8',
+    iridium: '#f87171',
+    cobalt: '#3b82f6',
+    copper: '#f97316',
+    standard: '#6b7280',
+    silver: '#cbd5e1'
 };
 
 export const getShipHullWidths = (config: ExtendedShipConfig) => {
@@ -66,10 +68,8 @@ export const getEngineCoordinates = (config: ExtendedShipConfig) => {
     const baseY = 80;
     
     if (config.isAlien) {
-        // Specific placement based on geometry for Alien ships
         if (config.wingStyle === 'alien-h') {
-            // H-Class: Pontoons at x=25 and x=75. Bottom is y=75.
-            if (config.engines >= 6) { // Boss
+            if (config.engines >= 6) { 
                  engines.push({ x: 25, y: 70, w: 14, h: 8 });
                  engines.push({ x: 75, y: 70, w: 14, h: 8 });
                  engines.push({ x: 15, y: 60, w: 10, h: 6 });
@@ -81,12 +81,10 @@ export const getEngineCoordinates = (config: ExtendedShipConfig) => {
                  engines.push({ x: 75, y: 72, w: 14, h: 10 });
             }
         } else if (config.wingStyle === 'alien-w') {
-            // W-Class: Bottom points at x=35, 65, y=75.
             engines.push({ x: 35, y: 72, w: 12, h: 10 });
             engines.push({ x: 65, y: 72, w: 12, h: 10 });
         } else if (config.wingStyle === 'alien-a') {
-            // A-Class: Arch ends at x=20, 80, y=75.
-            if (config.engines >= 4) { // Boss
+            if (config.engines >= 4) { 
                 engines.push({ x: 20, y: 72, w: 12, h: 10 });
                 engines.push({ x: 80, y: 72, w: 12, h: 10 });
                 engines.push({ x: 35, y: 65, w: 10, h: 8 });
@@ -96,16 +94,13 @@ export const getEngineCoordinates = (config: ExtendedShipConfig) => {
                 engines.push({ x: 80, y: 72, w: 14, h: 10 });
             }
         } else if (config.wingStyle === 'alien-m') {
-            // M-Class: Legs at x=20, 80, y=75.
-            if (config.engines >= 8) { // Boss
+            if (config.engines >= 8) { 
                 engines.push({ x: 20, y: 72, w: 12, h: 10 });
                 engines.push({ x: 80, y: 72, w: 12, h: 10 });
                 engines.push({ x: 30, y: 60, w: 10, h: 8 });
                 engines.push({ x: 70, y: 60, w: 10, h: 8 });
-                // Inner
                 engines.push({ x: 45, y: 55, w: 8, h: 6 });
                 engines.push({ x: 55, y: 55, w: 8, h: 6 });
-                // Outer
                 engines.push({ x: 10, y: 50, w: 8, h: 6 });
                 engines.push({ x: 90, y: 50, w: 8, h: 6 });
             } else {
@@ -113,7 +108,6 @@ export const getEngineCoordinates = (config: ExtendedShipConfig) => {
                 engines.push({ x: 80, y: 72, w: 14, h: 10 });
             }
         } else {
-            // Fallback for unknown alien styles
             engines.push({ x: 35, y: 75, w: 10, h: 8 });
             engines.push({ x: 65, y: 75, w: 10, h: 8 });
         }
@@ -172,17 +166,13 @@ export const drawScorpion = (ctx: CanvasRenderingContext2D, x: number, y: number
     ctx.translate(x, y);
     ctx.scale(scale, scale);
     ctx.fillStyle = '#573a25'; 
-    // Body
     ctx.beginPath(); ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI*2); ctx.fill();
-    // Tail - Curled up
     ctx.strokeStyle = '#573a25'; ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.moveTo(4, 0);
     ctx.quadraticCurveTo(8, -5, 2, -8);
     ctx.stroke();
-    // Stinger
     ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(2, -8, 1, 0, Math.PI*2); ctx.fill();
-    // Legs - Animated
     ctx.strokeStyle = '#292524'; ctx.lineWidth = 0.8;
     const legOffset = Math.sin(walkCycle) * 2;
     for(let i=0; i<3; i++) {
@@ -190,7 +180,6 @@ export const drawScorpion = (ctx: CanvasRenderingContext2D, x: number, y: number
         ctx.beginPath(); ctx.moveTo(lx, 1); ctx.lineTo(lx - 2, 4 + (i%2===0?legOffset:-legOffset)); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(lx, 1); ctx.lineTo(lx + 2, 4 + (i%2===0?-legOffset:legOffset)); ctx.stroke(); 
     }
-    // Claws
     ctx.strokeStyle = '#573a25';
     ctx.beginPath(); ctx.moveTo(-4, 0); ctx.lineTo(-8, -2); ctx.stroke();
     ctx.beginPath(); ctx.arc(-9, -3, 1.5, 0, Math.PI*2); ctx.stroke();
@@ -202,15 +191,11 @@ export const drawLizard = (ctx: CanvasRenderingContext2D, x: number, y: number, 
     ctx.translate(x, y);
     ctx.scale(scale * dir, scale); 
     ctx.fillStyle = '#3f6212'; 
-    // Body
     ctx.beginPath(); ctx.ellipse(0, 0, 8, 3, 0, 0, Math.PI*2); ctx.fill();
-    // Head
     ctx.beginPath(); ctx.ellipse(9, -1, 3, 2, 0, 0, Math.PI*2); ctx.fill();
-    // Tail - Sinuous
     ctx.strokeStyle = '#3f6212'; ctx.lineWidth = 2;
     const tailWag = Math.sin(walkCycle) * 3;
     ctx.beginPath(); ctx.moveTo(-6, 0); ctx.quadraticCurveTo(-12, tailWag, -18, 0); ctx.stroke();
-    // Legs
     ctx.lineWidth = 1; ctx.strokeStyle = '#1a2e05';
     const l1 = Math.sin(walkCycle) * 2;
     const l2 = Math.cos(walkCycle) * 2;
@@ -225,14 +210,27 @@ export const drawLargeBird = (ctx: CanvasRenderingContext2D, x: number, y: numbe
     ctx.rotate(bank);
     ctx.fillStyle = '#1e293b'; 
     ctx.beginPath();
-    // V shape body/wings silhouette
     ctx.moveTo(0, 0);
     ctx.lineTo(-size, -size * 0.2);
-    ctx.quadraticCurveTo(-size * 1.5, size * 0.5, -size * 0.2, 0); // Left Wing
-    ctx.lineTo(0, size * 0.2); // Body tail
+    ctx.quadraticCurveTo(-size * 1.5, size * 0.5, -size * 0.2, 0); 
+    ctx.lineTo(0, size * 0.2); 
     ctx.lineTo(size * 0.2, 0);
-    ctx.quadraticCurveTo(size * 1.5, size * 0.5, size, -size * 0.2); // Right Wing
+    ctx.quadraticCurveTo(size * 1.5, size * 0.5, size, -size * 0.2); 
     ctx.lineTo(0, 0);
+    ctx.fill();
+    ctx.restore();
+};
+
+export const drawBird = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, flap: number, color: string = '#1e293b') => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    const wingY = flap * (size * 0.5);
+    ctx.moveTo(-size, -wingY);
+    ctx.quadraticCurveTo(0, size * 0.3, size, -wingY);
+    ctx.lineTo(size, -wingY - 1);
+    ctx.quadraticCurveTo(0, size * 0.3 - 1, -size, -wingY - 1);
     ctx.fill();
     ctx.restore();
 };
@@ -240,10 +238,8 @@ export const drawLargeBird = (ctx: CanvasRenderingContext2D, x: number, y: numbe
 export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w: number, alpha: number, color: string = '#ffffff', puffs: any[] = [], vStretch: number = 1.0) => {
     ctx.save();
     ctx.translate(x, y);
-    
     const rgb = hexToRgb(color);
     const baseColor = `${rgb.r},${rgb.g},${rgb.b}`;
-
     if (puffs && puffs.length > 0) {
         for (const p of puffs) {
             const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
@@ -263,17 +259,43 @@ export const drawCloud = (ctx: CanvasRenderingContext2D, x: number, y: number, w
         ctx.arc(0, 0, w/2, 0, Math.PI*2);
         ctx.fill();
     }
-    
     ctx.restore();
 };
 
-export const drawBoulder = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string) => {
+export const drawRock = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string, type: 'rock'|'crystal', critter?: 'scorpion'|'lizard') => {
     ctx.save();
     ctx.translate(x, y);
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(-size, 0); ctx.lineTo(-size*0.6, -size*0.8); ctx.lineTo(0, -size); ctx.lineTo(size*0.7, -size*0.6); ctx.lineTo(size, 0); ctx.fill();
+    if (type === 'crystal') {
+        ctx.moveTo(0, -size);
+        ctx.lineTo(size * 0.6, -size * 0.3);
+        ctx.lineTo(size * 0.5, size * 0.5);
+        ctx.lineTo(0, size * 0.2); 
+        ctx.lineTo(-size * 0.5, size * 0.5);
+        ctx.lineTo(-size * 0.6, -size * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, -size); ctx.lineTo(0, size*0.2); ctx.stroke();
+    } else {
+        ctx.moveTo(-size, 0); ctx.lineTo(-size*0.6, -size*0.8); ctx.lineTo(0, -size); ctx.lineTo(size*0.7, -size*0.6); ctx.lineTo(size, 0); ctx.fill();
+    }
+    if (critter) {
+        if (critter === 'scorpion') {
+            drawScorpion(ctx, 0, -size * 0.9, 0.8, 0); 
+        } else if (critter === 'lizard') {
+            drawLizard(ctx, 0, -size * 0.9, 0.8, 0, 1); 
+        }
+    }
     ctx.restore();
+};
+
+export const drawBoulder = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, color: string) => {
+    drawRock(ctx, x, y, size, color, 'rock');
 };
 
 export const drawStreetLight = (ctx: CanvasRenderingContext2D, x: number, y: number, h: number, isDay: boolean) => {
@@ -322,19 +344,6 @@ export const drawVehicle = (ctx: CanvasRenderingContext2D, x: number, y: number,
         if (!isDay) { ctx.fillStyle = '#fef08a'; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.moveTo(14, -4); ctx.lineTo(40, -10); ctx.lineTo(40, 5); ctx.fill(); ctx.globalAlpha = 1; }
         ctx.fillStyle = '#ef4444'; ctx.fillRect(-14, -5, 2, 3);
     }
-    ctx.restore();
-};
-
-export const drawBird = (ctx: CanvasRenderingContext2D, x: number, y: number, size: number, flap: number, color: string = '#000') => {
-    ctx.save();
-    ctx.translate(x, y);
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    const wingY = flap * (size * 0.6); 
-    ctx.moveTo(-size, -wingY);
-    ctx.quadraticCurveTo(0, size * 0.3, size, -wingY);
-    ctx.stroke();
     ctx.restore();
 };
 
@@ -675,7 +684,6 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const isBarren = isReddish || ['#d97706', '#a16207', '#78350f'].includes(col) || isPurple; 
     const isLush = !isToxic && (isGreenish || (isBluish && !isOcean && !isBarren && !isWhite)); 
     
-    // Specifically define Desert as non-toxic barren reddish/orange planets
     const isDesert = isBarren && !isToxic && !isPurple && isReddish;
 
     const hasTrains = rng() > 0.4;
@@ -686,7 +694,6 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const isRainy = isLush && rng() > 0.7; 
     const isStormy = isRainy && rng() > 0.5; 
     
-    // Environmental Life Rules
     const hasSmallBirds = (isLush || isOcean) && isDay && !isRainy && !isStormy && !isToxic;
     const hasLargeBirds = (isLush || isOcean || isDesert) && isDay && !isStormy && !isToxic;
     const hasCritters = isDesert && isDay && !isToxic;
@@ -834,10 +841,42 @@ export const generatePlanetEnvironment = (planet: Planet) => {
     const wanderers: {x: number, y: number, size: number, color: string}[] = []; if (!isDay && rng() > 0.5) { const wCount = 1 + Math.floor(rng() * 2); for(let i=0; i<wCount; i++) { wanderers.push({ x: rng(), y: rng() * 0.4, size: 1 + rng() * 2, color: '#94a3b8' }); } }
     const streetLights: {x: number, h: number}[] = []; if (hills[4]?.hasRoad) { for(let k=0; k<15; k++) { streetLights.push({ x: -1400 + (k * 200) + (rng() * 20), h: 25 }); } }
 
+    const rocks: any[] = [];
+    if (!isOcean) {
+        const rockCount = 4 + Math.floor(rng() * 2); 
+        
+        let availableMinerals = ['standard', 'standard', 'standard'];
+        if (isReddish) availableMinerals.push('copper', 'gold', 'iridium');
+        if (isBluish) availableMinerals.push('cobalt', 'lithium');
+        if (isWhite) availableMinerals.push('chromium', 'lithium');
+        if (isPurple) availableMinerals.push('lithium', 'cobalt');
+        if (isGreenish) availableMinerals.push('gold', 'chromium');
+        
+        for(let i=0; i<rockCount; i++) {
+            const type = rng() > 0.7 ? 'crystal' : 'rock';
+            const mineralKey = availableMinerals[Math.floor(rng() * availableMinerals.length)];
+            const color = MINERAL_COLORS[mineralKey as keyof typeof MINERAL_COLORS] || '#6b7280';
+            
+            let critter = undefined;
+            if (hasCritters && rng() > 0.6) {
+                critter = rng() > 0.5 ? 'scorpion' : 'lizard';
+            }
+
+            rocks.push({
+                x: (rng() - 0.5) * 1500,
+                size: 10 + rng() * 25,
+                color: color,
+                type: type,
+                parallax: 0.9 + (rng() * 0.4),
+                critter: critter
+            });
+        }
+    }
+
     return { 
         isDay, isOcean, isReddish, isBluish, isGreenish, isBarren, isLush, isDesert, isToxic,
         sunColor, skyGradient, cloudColor: cloudColors[0], cloudColors, hillColors, stars, clouds, hills, features, cars, trains, groundColor, powerLines, 
         quadrant: planet.quadrant, weather: { isRainy, isStormy }, 
-        hasSmallBirds, hasLargeBirds, hasCritters, wanderers, streetLights 
+        hasSmallBirds, hasLargeBirds, hasCritters, wanderers, streetLights, rocks
     };
 };
