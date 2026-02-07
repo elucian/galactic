@@ -159,54 +159,58 @@ export const drawShip = (
         }
 
         // 2. THRUSTERS (ALL TYPES)
-        // Main Jets (Rear)
+        // Main Jets (Rear) - UPDATED: Draw if moving UP or if NOT moving DOWN (Idle) unless forced off
+        // Note: For "Stationary Burn", movement.up is true, so main jets fire.
         const engineLocs = getEngineCoordinates(config);
         
         // Permanent Idle Jet: Min intensity 0.6 to be visible
-        // Thrusting: 1.2 intensity
+        // Thrusting: 1.5 intensity
         const mainIntensity = movement?.up ? 1.5 : 0.8; 
-        // Longer lengths: Idle ~50px, Thrust ~90px
         const mainLength = usingWater ? 120 : 90;
         
-        // Only draw main jets if NOT moving down (braking) AND NOT forced off
-        if (!movement?.down && !forceMainJetsOff) {
+        // Logic: Draw main jets if accelerating forward (UP) OR if idle (not braking/DOWN)
+        // BUT if stationary burn (UP + DOWN), both should draw.
+        // So: Draw if UP is true OR DOWN is false.
+        
+        if ((movement?.up || !movement?.down) && !forceMainJetsOff) {
             engineLocs.forEach(eng => {
                 const isAlien = config.isAlien;
                 const nozzleH = isAlien ? 6 : 5;
                 const jetY = eng.y + eng.h + nozzleH;
                 const jetX = eng.x;
                 
-                // Draw Main Jet (Downwards 0deg)
                 drawJet(ctx, jetX, jetY, 0, mainIntensity, usingWater, mainLength);
             });
         }
 
         // Retro Thrusters (Braking - Front)
         if (movement?.down) {
-            // Draw 2 small retro jets at the nose pointing OUTWARDS at 45 degrees relative to UP
-            // 0 deg = DOWN. 180 deg = UP.
-            // Left Retro: Points Up-Left. 180 - 45 = 135 degrees.
-            // Right Retro: Points Up-Right. 180 + 45 = 225 degrees.
-            
-            drawJet(ctx, 35, 20, 135, 1.0, usingWater, 35);
-            drawJet(ctx, 65, 20, 225, 1.0, usingWater, 35);
+            // Alien-specific thruster positions and angles
+            if (config.wingStyle === 'alien-h') {
+                drawJet(ctx, 35, 48, 180, 1.0, usingWater, 35);
+                drawJet(ctx, 65, 48, 180, 1.0, usingWater, 35);
+            } else if (config.wingStyle === 'alien-w') {
+                drawJet(ctx, 22, 48, 180, 1.0, usingWater, 35);
+                drawJet(ctx, 78, 48, 180, 1.0, usingWater, 35);
+            } else if (config.wingStyle === 'alien-m') {
+                drawJet(ctx, 20, 50, 180, 1.0, usingWater, 35);
+                drawJet(ctx, 80, 50, 180, 1.0, usingWater, 35);
+            } else {
+                drawJet(ctx, 35, 20, 135, 1.0, usingWater, 35);
+                drawJet(ctx, 65, 20, 225, 1.0, usingWater, 35);
+            }
         }
 
         // Maneuvering Thrusters (Strafe)
-        // Strafe jets also boosted in size and intensity
         if (movement?.left) {
-            // Moving Left -> Fire RIGHT thrusters pushing Left (Angle -90deg aka 270deg, pointing Right)
-            // Position: Right Wing/Side
             const rx = config.wingStyle === 'x-wing' ? 85 : 80;
             const ry = 50;
-            drawJet(ctx, rx, ry, -90, 0.9, usingWater, 35); // Pointing Right (East)
+            drawJet(ctx, rx, ry, -90, 0.9, usingWater, 35); 
         }
         if (movement?.right) {
-            // Moving Right -> Fire LEFT thrusters pushing Right (Angle 90deg, pointing Left)
-            // Position: Left Wing/Side
             const lx = config.wingStyle === 'x-wing' ? 15 : 20;
             const ly = 50;
-            drawJet(ctx, lx, ly, 90, 0.9, usingWater, 35); // Pointing Left (West)
+            drawJet(ctx, lx, ly, 90, 0.9, usingWater, 35); 
         }
 
         // 3. ENGINES (Body)
@@ -305,7 +309,7 @@ export const drawShip = (
             const wScale = isAlien && isExotic ? 1.4 : (isExotic ? 1.0 : 1.45); 
             ctx.scale(wScale, wScale);
 
-            if (def && def.type === 'PROJECTILE' && !isExotic) {
+            if (def && def.type === WeaponType.PROJECTILE && !isExotic) {
                 // Ballistic Gun
                 ctx.fillStyle = bodyCol;
                 if (id.includes('vulcan')) ctx.fillRect(-4.25, 0, 8.5, 12);
@@ -403,4 +407,4 @@ export const drawShip = (
     }
     
     ctx.restore();
-};
+}

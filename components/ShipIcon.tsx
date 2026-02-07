@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef } from 'react';
 import { ExtendedShipConfig, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS } from '../constants.ts';
-import { ShipPart, Shield, EquippedWeapon } from '../types.ts';
+import { ShipPart, Shield, EquippedWeapon, WeaponType } from '../types.ts';
 import { getEngineCoordinates, getWingMounts } from '../utils/drawingUtils.ts';
 
 interface ShipIconProps {
@@ -27,6 +27,7 @@ interface ShipIconProps {
   weaponId?: string;
   equippedWeapons?: (EquippedWeapon | null)[];
   weaponFireTimes?: { [key: number]: number }; // slot index -> timestamp
+  weaponHeat?: { [key: number]: number }; // slot index -> heat level
   forceShieldScale?: boolean; // Force scale down to shield size even if no shield present
   isCapsule?: boolean; // New prop for Escape Capsule mode
 }
@@ -54,6 +55,7 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
   weaponId,
   equippedWeapons,
   weaponFireTimes,
+  weaponHeat,
   forceShieldScale = false,
   isCapsule = false
 }) => {
@@ -61,9 +63,6 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
   
   // Determine if we need to scale down to fit shields (or forced to match UI)
   const shouldScaleDown = !!shield || !!secondShield || forceShieldScale;
-
-  // Use a ref for continuous animation if fire times are present
-  const animRef = useRef<number | null>(null);
 
   const handleClick = (e: React.MouseEvent) => {
     if (!onPartSelect || !canvasRef.current) return;
@@ -89,6 +88,7 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
 
     // 1. Check Main Guns
     const mainGuns: {x:number, y:number}[] = [];
+    // Updated Alien Coordinates to match tips (y=20 or 25)
     if (config.wingStyle === 'alien-h') { mainGuns.push({x:25, y:20}, {x:75, y:20}); }
     else if (config.wingStyle === 'alien-w') { mainGuns.push({x:10, y:20}, {x:90, y:20}); }
     else if (config.wingStyle === 'alien-m') { mainGuns.push({x:20, y:25}, {x:80, y:25}); }
@@ -200,6 +200,7 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
              ctx.fill();
         }
 
+        ctx.restore();
         ctx.restore();
         return;
     }
@@ -404,172 +405,155 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
 
     // --- WEAPONS ---
     const drawWeapon = (x: number, y: number, id: string | undefined, type: 'primary' | 'secondary', slotIndex: number) => {
+        if (!id) return;
         ctx.save();
+        ctx.translate(x, y);
         
-        const def = id ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === id) : null;
-        
-        let recoilY = 0;
+        // Recoil & Muzzle Flash Logic
         let isFiring = false;
-        let showFlash = false;
+        let showMuzzleFlash = false;
         
         if (weaponFireTimes && weaponFireTimes[slotIndex]) {
             const timeSinceFire = Date.now() - weaponFireTimes[slotIndex];
-            
-            // Recoil applies to the whole group (Body + Barrel)
             if (timeSinceFire < 150) {
-                recoilY = Math.sin((timeSinceFire / 150) * Math.PI) * 4;
+                const recoilY = Math.sin((timeSinceFire / 150) * Math.PI) * 4;
+                ctx.translate(0, recoilY);
             }
             if (timeSinceFire < 200) isFiring = true;
-            if (timeSinceFire < 80) showFlash = true;
+            if (timeSinceFire < 50) showMuzzleFlash = true; // Short duration flash
         }
 
-        ctx.translate(x, y + recoilY);
-        
-        const isSecondary = type === 'secondary';
+        // Barrel Heat Coloring
+        let heatColor = null;
+        if (weaponHeat && weaponHeat[slotIndex] > 0) {
+            const heat = weaponHeat[slotIndex];
+            if (heat > 80) heatColor = '#ef4444'; // Glowing Red
+            else if (heat > 60) heatColor = '#f97316'; // Orange
+            else if (heat > 30) heatColor = '#b45309'; // Hot Brown
+        }
+
+        const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === id);
+        const isExotic = id.includes('exotic');
         const isAlien = config.isAlien;
         
-        const isExotic = id?.includes('exotic');
-        const isStandardProjectile = def && def.type === 'PROJECTILE' && !isExotic;
+        // Determine Colors
+        const bodyCol = (gunBodyColor && gunBodyColor !== '#334155') ? gunBodyColor : '#451a03';
+        const crystalCol = type === 'secondary' ? (secondaryGunColor || '#38bdf8') : (gunColor || config.noseGunColor || '#ef4444');
+        
+        // Scale
+        const wScale = isAlien && isExotic ? 1.4 : (isExotic ? 1.0 : 1.45); 
+        ctx.scale(wScale, wScale);
 
-        const scale = isAlien && isExotic ? 1.4 : (isExotic ? 1.0 : 1.45); 
-        ctx.scale(scale, scale);
-
-        const isBodyActive = activePart === 'gun_body';
-        const isCrystalActive = (type === 'primary' && activePart === 'guns') || (type === 'secondary' && activePart === 'secondary_guns');
-        const applyHighlight = (isActive: boolean) => { ctx.shadowColor = isActive ? '#fff' : 'transparent'; ctx.shadowBlur = isActive ? 15 : 0; ctx.strokeStyle = isActive ? '#fff' : 'transparent'; ctx.lineWidth = 1; };
-
-        // --- STANDARD PROJECTILE WEAPON ---
-        if (isStandardProjectile && def) {
-            // Dark Brown Body, Gray Barrel
-            const stdBodyColor = (gunBodyColor && gunBodyColor !== '#334155') ? gunBodyColor : '#451a03'; 
-            const barrelColor = '#52525b'; 
-            const barrelCount = def.barrelCount || 1;
-            const isRotary = barrelCount > 1;
-
-            // 1. DRAW BODY
-            ctx.fillStyle = stdBodyColor;
-            applyHighlight(isBodyActive);
+        if (def && def.type === WeaponType.PROJECTILE && !isExotic) {
+            // Ballistic Gun
+            ctx.fillStyle = bodyCol;
+            if (id.includes('vulcan')) ctx.fillRect(-4.25, 0, 8.5, 12);
+            else ctx.fillRect(-4.25, 0, 8.5, 10);
             
-            // Housing shape
-            if (id?.includes('vulcan')) { if(ctx.roundRect) {ctx.beginPath(); ctx.roundRect(-4.25, 0, 8.5, 12, 3); ctx.fill();} else ctx.fillRect(-4.25, 0, 8.5, 12); } 
-            else if (id?.includes('heavy')) { if(ctx.roundRect) {ctx.beginPath(); ctx.roundRect(-6, 0, 12, 10, 3); ctx.fill();} else ctx.fillRect(-6, 0, 12, 10); } 
-            else { if(ctx.roundRect) {ctx.beginPath(); ctx.roundRect(-4.25, 0, 8.5, 10, 3); ctx.fill();} else ctx.fillRect(-4.25, 0, 8.5, 10); }
-            if (isBodyActive) ctx.stroke();
-
-            // 2. DRAW BARREL
-            applyHighlight(isCrystalActive); 
+            // Barrel with Heat
+            ctx.fillStyle = heatColor || '#52525b';
             
+            const isRotary = (def.barrelCount || 1) > 1;
             if (isRotary) {
-                // Rotary: Longer barrels that touch body
-                // Body ends at y=0. Barrel length 24 reaches -24 to 0.
-                const rotOffset = isFiring ? (Date.now() / 50) % 3 : 0;
-                
-                // Draw 3 barrels side-by-side
-                const bw = 2; // barrel width
-                const bl = 24; // barrel length (extended)
-                const bx = [-3, -1, 1]; // x offsets
-                
-                bx.forEach((offX, i) => {
-                    // Cyclic brightness to simulate rotation
-                    const brightness = Math.abs(Math.sin((i + rotOffset) * (Math.PI/1.5))); 
-                    // Mix gray with white based on brightness
-                    const cVal = Math.floor(82 + (brightness * 100));
-                    ctx.fillStyle = `rgb(${cVal},${cVal},${cVal})`;
-                    ctx.fillRect(offX, -bl, bw, bl); // Touches body at y=0
-                });
-                
+                // For rotary, barrels might cycle color? Or whole assembly heats up.
+                ctx.fillRect(-3, -24, 2, 24); ctx.fillRect(-1, -24, 2, 24); ctx.fillRect(1, -24, 2, 24);
                 // Axis cap
-                ctx.fillStyle = '#18181b';
-                ctx.fillRect(-3.5, -bl-1, 7, 2);
+                ctx.fillStyle = '#18181b'; ctx.fillRect(-3.5, -25, 7, 2);
+                
+                if (showMuzzleFlash) {
+                    ctx.save();
+                    ctx.translate(0, -25);
+                    // Big rotary flash
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(-5, -15);
+                    ctx.lineTo(0, -25);
+                    ctx.lineTo(5, -15);
+                    ctx.closePath();
+                    
+                    const flashGrad = ctx.createRadialGradient(0, -10, 2, 0, -10, 15);
+                    flashGrad.addColorStop(0, '#ffffff');
+                    flashGrad.addColorStop(0.3, '#facc15');
+                    flashGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+                    
+                    ctx.fillStyle = flashGrad;
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.fill();
+                    ctx.restore();
+                }
 
             } else {
-                // Single Barrel: Gray with Cooling Holes
-                ctx.fillStyle = barrelColor;
+                // Standard Barrel
                 ctx.fillRect(-1.5, -16, 3, 16);
+                ctx.fillStyle = '#27272a'; ctx.fillRect(-2, -16, 4, 2);
                 
-                // Muzzle Tip
-                ctx.fillStyle = '#27272a'; 
-                ctx.fillRect(-2, -16, 4, 2);
-                
-                // Cooling Holes & Vent Fire
-                const holeCount = 4;
-                const holeStart = -12;
-                const holeSpacing = 3;
-                
-                for(let i=0; i<holeCount; i++) {
-                    const hy = holeStart + (i * holeSpacing);
-                    ctx.fillStyle = '#000';
-                    ctx.beginPath(); ctx.arc(0, hy, 0.8, 0, Math.PI*2); ctx.fill();
+                if (showMuzzleFlash) {
+                    ctx.save();
+                    ctx.translate(0, -16);
                     
-                    // Side Vent Fire Effect
-                    if (isFiring) {
-                        const ventScale = Math.random() * 0.5 + 0.5;
-                        ctx.fillStyle = i % 2 === 0 ? '#facc15' : '#ef4444';
-                        ctx.beginPath(); ctx.arc(-2, hy, 1 * ventScale, 0, Math.PI*2); ctx.fill();
-                        ctx.beginPath(); ctx.arc(2, hy, 1 * ventScale, 0, Math.PI*2); ctx.fill();
-                    }
+                    ctx.beginPath();
+                    ctx.moveTo(0, 0);
+                    ctx.lineTo(-4, -12);
+                    ctx.lineTo(0, -18);
+                    ctx.lineTo(4, -12);
+                    ctx.closePath();
+                    
+                    const flashGrad = ctx.createRadialGradient(0, -8, 1, 0, -8, 12);
+                    flashGrad.addColorStop(0, '#ffffff');
+                    flashGrad.addColorStop(0.4, '#f97316');
+                    flashGrad.addColorStop(1, 'rgba(239, 68, 68, 0)');
+                    
+                    ctx.fillStyle = flashGrad;
+                    ctx.globalCompositeOperation = 'lighter';
+                    ctx.fill();
+                    ctx.restore();
                 }
             }
-            
-            if (isCrystalActive) { ctx.beginPath(); ctx.rect(-3, -24, 6, 24); ctx.stroke(); }
-
-            // MUZZLE FLASH
-            if (showFlash) {
-                ctx.save();
-                // Offset flash based on barrel length
-                const flashY = isRotary ? -26 : -18;
-                ctx.translate(0, flashY);
-                ctx.fillStyle = Math.random() > 0.5 ? '#facc15' : '#ef4444'; 
-                ctx.beginPath();
-                ctx.moveTo(0, -8);
-                ctx.lineTo(4, 2);
-                ctx.lineTo(0, 0);
-                ctx.lineTo(-4, 2);
-                ctx.fill();
-                ctx.restore();
-            }
-
         } else {
-            // --- ENERGY / EXOTIC WEAPON (Crystal Logic) ---
-            const wColor = isSecondary ? (secondaryGunColor || '#38bdf8') : (gunColor || config.noseGunColor || '#ef4444');
-            const wBody = isAlien ? '#374151' : (gunBodyColor || '#334155'); 
+            // --- NEW EXOTIC ALIEN WEAPON DESIGN ---
+            if (isAlien && isExotic) {
+                // Rectangular Body with Rounded Corners
+                ctx.fillStyle = '#334155'; // Dark Tech Grey Body
+                ctx.beginPath();
+                if(ctx.roundRect) ctx.roundRect(-4, -4, 8, 12, 3);
+                else ctx.rect(-4, -4, 8, 12);
+                ctx.fill();
+                
+                // Color Tube
+                ctx.fillStyle = crystalCol;
+                ctx.fillRect(-2.5, -10, 5, 8);
+                
+                // Semisphere Crystal Glass Front
+                ctx.fillStyle = '#a5f3fc'; // Cyan/Glassy
+                ctx.beginPath();
+                ctx.arc(0, -10, 3, Math.PI, 0); // Top Half
+                ctx.fill();
 
-            // BODY
-            ctx.fillStyle = wBody; applyHighlight(isBodyActive);
-            if (id?.includes('plasma') || isExotic) { 
-                if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(-3.6, -14, 7.2, 12, [5, 5, 0, 0]); ctx.fill(); } else { ctx.fillRect(-3.6, -14, 7.2, 12); } 
-            } else { 
-                ctx.fillRect(-4.25, 0, 8.5, 10); 
-            }
-            if (isBodyActive) ctx.stroke();
-
-            // CRYSTAL / BARREL
-            applyHighlight(isCrystalActive);
-            
-            if (id?.includes('plasma') || isExotic) { 
-                ctx.fillStyle = wColor; 
-                if (isCrystalActive) ctx.stroke(); 
-                ctx.beginPath(); ctx.arc(0, -8, 3, 0, Math.PI*2); ctx.fill(); 
-                // Simple Glow
+                // Glow on Fire
                 if (isFiring) {
-                    ctx.fillStyle = '#fff'; 
-                    ctx.shadowColor = '#fff'; ctx.shadowBlur = 10;
-                    ctx.beginPath(); ctx.arc(0, -8, 2, 0, Math.PI*2); ctx.fill(); 
+                    ctx.shadowColor = crystalCol;
+                    ctx.shadowBlur = 15;
+                    ctx.fillStyle = '#ffffff';
+                    ctx.beginPath();
+                    ctx.arc(0, -10, 2, 0, Math.PI*2);
+                    ctx.fill();
                     ctx.shadowBlur = 0;
                 }
-            } 
-            else { 
-                // Crystal Clear Beam Emitter
-                // Main Crystal Body
-                ctx.fillStyle = wColor; 
-                ctx.fillRect(-2.5, -12, 5, 12); 
+            } else {
+                // Standard Energy Weapon
+                ctx.fillStyle = bodyCol;
+                ctx.fillRect(-4.25, 0, 8.5, 10);
                 
-                if (isCrystalActive) { ctx.beginPath(); ctx.rect(-2.5, -12, 5, 12); ctx.stroke(); } 
+                ctx.fillStyle = crystalCol;
+                if (id?.includes('plasma')) {
+                    ctx.beginPath(); ctx.arc(0, -8, 3, 0, Math.PI*2); ctx.fill();
+                } else {
+                    ctx.fillRect(-2.5, -12, 5, 12);
+                }
                 
-                // Glow Effect on Fire (No stripes)
                 if (isFiring) {
                     ctx.save();
-                    ctx.shadowColor = wColor;
+                    ctx.shadowColor = crystalCol;
                     ctx.shadowBlur = 15;
                     ctx.fillStyle = 'rgba(255,255,255,0.8)';
                     ctx.fillRect(-1.5, -11, 3, 10);
@@ -580,91 +564,44 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
         ctx.restore();
     };
 
-    drawPart('guns', () => {
-        // Fallback Logic: If equippedWeapons exists, use it. Otherwise use config default.
-        // Important: If equippedWeapons exists but slot 0 is null, mainId must be NULL (no gun).
-        // Before: (config.weaponId || 'gun_bolt') caused ghost guns.
-        const mainId = equippedWeapons ? (equippedWeapons[0]?.id || null) : (config.weaponId || 'gun_bolt');
-        
-        if (mainId) {
-            // Main gun is slot 0
-            if (config.wingStyle === 'alien-h') { drawWeapon(25, 20, mainId, 'primary', 0); drawWeapon(75, 20, mainId, 'primary', 0); } 
-            else if (config.wingStyle === 'alien-w') { drawWeapon(10, 20, mainId, 'primary', 0); drawWeapon(90, 20, mainId, 'primary', 0); } 
-            else if (config.wingStyle === 'alien-m') { drawWeapon(20, 25, mainId, 'primary', 0); drawWeapon(80, 25, mainId, 'primary', 0); } 
-            else if (config.wingStyle === 'alien-a') { drawWeapon(50, 22, mainId, 'primary', 0); } 
-            else if (config.wingStyle === 'x-wing') { drawWeapon(50, 20, mainId, 'primary', 0); } 
-            else { drawWeapon(50, 10, mainId, 'primary', 0); }
-        }
-    });
+    const mainId = equippedWeapons ? (equippedWeapons[0]?.id) : (config.weaponId || 'gun_bolt');
+    if (mainId) {
+        if (config.wingStyle === 'alien-h') { drawWeapon(25, 20, mainId, 'primary', 0); drawWeapon(75, 20, mainId, 'primary', 0); } 
+        else if (config.wingStyle === 'alien-w') { drawWeapon(10, 20, mainId, 'primary', 0); drawWeapon(90, 20, mainId, 'primary', 0); } 
+        else if (config.wingStyle === 'alien-m') { drawWeapon(20, 25, mainId, 'primary', 0); drawWeapon(80, 25, mainId, 'primary', 0); } 
+        else if (config.wingStyle === 'alien-a') { drawWeapon(50, 22, mainId, 'primary', 0); } 
+        else if (config.wingStyle === 'x-wing') { drawWeapon(50, 20, mainId, 'primary', 0); } 
+        else { drawWeapon(50, 10, mainId, 'primary', 0); }
+    }
 
     if (equippedWeapons) {
         const mounts = getWingMounts(config);
-        if (equippedWeapons[1]) drawPart('secondary_guns', () => { 
-            drawWeapon(mounts[0].x, mounts[0].y, equippedWeapons[1]?.id, 'secondary', 1); 
-        });
-        if (equippedWeapons[2]) drawPart('secondary_guns', () => { 
-            drawWeapon(mounts[1].x, mounts[1].y, equippedWeapons[2]?.id, 'secondary', 2); 
-        });
+        if (equippedWeapons[1]) drawWeapon(mounts[0].x, mounts[0].y, equippedWeapons[1]?.id, 'secondary', 1); 
+        if (equippedWeapons[2]) drawWeapon(mounts[1].x, mounts[1].y, equippedWeapons[2]?.id, 'secondary', 2); 
     }
-
-    if (showGear) {
-        ctx.fillStyle = '#64748b';
-        ctx.fillRect(20, 80, 5, 20); ctx.fillRect(75, 80, 5, 20);
-    }
-
-    if (shield || secondShield) {
-        const drawShield = (s: Shield | null, radius: number) => {
-            if (!s) return;
-            const color = (s as any).color || '#3b82f6';
-            const vType = (s as any).visualType; // 'forward' | 'full' | 'inner-full'
-            
-            ctx.save();
-            ctx.strokeStyle = color; 
-            ctx.lineWidth = 4; // Increased thickness
-            ctx.shadowColor = color; 
-            ctx.shadowBlur = 10; 
-            ctx.globalAlpha = fullShields ? 0.5 : 0.3; // Semitransparent line
-            
-            ctx.beginPath(); 
-            if (vType === 'forward') {
-                // Forward arc centered at -PI/2 (Up)
-                ctx.arc(50, 50, radius, -Math.PI * 0.8, -Math.PI * 0.2); 
-            } else {
-                ctx.arc(50, 50, radius, 0, Math.PI * 2); 
-            }
-            ctx.stroke();
-            
-            if (fullShields && vType !== 'forward') { 
-                ctx.fillStyle = color; 
-                ctx.globalAlpha = 0.1; 
-                ctx.fill(); 
-            }
-            ctx.restore();
-        };
-        // Increased radius by 10%
-        if (shield) drawShield(shield, 66);
-        if (secondShield) drawShield(secondShield, 77);
-    }
-
+    
+    ctx.restore();
   };
 
   useEffect(() => {
-      draw();
-      // If we have fire events, we animate recoil for a short duration
-      if (weaponFireTimes) {
-          const animate = () => {
-              draw();
-              // Check if any recoil/flash is still active (less than 200ms since last fire)
-              const now = Date.now();
-              const hasActiveEffect = Object.values(weaponFireTimes).some((t: number) => now - t < 500); 
-              if (hasActiveEffect) {
-                  animRef.current = requestAnimationFrame(animate);
-              }
-          };
-          animRef.current = requestAnimationFrame(animate);
-          return () => { if(animRef.current) cancelAnimationFrame(animRef.current); };
-      }
-  }, [config, hullColor, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, barColor, activePart, showJets, jetType, showGear, shield, secondShield, fullShields, equippedWeapons, weaponFireTimes, forceShieldScale, isCapsule]);
+      let animationId: number;
+      const render = () => {
+          draw();
+          if (weaponFireTimes || weaponHeat) {
+              animationId = requestAnimationFrame(render);
+          }
+      };
+      render();
+      return () => {
+          if (animationId) cancelAnimationFrame(animationId);
+      };
+  }, [config, hullColor, wingColor, cockpitColor, gunColor, secondaryGunColor, gunBodyColor, engineColor, nozzleColor, barColor, activePart, showJets, jetType, showGear, shield, secondShield, fullShields, weaponId, equippedWeapons, weaponFireTimes, weaponHeat, forceShieldScale, isCapsule]);
 
-  return <canvas ref={canvasRef} className={className} onClick={handleClick} />;
+  return (
+      <canvas 
+          ref={canvasRef} 
+          className={className} 
+          onClick={handleClick} 
+      />
+  );
 };

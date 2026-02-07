@@ -133,8 +133,11 @@ export const getEngineCoordinates = (config: ExtendedShipConfig) => {
 
 export const getWingMounts = (config: ExtendedShipConfig) => {
     if (config.isAlien) {
-        if (config.wingStyle === 'alien-w') return [{x: 10, y: 40}, {x: 90, y: 40}];
-        if (config.wingStyle === 'alien-h') return [{x: 25, y: 48}, {x: 75, y: 48}];
+        // Updated to place weapons at the front tips of the wings
+        if (config.wingStyle === 'alien-w') return [{x: 10, y: 20}, {x: 90, y: 20}];
+        if (config.wingStyle === 'alien-h') return [{x: 25, y: 20}, {x: 75, y: 20}];
+        if (config.wingStyle === 'alien-m') return [{x: 20, y: 25}, {x: 80, y: 25}];
+        // Fallback for others
         return [{x: 30, y: 50}, {x: 70, y: 50}];
     }
     
@@ -144,6 +147,7 @@ export const getWingMounts = (config: ExtendedShipConfig) => {
     return [{x: 25, y: 50}, {x: 75, y: 50}];
 };
 
+// ... (Rest of file unchanged)
 export const drawPlatform = (ctx: CanvasRenderingContext2D, x: number, y: number, isOcean: boolean) => {
     ctx.save();
     ctx.translate(x, y);

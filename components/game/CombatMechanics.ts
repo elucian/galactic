@@ -49,6 +49,76 @@ export const takeDamage = (state: GameEngineState, amt: number, type: string, sh
     }
 };
 
+export const applyShieldRamDamage = (state: GameEngineState, enemy: any, setHud: any) => {
+    if (!state.shieldsEnabled || (state.sh1 <= 0 && state.sh2 <= 0)) return;
+    
+    // Damage logic for Shield Ramming
+    // Boss takes damage based on shield strength
+    const damage = 20; 
+    enemy.hp -= damage;
+    
+    // Boss flashes or reacts
+    enemy.vibration = 10;
+    
+    // Feedback
+    createExplosion(state, enemy.x, enemy.y + 40, '#ffffff', 5, 'shield_effect');
+    if (state.frame % 10 === 0) {
+        audioService.playImpact('shield', 0.5);
+    }
+};
+
+export const applyJetDamage = (state: GameEngineState, activeJets: {up: boolean, down: boolean, left: boolean, right: boolean}, setHud: any) => {
+    const boss = state.enemies.find(e => e.type === 'boss');
+    if (!boss || boss.hp <= 0) return;
+
+    const shipX = state.px;
+    const shipY = state.py;
+    const bossX = boss.x;
+    const bossY = boss.y;
+    
+    // Hitbox offsets for jets relative to ship center
+    // Main Jets (Up key -> Fire Rear)
+    // Retro Jets (Down key -> Fire Front)
+    // Side Jets (Left/Right)
+    
+    const checkBurn = (jetX: number, jetY: number, radius: number) => {
+        const dx = jetX - bossX;
+        const dy = jetY - bossY;
+        return Math.hypot(dx, dy) < (radius + 40); // 40 is approx Boss half-width
+    };
+
+    let hit = false;
+
+    // Rear Jets (Firing Downwards from ship bottom)
+    if (activeJets.up) {
+        if (checkBurn(shipX, shipY + 70, 40)) hit = true;
+    }
+    
+    // Front Jets (Firing Upwards from ship top/sides)
+    if (activeJets.down) {
+        if (checkBurn(shipX - 30, shipY - 20, 30)) hit = true;
+        if (checkBurn(shipX + 30, shipY - 20, 30)) hit = true;
+    }
+    
+    // Left Jets (Firing Rightwards from left side)
+    if (activeJets.right) {
+        if (checkBurn(shipX - 40, shipY, 30)) hit = true;
+    }
+    
+    // Right Jets (Firing Leftwards from right side)
+    if (activeJets.left) {
+        if (checkBurn(shipX + 40, shipY, 30)) hit = true;
+    }
+
+    if (hit) {
+        const damage = 5; // High frequency low damage
+        boss.hp -= damage;
+        if (state.frame % 4 === 0) {
+            createExplosion(state, boss.x + (Math.random()-0.5)*40, boss.y + (Math.random()-0.5)*40, '#f97316', 2, 'fireworks');
+        }
+    }
+};
+
 export const createAreaDamage = (state: GameEngineState, x: number, y: number, radius: number, damage: number, shield: Shield | null, secondShield: Shield | null, setHud: any) => { 
     state.enemies.forEach(e => { 
         if (e.hp > 0) { 
@@ -82,7 +152,7 @@ export const fireMissile = (state: GameEngineState) => {
         const isEmp = state.missiles % 2 !== 0; 
         state.missiles--; 
         state.lastMissileFire = Date.now(); 
-        state.bullets.push({ x: state.px, y: state.py, vx: 0, vy: -3, vz: 0, damage: 200, color: isEmp ? '#22d3ee' : '#ef4444', type: isEmp ? 'missile_emp' : 'missile', life: 600, isEnemy: false, width: 12, height: 28, homingState: 'launching', launchTime: state.frame, headColor: isEmp ? '#22d3ee' : '#ef4444', finsColor: isEmp ? '#0ea5e9' : '#ef4444', turnRate: 0.05, maxSpeed: 14, z: 0 }); 
+        state.bullets.push({ x: state.px, y: state.py, vx: 0, vy: -3, vz: 0, damage: 600, color: isEmp ? '#22d3ee' : '#ef4444', type: isEmp ? 'missile_emp' : 'missile', life: 600, isEnemy: false, width: 12, height: 28, homingState: 'launching', launchTime: state.frame, headColor: isEmp ? '#22d3ee' : '#ef4444', finsColor: isEmp ? '#0ea5e9' : '#ef4444', turnRate: 0.05, maxSpeed: 14, z: 0 }); 
         audioService.playWeaponFire(isEmp ? 'emp' : 'missile'); 
     } 
 };
@@ -96,7 +166,7 @@ export const fireMine = (state: GameEngineState, side: 'left' | 'right' | 'toggl
         
         const speed = 5; 
         const launch = (dir: number) => {
-            state.bullets.push({ x: state.px, y: state.py + 20, vx: dir * speed, vy: 0, vz: 0, damage: 250, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: state.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); 
+            state.bullets.push({ x: state.px, y: state.py + 20, vx: dir * speed, vy: 0, vz: 0, damage: 750, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: state.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); 
         };
 
         if (side === 'both') {
@@ -126,7 +196,7 @@ export const fireRedMine = (state: GameEngineState, setHud: any) => {
         state.omegaSide = !state.omegaSide; 
         const speed = 4; 
         const vx = state.omegaSide ? -speed : speed; 
-        state.bullets.push({ x: state.px, y: state.py + 30, vx: vx, vy: 0, vz: 0, damage: 600, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'launching', launchTime: state.frame, turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); 
+        state.bullets.push({ x: state.px, y: state.py + 30, vx: vx, vy: 0, vz: 0, damage: 1800, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'launching', launchTime: state.frame, turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); 
         audioService.playWeaponFire('mine'); 
         setHud((h: any) => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); 
     } 
@@ -138,31 +208,47 @@ const getCapacitorBeamState = (chargeLevel: number) => {
     return { color };
 };
 
-export const firePowerShot = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any }, setHud: any, canvasHeight: number) => { 
-    const mainWeapon = activeShip.fitting.weapons[0]; 
+export const firePowerShot = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any }, setHud: any, canvasHeight: number, globalScale: number = 1.0) => { 
+    let mainWeapon = activeShip.fitting.weapons[0];
+    
+    // For Alien ships (test mode), if slot 0 is empty, grab any equipped weapon
+    if (!mainWeapon && activeShip.config.isAlien) {
+        mainWeapon = activeShip.fitting.weapons[1] || activeShip.fitting.weapons[2];
+    }
+
     const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null; 
     const baseDamage = mainDef ? mainDef.damage : 45; 
     
+    // Safety check for generator power (10% minimum to fire anything once empty)
+    const maxEnergy = activeShip.config.maxEnergy || 1000;
+    if (state.energy < maxEnergy * 0.1) return;
+
+    // Automatic fallback to normal shot if capacitor is depleted
+    if (state.capacitor <= 0) {
+        state.capacitorLocked = true;
+        fireNormalShot(state, activeShip, globalScale);
+        return;
+    }
+
     const capRatio = state.capacitor / 100;
-    const damageMult = 1.0 + (3.0 * capRatio); 
+    const damageMult = 1.0 + (9.0 * capRatio); 
     const dmg = baseDamage * damageMult; 
     
-    let powerCost = 5.0 * capRatio;
-    if (powerCost < 0.5) powerCost = 0.5;
+    const baseCost = 0.5;
+    const variableCost = 4.5 * (capRatio * capRatio);
+    const totalCost = baseCost + variableCost;
 
-    if (mainDef?.id === 'exotic_star_shatter') powerCost *= 1.5; 
-    if (mainDef?.id === 'exotic_phaser_sweep') powerCost *= 2.0; 
-
-    if (state.capacitor <= 0 || state.capacitorLocked) return;
-
-    state.capacitor = Math.max(0, state.capacitor - powerCost);
-    if (state.capacitor <= 0.1) {
+    state.capacitor = Math.max(0, state.capacitor - totalCost); 
+    if (state.capacitor <= 0) {
         state.capacitorLocked = true;
-        setHud((h: any) => ({...h, alert: "CAPACITOR DRAINED - RECHARGING", alertType: 'warning'}));
+        setHud((h: any) => ({...h, alert: "CAPACITOR DRAINED", alertType: 'warning'}));
     }
 
     const lengthMult = 1.0 + (1.0 * capRatio);
     const EXP_GROWTH_RATE = 1.06;
+
+    // Adjust for ship scale
+    const noseOffset = 30 * globalScale;
 
     if (mainDef?.id.includes('exotic')) {
         const isStar = mainDef.id === 'exotic_star_shatter';
@@ -203,14 +289,16 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
         }
         else if (isPhaser) { type = 'laser'; w = 5; h = 40; speed = 32; color = '#d946ef'; }
 
-        if (isPhaser || isElectric) {
-            h = h * lengthMult;
-        } else {
-            w = w * (1 + 0.5 * capRatio);
-            h = h * lengthMult;
-        }
+        // Scale projectiles slightly
+        const projScale = Math.max(1, globalScale * 0.8);
+        w *= projScale;
+        h *= projScale;
 
-        const spawnY = state.py - 30 - (h / 2);
+        // Apply Power Shot Scaling (1.5x Width, 2.0x Length at max charge)
+        w = w * (1 + 0.5 * capRatio);
+        h = h * lengthMult;
+
+        const spawnY = state.py - noseOffset - (h / 2);
 
         state.bullets.push({
             x: state.px, y: spawnY,
@@ -238,14 +326,14 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
         else audioService.playWeaponFire('exotic_power', 0);
     } else { 
         const beamState = getCapacitorBeamState(state.capacitor);
-        const baseW = 4; 
-        const baseH = 25; 
+        const baseW = 4 * Math.max(1, globalScale * 0.8); 
+        const baseH = 25 * Math.max(1, globalScale * 0.8); 
         
-        const width = baseW * (1 + 0.4 * capRatio); 
+        const width = baseW * (1 + 0.5 * capRatio); 
         const height = baseH * lengthMult; 
         const color = beamState.color;
 
-        const spawnY = state.py - 30 - (height / 2);
+        const spawnY = state.py - noseOffset - (height / 2);
 
         state.bullets.push({ 
             x: state.px, y: spawnY, vx: 0, vy: -35, damage: dmg, color: color, type: 'laser', life: 50, isEnemy: false, width: width, height: height, glow: true, glowIntensity: 20 * capRatio, isMain: true, weaponId: mainWeapon?.id || 'gun_pulse', isOvercharge: true,
@@ -259,9 +347,11 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
     state.lastRapidFire = Date.now(); 
 };
 
-export const fireNormalShot = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any, gunColor?: string }) => { 
+export const fireNormalShot = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any, gunColor?: string }, globalScale: number = 1.0) => { 
     if (state.weaponCoolDownTimer > state.frame) return;
-    if (state.capacitorLocked) return;
+    
+    const maxEnergy = activeShip.config.maxEnergy || 1000;
+    if (state.energy < maxEnergy * 0.1) return;
 
     const mainWeapon = activeShip.fitting.weapons[0]; 
     const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null; 
@@ -269,25 +359,51 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
     const delay = 1000 / fireRate; 
     
     if (Date.now() - state.lastRapidFire > delay) { 
+        let usedPower = false;
+        let isImprecise = false;
+
         if (mainDef && mainDef.isAmmoBased) { 
             const gun = state.gunStates[0]; 
             if (!gun || gun.mag <= 0) return; 
             gun.mag--; 
+            usedPower = true;
         } else { 
             const isExotic = mainDef?.id.includes('exotic');
-            const capacitorCost = isExotic ? 2.0 : 1.0;
-            if (state.capacitor < capacitorCost) return; 
-            state.capacitor -= capacitorCost; 
+            const cost = isExotic ? 2.0 : 1.0;
+            
+            if (state.capacitor >= cost && !state.capacitorLocked) {
+                state.capacitor -= cost;
+                usedPower = true;
+            } else if (state.energy >= cost) {
+                state.energy -= cost;
+                usedPower = true;
+                isImprecise = true;
+            }
         } 
         
+        if (!usedPower) return;
+
         let damage = mainDef ? mainDef.damage : 45; 
         let weaponId = mainDef ? mainDef.id : 'gun_pulse'; 
         let crystalColor = (mainDef?.beamColor) || (activeShip.gunColor || activeShip.config.noseGunColor || '#f87171'); 
         
-        if (mainDef?.id.includes('exotic')) {
+        let shotAngle = 0;
+        if (isImprecise) {
+            const randomFactor = (Math.random() - 0.5) + (Math.random() - 0.5); 
+            shotAngle = randomFactor * 15; 
+        } else if (mainDef?.id.includes('exotic')) {
             const sprayAngleDeg = (Math.random() * 30) - 15; 
-            const sprayRad = sprayAngleDeg * (Math.PI / 180);
-            const speed = 20;
+            shotAngle = sprayAngleDeg; 
+        }
+
+        const rad = shotAngle * (Math.PI / 180);
+        
+        // Calculate spawn offset based on scale
+        const noseOffset = 24 * globalScale;
+        const projScale = Math.max(1, globalScale * 0.8);
+
+        if (mainDef?.id.includes('exotic')) {
+            let speed = 20;
             
             if (mainDef.id === 'exotic_flamer') {
                 crystalColor = '#3b82f6'; 
@@ -300,24 +416,27 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
                 audioService.playWeaponFire('exotic_single', 0);
             }
 
-            let w = 6; 
-            let h = 12;
+            let w = 6 * projScale; 
+            let h = 12 * projScale;
 
-            if (mainDef.id === 'exotic_rainbow_spread') { w = 16; h = 4; }
-            if (mainDef.id === 'exotic_flamer') { w = 12; h = 12; }
-            if (mainDef.id === 'exotic_phaser_sweep') { h = 40; w = 3.5; }
+            if (mainDef.id === 'exotic_rainbow_spread') { w = 16 * projScale; h = 4 * projScale; speed = 14; }
+            if (mainDef.id === 'exotic_flamer') { w = 30 * projScale; h = 30 * projScale; }
+            if (mainDef.id === 'exotic_phaser_sweep') { h = 40 * projScale; w = 3.5 * projScale; speed = 32; }
+
+            const vx = Math.sin(rad) * speed;
+            const vy = -Math.cos(rad) * speed;
 
             if (mainDef.id === 'exotic_octo_burst') {
                 state.bullets.push({
-                    x: state.px, y: state.py - 30, 
-                    vx: Math.sin(sprayRad) * 12, 
+                    x: state.px, y: state.py - 30 * globalScale, 
+                    vx: Math.sin(rad) * 12, 
                     vy: -12, 
                     damage: damage,
                     color: crystalColor,
                     type: 'octo_shell',
                     life: 80,
                     isEnemy: false,
-                    width: 8, height: 8,
+                    width: 8 * projScale, height: 8 * projScale,
                     glow: true,
                     glowIntensity: 20,
                     isMain: true,
@@ -327,11 +446,10 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
                 });
                 audioService.playWeaponFire('missile', 0);
             } else if (mainDef.id === 'exotic_phaser_sweep') {
-                const spawnY = state.py - 30 - (h / 2);
+                const spawnY = state.py - 30 * globalScale - (h / 2);
                  state.bullets.push({ 
                     x: state.px, y: spawnY, 
-                    vx: Math.sin(sprayRad) * speed, 
-                    vy: -Math.cos(sprayRad) * speed, 
+                    vx, vy, 
                     damage, 
                     color: crystalColor, 
                     type: 'laser', 
@@ -348,11 +466,10 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
                 audioService.playWeaponFire('phaser', 0);
             } else {
                 const growth = (mainDef.id === 'exotic_flamer') ? 1.025 : 0; 
-                if (mainDef.id === 'exotic_star_shatter') { w = 6; h = 6; }
+                if (mainDef.id === 'exotic_star_shatter') { w = 6 * projScale; h = 6 * projScale; }
                 state.bullets.push({ 
-                    x: state.px, y: state.py - 24, 
-                    vx: Math.sin(sprayRad) * speed, 
-                    vy: -Math.cos(sprayRad) * speed, 
+                    x: state.px, y: state.py - 24 * globalScale, 
+                    vx, vy, 
                     damage, 
                     color: crystalColor, 
                     type: 'projectile', 
@@ -371,7 +488,10 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
                 }
             }
         } else { 
-            state.bullets.push({ x: state.px, y: state.py - 24, vx: 0, vy: -30, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, glow: true, glowIntensity: 5, isMain: true, weaponId }); 
+            const speed = 30;
+            const vx = Math.sin(rad) * speed;
+            const vy = -Math.cos(rad) * speed;
+            state.bullets.push({ x: state.px, y: state.py - 24 * globalScale, vx, vy, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4 * projScale, height: 25 * projScale, glow: true, glowIntensity: 5, isMain: true, weaponId }); 
             audioService.playWeaponFire(mainDef?.type === WeaponType.LASER ? 'laser' : 'cannon', 0, activeShip.config.id); 
         } 
         
@@ -382,101 +502,107 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
     } 
 };
 
-export const fireAlienWeapons = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any }) => { 
-    const mounts = getWingMounts(activeShip.config); 
-    const slots = [0, 1, 2]; 
-    const scale = 0.6; 
-    let fired = false; 
-    
-    slots.forEach(slotIdx => { 
-        const w = activeShip.fitting.weapons[slotIdx]; 
-        if (w && w.id) { 
-            const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); 
-            if (wDef) { 
-                const lastFire = state.weaponFireTimes[slotIdx] || 0; 
-                const delay = 1000 / wDef.fireRate; 
-                if (Date.now() - lastFire < delay) return; 
-                if (state.energy < wDef.energyCost) return; 
-                
-                let startX = state.px; 
-                let startY = state.py; 
-                
-                if (slotIdx === 0) { 
-                    startY = state.py - 30; 
-                } else { 
-                    const mountIdx = slotIdx - 1; 
-                    const m = mounts[mountIdx]; 
-                    startX = state.px + (m.x - 50) * scale; 
-                    startY = state.py + (m.y - 50) * scale; 
-                } 
-                
-                const damage = wDef.damage; 
-                const color = wDef.beamColor || '#fff'; 
-                const bulletSpeed = w.id.includes('exotic') ? 10 : 18; 
-                
-                if (wDef.id === 'exotic_gravity_wave') { 
-                    const angles = [-15, 0, 15]; 
-                    angles.forEach(deg => { 
-                        const rad = deg * (Math.PI / 180); 
-                        state.bullets.push({ x: startX, y: startY, vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, damage, color: '#60a5fa', type: 'projectile', life: 80, isEnemy: false, width: 20, height: 20, weaponId: w.id, growthRate: 0.5 }); 
-                    }); 
-                } else if (wDef.type === WeaponType.LASER) { 
-                    state.bullets.push({ x: startX, y: startY, vx: 0, vy: -30, damage, color, type: 'laser', life: 50, isEnemy: false, width: 4, height: 25, weaponId: w.id }); 
-                } else { 
-                    state.bullets.push({ x: startX, y: startY, vx: 0, vy: -bulletSpeed, damage, color, type: 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); 
-                } 
-                
-                state.weaponFireTimes[slotIdx] = Date.now(); 
-                state.energy -= wDef.energyCost; 
-                fired = true; 
-            } 
-        } 
-    }); 
-    
-    if (fired) { 
-        if (activeShip.fitting.weapons.some((w: any) => w?.id === 'exotic_flamer')) { 
-            audioService.playWeaponFire('flame', 0, activeShip.config.id); 
-        } else { 
-            audioService.playWeaponFire('cannon', 0, activeShip.config.id); 
-        } 
-    } 
+export const fireAlienWeapons = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any }, globalScale: number = 1.0) => {
+    if (activeShip.config.wingStyle === 'alien-a') {
+        fireNormalShot(state, activeShip, globalScale);
+    } else {
+        fireWingWeapon(state, activeShip, 1, globalScale);
+        fireWingWeapon(state, activeShip, 2, globalScale);
+    }
 };
 
-export const fireWingWeapon = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any }, slotIdx: number) => { 
-    const mounts = getWingMounts(activeShip.config); 
-    const w = activeShip.fitting.weapons[slotIdx];
+export const fireWingWeapon = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any }, slotIndex: number, globalScale: number = 1.0) => {
+    const weapon = activeShip.fitting.weapons[slotIndex];
+    if (!weapon) return;
     
-    if (w && w.id) { 
-        const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id); 
-        if (wDef) { 
-            const interval = Math.max(1, Math.floor(60 / wDef.fireRate)); 
-            if (state.frame % interval === 0) { 
-                if (wDef.isAmmoBased) { 
-                    const gun = state.gunStates[slotIdx]; 
-                    if (!gun || gun.mag <= 0) return; 
-                    gun.mag--; 
-                } else if (state.energy < wDef.energyCost) return; 
-                
-                state.weaponFireTimes[slotIdx] = Date.now(); 
-                const scale = 0.6; 
-                const m = mounts[slotIdx - 1]; 
-                const startX = state.px + (m.x - 50) * scale; 
-                const startY = state.py + (m.y - 50) * scale; 
-                const damage = wDef.damage; 
-                const color = wDef.beamColor || '#fff'; 
-                
-                if (wDef.id === 'exotic_gravity_wave') { 
-                    const angles = [-15, 0, 15]; 
-                    angles.forEach(deg => { 
-                        const rad = deg * (Math.PI / 180); 
-                        state.bullets.push({ x: startX, y: startY, vx: Math.sin(rad) * 8, vy: -Math.cos(rad) * 8, damage, color: '#60a5fa', type: 'projectile', life: 80, isEnemy: false, width: 20, height: 20, weaponId: w.id, growthRate: 0.5 }); 
-                    }); 
-                } else { 
-                    state.bullets.push({ x: startX, y: startY, vx: 0, vy: -20, damage, color, type: wDef.type === WeaponType.LASER ? 'laser' : 'projectile', life: 60, isEnemy: false, width: 4, height: 16, weaponId: w.id }); 
-                } 
-                if (!wDef.isAmmoBased) state.energy -= wDef.energyCost; 
-                audioService.playWeaponFire('cannon', 0, activeShip.config.id); 
-            } 
-        } 
-    } 
+    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === weapon.id);
+    if (!wDef) return;
+
+    const now = Date.now();
+    const lastFire = state.weaponFireTimes[slotIndex] || 0;
+    const delay = 1000 / wDef.fireRate;
+    
+    if (now - lastFire < delay) return;
+
+    let canFire = false;
+    if (wDef.isAmmoBased) {
+        const gunState = state.gunStates[slotIndex];
+        if (gunState && gunState.mag > 0 && gunState.reloadTimer === 0) {
+            gunState.mag--;
+            canFire = true;
+        }
+    } else {
+        const cost = wDef.energyCost;
+        if (state.energy >= cost) {
+            state.energy -= cost;
+            canFire = true;
+        }
+    }
+
+    if (!canFire) return;
+
+    const mounts = getWingMounts(activeShip.config);
+    const mountIdx = slotIndex - 1;
+    if (!mounts[mountIdx]) return;
+    
+    const m = mounts[mountIdx];
+    // Coordinate Logic:
+    // Ship is drawn centered at state.px, state.py.
+    // Ship drawing coordinates are 0-100, center at 50,50.
+    // We calculate offset from center (50,50)
+    const offsetX = m.x - 50;
+    const offsetY = m.y - 50;
+    
+    // Scale Logic:
+    // The player ship is drawn with `ctx.scale(scale, scale)` where scale = 0.6 * globalScale (for player).
+    // So visual offset = logical offset * 0.6 * globalScale.
+    const shipScale = 0.6 * globalScale;
+    
+    const spawnX = state.px + (offsetX * shipScale);
+    const spawnY = state.py + (offsetY * shipScale);
+
+    let type = 'projectile';
+    let color = wDef.beamColor || '#fff';
+    // Scale projectile size slightly to match larger ships
+    const projScale = Math.max(1, globalScale * 0.8);
+    let w = 4 * projScale;
+    let h = 16 * projScale;
+    let speed = 20;
+    let life = 50;
+    
+    if (wDef.id.includes('exotic')) {
+        if (wDef.id === 'exotic_plasma_orb') { w = 8 * projScale; h = 8 * projScale; speed = 16; type = 'projectile'; }
+        else if (wDef.id === 'exotic_flamer') { w = 20 * projScale; h = 20 * projScale; speed = 18; color='#3b82f6'; }
+        else if (wDef.id === 'exotic_electric') { type = 'laser'; w = 3 * projScale; h = 20 * projScale; speed = 25; color='#00ffff'; }
+        else if (wDef.id === 'exotic_wave') { w = 12 * projScale; h = 6 * projScale; speed = 15; }
+        else if (wDef.id === 'exotic_rainbow_spread') { w = 8 * projScale; h = 4 * projScale; speed = 14; }
+    } else {
+        if (wDef.type === WeaponType.LASER) { type = 'laser'; h = 20 * projScale; speed = 25; }
+    }
+
+    state.bullets.push({ 
+        x: spawnX, 
+        y: spawnY, 
+        vx: 0, 
+        vy: -speed, 
+        damage: wDef.damage, 
+        color: color, 
+        type: type, 
+        life: life, 
+        isEnemy: false, 
+        width: w, 
+        height: h, 
+        weaponId: wDef.id 
+    }); 
+    
+    if (wDef.id.includes('exotic')) {
+        audioService.playWeaponFire('exotic_single', 0);
+    } else if (wDef.type === WeaponType.LASER) {
+        audioService.playWeaponFire('laser', 0);
+    } else {
+        audioService.playWeaponFire('cannon', 0);
+    }
+
+    state.weaponFireTimes[slotIndex] = now;
+    state.weaponHeat[slotIndex] = Math.min(100, (state.weaponHeat[slotIndex] || 0) + 2);
 };

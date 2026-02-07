@@ -63,13 +63,10 @@ export const renderGame = (
         } else if (item.type === 'player') {
             ctx.translate(s.px, s.py); 
             
-            const visualMovement = { 
-                ...s.movement, 
-                up: s.phase === 'boss' ? false : s.movement.up 
-            };
+            const visualMovement = { ...s.movement };
             
-            // In Boss phase, player's main jets are forced off
-            const playerForceMainJetsOff = s.phase === 'boss';
+            // In Boss phase, player's main jets are forced off UNLESS they are actively thrusting up
+            const playerForceMainJetsOff = s.phase === 'boss' && !s.movement.up;
 
             drawShip(ctx, { 
                 config: activeShip.config, 
@@ -102,26 +99,17 @@ export const renderGame = (
             let enemyMovement = { up: false, down: false, left: false, right: false };
             let forceEnemyJetsOff = false;
 
-            if (e.type === 'boss') {
-                if (e.y < 100) {
-                    // Entering Phase: Main Jets ON
-                    enemyMovement.up = true;
-                    forceEnemyJetsOff = false;
-                } else {
-                    // Battle Phase: Main Jets OFF, use thrusters for movement
-                    forceEnemyJetsOff = true;
-                    // INVERTED LOGIC for rotated enemy
-                    // Screen Left (vx < 0) -> Local Right -> Needs Left Thruster (movement.right)
-                    if (e.vx < -0.5) enemyMovement.right = true; 
-                    if (e.vx > 0.5) enemyMovement.left = true;
-                }
-            } else {
-                // Standard enemies main jets always on
+            // Use the Enemy's own thrust state to determine visual jets
+            if (e.isThrusting) {
                 enemyMovement.up = true;
-                // Infer strafe for visual flair (Inverted for rotation)
-                if (e.vx < -0.5) enemyMovement.right = true;
-                if (e.vx > 0.5) enemyMovement.left = true;
+                forceEnemyJetsOff = false;
+            } else {
+                forceEnemyJetsOff = true;
             }
+
+            // Visual flair for strafing (Inverted for rotation)
+            if (e.vx < -0.5) enemyMovement.right = true; 
+            if (e.vx > 0.5) enemyMovement.left = true;
 
             drawShip(ctx, { 
                 config: e.config, 
@@ -152,7 +140,7 @@ export const renderGame = (
         if (b.type === 'missile' || b.type === 'missile_emp' || b.type === 'missile_enemy') { ctx.scale(1.2, 1.2); const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); ctx.fillStyle = b.finsColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill(); ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.fillRect(-3, -6, 6, 14); ctx.fillStyle = b.headColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill(); } 
         else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red' || b.type === 'mine_enemy') { const radius = b.width / 2; ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5; ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = b.color; ctx.lineWidth = 2; const spikeCount = 8; const spikeLen = radius + 4; for (let i = 0; i < spikeCount; i++) { const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius; const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); } }
         else if (b.type === 'octo_shell') { ctx.save(); ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.glowIntensity || 20; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); if (!b.isOvercharge) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(0, 0, b.width*0.8, 0, Math.PI*2); ctx.fill(); } ctx.restore(); } 
-        else if (b.weaponId === 'exotic_octo_burst') { ctx.save(); ctx.translate(b.x, b.y); ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.glowIntensity || 20; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); ctx.restore(); } 
+        else if (b.weaponId === 'exotic_octo_burst') { ctx.save(); ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.glowIntensity || 20; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); ctx.restore(); } 
         else if (b.weaponId === 'exotic_gravity_wave') { ctx.strokeStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = 15; ctx.lineCap = 'round'; const count = 5; const spacing = 6; for(let i=0; i<count; i++) { const arcW = b.width * (1 - i * 0.15); const yOff = i * spacing; ctx.globalAlpha = Math.max(0, 0.8 - (i * 0.15)); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, yOff, arcW/2, Math.PI * (7/6), Math.PI * (11/6)); ctx.stroke(); } ctx.globalAlpha = 1; ctx.shadowBlur = 0; } 
         else if (b.weaponId === 'exotic_star_shatter') { ctx.fillStyle = b.isOvercharge ? '#ffffff' : '#fbbf24'; ctx.shadowColor = b.isOvercharge ? '#facc15' : '#f97316'; const blurScale = b.width / 4; ctx.shadowBlur = b.isOvercharge ? Math.min(100, 20 + blurScale) : 10; const rot = s.frame * 0.15 + (b.x * 0.01); ctx.rotate(rot); ctx.beginPath(); const baseSpikes = 6; const maxSpikes = 64; const ratio = (b.width - (b.initialWidth || 4)) / ((b.initialWidth || 4) * 2); const spikes = Math.floor(Math.min(maxSpikes, Math.max(baseSpikes, baseSpikes + (ratio * (maxSpikes - baseSpikes))))); const outer = b.width; const inner = b.width * 0.4; for(let i=0; i<spikes; i++) { const angleStep = Math.PI / spikes; const angle = i * 2 * Math.PI / spikes; let x = Math.cos(angle) * outer; let y = -Math.sin(angle) * outer; if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); x = Math.cos(angle + angleStep) * inner; y = -Math.sin(angle + angleStep) * inner; ctx.lineTo(x, y); } ctx.closePath(); ctx.fill(); ctx.shadowBlur = 0; } 
         else if (b.weaponId === 'exotic_flamer') { ctx.globalAlpha = b.opacity !== undefined ? b.opacity : 1.0; ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.isOvercharge ? 30 : b.width; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#ffffff'; ctx.globalAlpha = (b.opacity !== undefined ? b.opacity : 1.0) * 0.6; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1.0; ctx.shadowBlur = 0; }

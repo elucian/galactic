@@ -93,12 +93,12 @@ export interface GameEngineState {
     currentThrottle: number;
     shipVy: number;
     refuelTimer: number;
-    refuelDuration: number; // Added to support variable duration (3s vs 10s)
+    refuelDuration: number; 
     isRefueling: boolean;
     refuelType: 'fuel' | 'water' | null;
     refuelStartVal: number;
-    isEnergizing: boolean; // Added for Manual Energy Injection
-    energizeTimer: number; // Added for Manual Energy Injection
+    isEnergizing: boolean; 
+    energizeTimer: number; 
     capacitorLocked: boolean;
     depletionTime: number;
     weaponCoolDownTimer: number;
@@ -109,4 +109,7 @@ export interface GameEngineState {
     shieldsEnabled: boolean;
     wasShieldHit: boolean;
     isShooting: boolean;
+    // Shield Regen State Flags
+    sh1RegenActive: boolean;
+    sh2RegenActive: boolean;
 }

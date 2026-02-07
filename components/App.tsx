@@ -75,8 +75,8 @@ export default function App() {
       initialFittings[os.instanceId] = { 
           weapons, 
           shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', 
-          rocketCount: 2, 
-          mineCount: 2,   
+          rocketCount: 10, 
+          mineCount: 20,   
           redMineCount: 0, 
           hullPacks: 0, wingWeaponId: null, 
           health: 100, ammoPercent: 100, lives: 1, fuel: config.maxFuel, cargo: [],
@@ -641,7 +641,55 @@ export default function App() {
        const currentPId = prev.currentPlanet!.id;
        const pEntry = { ...reg[currentPId] };
        let newMessages = [...prev.messages];
-       if (success) { pEntry.wins += 1; pEntry.losses = 0; if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { pEntry.status = 'friendly'; pEntry.wins = 0; newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); } else { newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); } if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } } else { if (!aborted) { pEntry.losses += 1; if (pEntry.losses >= 1) { pEntry.losses = 0; const pIndex = PLANETS.findIndex(p => p.id === currentPId); if (pIndex > 0) { const prevPId = PLANETS[pIndex - 1].id; const prevEntry = { ...reg[prevPId] }; let regressionHappened = false; if (prevEntry.status === 'friendly') { prevEntry.status = 'siege'; regressionHappened = true; } else if (prevEntry.status === 'siege') { prevEntry.status = 'occupied'; regressionHappened = true; } if (regressionHappened) { reg[prevPId] = prevEntry; newMessages.unshift({ id: `loss_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, timestamp: Date.now() }); } } } } } reg[currentPId] = pEntry;
+       
+       if (success) { 
+           pEntry.wins += 1; 
+           pEntry.losses = 0; 
+           if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { 
+               pEntry.status = 'friendly'; 
+               pEntry.wins = 0; 
+               newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); 
+           } else { 
+               newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); 
+           } 
+           if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } 
+       } else { 
+           // FAILURE Logic (Loss or Abort)
+           
+           // 1. Current Planet Regression
+           // If we fail to defend (status was 'siege'), it becomes occupied.
+           if (pEntry.status === 'siege') {
+               pEntry.status = 'occupied';
+               newMessages.unshift({ id: `lost_curr_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE FAILED. ${prev.currentPlanet?.name} HAS FALLEN TO OCCUPATION.`, timestamp: Date.now() });
+           }
+
+           // 2. Neighbor Planet Regression
+           const pIndex = PLANETS.findIndex(p => p.id === currentPId);
+           if (pIndex > 0) {
+               const prevPId = PLANETS[pIndex - 1].id;
+               const prevEntry = { ...reg[prevPId] };
+               let regressionHappened = false;
+               
+               // If neighbor is friendly, it becomes besieged
+               if (prevEntry.status === 'friendly') {
+                   prevEntry.status = 'siege';
+                   regressionHappened = true;
+                   newMessages.unshift({ id: `siege_prev_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `INVASION SPREADING. ${PLANETS[pIndex-1].name} IS NOW UNDER SIEGE.`, timestamp: Date.now() });
+               } 
+               // If neighbor is already besieged, it falls (cascading failure implied)
+               else if (prevEntry.status === 'siege') {
+                   prevEntry.status = 'occupied';
+                   regressionHappened = true;
+                   newMessages.unshift({ id: `lost_prev_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `PERIMETER COLLAPSE. ${PLANETS[pIndex-1].name} LOST TO ENEMY FORCES.`, timestamp: Date.now() });
+               }
+               
+               if (regressionHappened) {
+                   reg[prevPId] = prevEntry;
+               }
+           }
+       } 
+       
+       reg[currentPId] = pEntry;
        return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
     });
     
@@ -688,7 +736,7 @@ export default function App() {
       const newFittings = { ...prev.shipFittings };
       const newWeapons = Array(3).fill(null);
       if (shipConfig.isAlien) { const wId = shipConfig.weaponId || 'exotic_plasma_orb'; if (shipConfig.defaultGuns === 1) { newWeapons[0] = { id: wId, count: 1 }; } else { newWeapons[1] = { id: wId, count: 1 }; newWeapons[2] = { id: wId, count: 1 }; } } else { const shipIndex = SHIPS.findIndex(s => s.id === shipTypeId); if (shipIndex >= 3 && shipIndex <= 4) { newWeapons[0] = { id: 'gun_photon', count: 1 }; } else { newWeapons[0] = { id: 'gun_pulse', count: 1 }; } }
-      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, water: shipConfig.maxWater || 100, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 2, mineCount: 2, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
+      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, water: shipConfig.maxWater || 100, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 10, mineCount: 20, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
       return { ...prev, credits: prev.credits - shipConfig.price, ownedShips: newOwned, shipFittings: newFittings, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: reserve }, shipColors: { ...prev.shipColors, [sId]: shipConfig.defaultColor || '#94a3b8' } };
     });
     setIsStoreOpen(false); 

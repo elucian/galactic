@@ -77,7 +77,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                     </div>
 
                     {!hud.boss && (
-                        <div className="absolute left-1/2 -translate-x-1/2 top-0 flex flex-col items-center bg-black/60 px-6 py-2 rounded-b-xl border-x border-b border-zinc-800/50 backdrop-blur-sm pointer-events-none">
+                        <div className="absolute left-1/2 -translate-x-1/2 top-0 flex flex-col items-center bg-black/60 px-6 py-2 rounded-b-xl border-x border-b border-zinc-800/50 backdrop-blur-sm pointer-events-none min-w-[140px]">
                             <div className={`${hudTimer} font-mono font-black text-red-500 tabular-nums tracking-widest drop-shadow-[0_0_10px_rgba(239,68,68,0.5)] leading-none`}>
                                 {Math.floor(hud.timer / 60).toString().padStart(2, '0')}:{Math.floor(hud.timer % 60).toString().padStart(2, '0')}
                             </div>
@@ -108,18 +108,18 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 </div>
 
                 {hud.boss && (
-                    <div className="absolute top-20 left-1/2 -translate-x-1/2 w-64 flex flex-col items-center pointer-events-none">
-                        <div className="w-full flex justify-between text-[9px] font-black uppercase text-red-500 mb-1">
+                    <div className="absolute top-2 left-1/2 -translate-x-1/2 w-64 md:w-80 flex flex-col items-center pointer-events-none z-[55] bg-black/40 p-2 rounded-lg border border-red-900/50 backdrop-blur-sm">
+                        <div className="w-full flex justify-between text-[10px] font-black uppercase text-red-500 mb-1 drop-shadow-md tracking-widest">
                             <span>{hud.boss.config.name}</span>
-                            <span>{Math.ceil(hud.boss.hp)}</span>
+                            <span>{Math.ceil(hud.boss.hp)} HP</span>
                         </div>
-                        <div className="w-full h-3 bg-black border-2 border-red-900 rounded-sm overflow-hidden mb-1 relative z-10">
-                            <div className="h-full bg-red-600 transition-all duration-200" style={{ width: `${Math.max(0, (hud.boss.hp / hud.boss.maxHp) * 100)}%` }} />
+                        <div className="w-full h-4 bg-zinc-950 border border-red-900 rounded-sm overflow-hidden mb-1 relative z-10 shadow-[0_0_10px_rgba(220,38,38,0.3)]">
+                            <div className="h-full bg-gradient-to-r from-red-700 to-red-500 transition-all duration-200" style={{ width: `${Math.max(0, (hud.boss.hp / hud.boss.maxHp) * 100)}%` }} />
                         </div>
-                        <div className="w-full flex flex-col gap-[1px]">
+                        <div className="w-full flex flex-col gap-[2px]">
                             {hud.boss.shieldLayers.map((l: any, i: number) => (
-                                <div key={i} className="w-full h-1.5 bg-black border border-zinc-800 relative">
-                                    <div className="h-full transition-all duration-200 opacity-80" style={{ width: `${(l.current/l.max)*100}%`, backgroundColor: l.color }} />
+                                <div key={i} className="w-full h-1.5 bg-black border border-zinc-800 relative rounded-full overflow-hidden">
+                                    <div className="h-full transition-all duration-200 opacity-90" style={{ width: `${(l.current/l.max)*100}%`, backgroundColor: l.color, boxShadow: `0 0 5px ${l.color}` }} />
                                 </div>
                             ))}
                         </div>
@@ -128,7 +128,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
                 <div className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
                     {!hud.rescueMode && <LEDMeter value={hud.overload} max={100} colorStart={hud.capacitorLocked ? '#52525b' : '#10b981'} label={hud.capacitorLocked ? "LCK" : "C"} vertical={true} reverseColor={true} />}
-                    <LEDMeter value={hud.energy} max={maxEnergy} colorStart="#22d3ee" label="E" vertical={true} />
+                    <LEDMeter value={hud.energy} max={1000} colorStart="#22d3ee" label="E" vertical={true} />
                 </div>
 
                 <div className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
@@ -143,7 +143,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                             {hasGuns && !hud.rescueMode && (
                                 <HudButton 
                                     label={hud.powerMode ? "POWER" : "NORMAL"} 
-                                    subLabel={hud.capacitorLocked ? "JAMMED" : (hud.powerMode ? "CAPSLOCK" : "AUTO")} 
+                                    subLabel={hud.capacitorLocked ? "90% REQ" : (hud.powerMode ? "CAPSLOCK" : "AUTO")} 
                                     onDown={() => { if(!hud.capacitorLocked) inputRef.current.main = true; }}
                                     onUp={() => { inputRef.current.main = false; }}
                                     colorClass={hud.capacitorLocked ? 'text-zinc-500' : (hud.powerMode ? 'text-orange-500 animate-pulse' : 'text-emerald-400')}
