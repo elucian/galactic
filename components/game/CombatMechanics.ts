@@ -52,6 +52,9 @@ export const takeDamage = (state: GameEngineState, amt: number, type: string, sh
 export const applyShieldRamDamage = (state: GameEngineState, enemy: any, setHud: any) => {
     if (!state.shieldsEnabled || (state.sh1 <= 0 && state.sh2 <= 0)) return;
     
+    // Z-Level Check: Shield ramming requires same plane
+    if (Math.abs(enemy.z) > 50) return;
+    
     // Damage logic for Shield Ramming
     // Boss takes damage based on shield strength
     const damage = 20; 
@@ -70,6 +73,9 @@ export const applyShieldRamDamage = (state: GameEngineState, enemy: any, setHud:
 export const applyJetDamage = (state: GameEngineState, activeJets: {up: boolean, down: boolean, left: boolean, right: boolean}, setHud: any) => {
     const boss = state.enemies.find(e => e.type === 'boss');
     if (!boss || boss.hp <= 0) return;
+
+    // Z-Level Check: Jets cannot burn if Z levels differ
+    if (Math.abs(boss.z) > 50) return; 
 
     const shipX = state.px;
     const shipY = state.py;

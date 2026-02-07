@@ -33,6 +33,7 @@ export class Enemy {
   maneuverTimer: number = 0;
   targetX: number = 0;
   targetY: number = 0;
+  targetZ: number = 0; // New Z-level targeting
   
   // Resource System for Boss
   fuel: number = 0;
@@ -237,6 +238,26 @@ export class Enemy {
                 }
             }
 
+            // Z-Level Evasion Logic (Beta, Gamma, Delta)
+            if (this.quadrant !== QuadrantType.ALFA) {
+                const distToPlayer = Math.hypot(this.x - px, this.y - py);
+                
+                // If player has shields and we are close, change Z to avoid collision
+                // Or if we are just close and want to perform a fly-over
+                if (playerShieldsActive && distToPlayer < 350) {
+                    if (Math.abs(this.targetZ) < 10) {
+                        // Dive or Climb (200 is visually distinctive enough)
+                        this.targetZ = Math.random() > 0.5 ? 200 : -200;
+                    }
+                } else if (distToPlayer > 450) {
+                    // Return to combat plane when safe
+                    this.targetZ = 0;
+                }
+                
+                // Smooth Z movement
+                this.z += (this.targetZ - this.z) * 0.05;
+            }
+
             const hasShields = this.shieldLayers.some(l => l.current > 0);
             
             // --- RESOURCE MANAGEMENT & MOVEMENT ---
@@ -322,11 +343,13 @@ export class Enemy {
                 }
 
                 // 2. Collision Avoidance (Player Hull & Shields)
-                // Boss actively avoids crashing into player
+                // Boss actively avoids crashing into player IF on same Z plane
+                // If we are avoiding Z, we don't need to dodge XY as much
                 const distToPlayer = Math.hypot(this.x - px, this.y - py);
                 const avoidRadius = playerShieldsActive ? 250 : 200;
                 
-                if (distToPlayer < avoidRadius) {
+                // Only dodge if on same plane
+                if (Math.abs(this.z) < 50 && distToPlayer < avoidRadius) {
                     dodging = true;
                     // Push away vector
                     const pushX = this.x - px;

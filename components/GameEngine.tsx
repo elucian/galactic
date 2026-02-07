@@ -263,7 +263,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           s.isRefueling = true; 
           s.refuelType = 'fuel'; 
           s.refuelStartVal = s.fuel;
-          s.refuelDuration = 180; // Fast manual (3s)
+          s.refuelDuration = 600; // 10s duration
           s.refuelTimer = 0;
           setHud(h => ({...h, alert: "MANUAL REFUEL INITIATED", alertType: 'info'})); 
           audioService.playSfx('buy');
@@ -281,7 +281,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
           s.isRefueling = true; 
           s.refuelType = 'water'; 
           s.refuelStartVal = s.water;
-          s.refuelDuration = 180; // Fast manual (3s)
+          s.refuelDuration = 600; // 10s duration
           s.refuelTimer = 0;
           setHud(h => ({...h, alert: "MANUAL REHYDRATION INITIATED", alertType: 'info'})); 
           audioService.playSfx('buy');
@@ -584,7 +584,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
         let targetThrottle = 0; let left = false; let right = false;
         
-        const canMove = !isDistress && (!s.isRefueling || (s.refuelType === 'water' && s.water > 5));
+        const canMove = !isDistress; // Unlocked control during refueling
 
         // Define directional keys for visual feedback
         let keyLeft = false;
@@ -722,7 +722,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         
         const now = Date.now();
         // Updated Missile Logic: Tab OR NumpadAdd
-        if ((s.keys.has('Tab') || s.keys.has('NumpadAdd')) && !s.isRefueling && !s.rescueMode) {
+        if ((s.keys.has('Tab') || s.keys.has('NumpadAdd')) && !s.rescueMode) {
             if (s.missileBurstCount < 3) {
                 if (now - s.lastMissileFire > 1000) {
                     fireMissile(s);
@@ -734,12 +734,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
 
         // Updated Mine Logic: Directional
-        if (s.keys.has('ShiftLeft') && !s.isRefueling && !s.rescueMode) {
+        if (s.keys.has('ShiftLeft') && !s.rescueMode) {
             if (s.mineBurstCount < 3 && now - s.lastMineFire > 1000) {
                 fireMine(s, 'left');
                 s.mineBurstCount++;
             }
-        } else if (s.keys.has('ShiftRight') && !s.isRefueling && !s.rescueMode) {
+        } else if (s.keys.has('ShiftRight') && !s.rescueMode) {
             if (s.mineBurstCount < 3 && now - s.lastMineFire > 1000) {
                 fireMine(s, 'right');
                 s.mineBurstCount++;
@@ -748,7 +748,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             s.mineBurstCount = 0;
         }
 
-        const isFiring = (s.keys.has('Space') || inputRef.current.main) && !s.isRefueling;
+        const isFiring = (s.keys.has('Space') || inputRef.current.main);
         s.isShooting = isFiring;
 
         if (!s.rescueMode) {
@@ -861,13 +861,52 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             });
 
             // UPDATED: Fire Wing Weapons via Numpad
-            if (s.keys.has('Numpad0') && !s.isRefueling) fireWingWeapon(s, activeShip, 1, sizeScale);
-            if (s.keys.has('NumpadDecimal') && !s.isRefueling) fireWingWeapon(s, activeShip, 2, sizeScale);
+            if (s.keys.has('Numpad0')) fireWingWeapon(s, activeShip, 1, sizeScale);
+            if (s.keys.has('NumpadDecimal')) fireWingWeapon(s, activeShip, 2, sizeScale);
 
             const firingSecondary = inputRef.current.secondary;
-            if (firingSecondary && !activeShip.config.isAlien && !s.isRefueling) { 
+            if (firingSecondary && !activeShip.config.isAlien) { 
                 fireWingWeapon(s, activeShip, 1, sizeScale);
                 fireWingWeapon(s, activeShip, 2, sizeScale);
+            }
+        }
+
+        // REPAIR LOGIC
+        if (s.hp < 100 && !s.rescueMode) {
+            // Robot Repair (Faster, Resource Consuming) - Checks every 60 frames (approx 1s)
+            if (s.frame % 60 === 0) {
+                const hasRobot = s.cargo.some(c => c.type === 'robot');
+                if (hasRobot) {
+                    // Try to consume resources in order of commonality/value
+                    const resourceTypes = ['iron', 'copper', 'chromium', 'titanium', 'gold', 'platinum', 'lithium'];
+                    const resIdx = s.cargo.findIndex(c => resourceTypes.includes(c.type));
+                    if (resIdx >= 0) {
+                        const res = s.cargo[resIdx];
+                        const repairVals: Record<string, number> = { iron: 2, copper: 4, chromium: 10, titanium: 16, gold: 20, platinum: 50, lithium: 80 };
+                        const heal = repairVals[res.type] || 2;
+                        
+                        s.hp = Math.min(100, s.hp + heal);
+                        res.quantity--;
+                        if (res.quantity <= 0) s.cargo.splice(resIdx, 1);
+                        
+                        setHud(h => ({...h, alert: `AUTOREPAIR: -1 ${res.name.toUpperCase()}`, alertType: 'success'}));
+                        audioService.playSfx('buy');
+                    }
+                }
+            }
+            
+            // Nanite Repair (Slower, Pack Consuming) - Checks every 240 frames (approx 4s)
+            if (s.frame % 240 === 0) {
+                const naniteIdx = s.cargo.findIndex(c => c.type === 'repair');
+                if (naniteIdx >= 0) {
+                    const nanite = s.cargo[naniteIdx];
+                    s.hp = Math.min(100, s.hp + 15); // Heals 15 HP
+                    nanite.quantity--;
+                    if (nanite.quantity <= 0) s.cargo.splice(naniteIdx, 1);
+                    
+                    setHud(h => ({...h, alert: "NANITE REPAIR: -1 PACK", alertType: 'success'}));
+                    audioService.playSfx('buy');
+                }
             }
         }
 

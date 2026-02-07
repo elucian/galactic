@@ -579,6 +579,40 @@ export const ShipIcon: React.FC<ShipIconProps> = ({
         if (equippedWeapons[1]) drawWeapon(mounts[0].x, mounts[0].y, equippedWeapons[1]?.id, 'secondary', 1); 
         if (equippedWeapons[2]) drawWeapon(mounts[1].x, mounts[1].y, equippedWeapons[2]?.id, 'secondary', 2); 
     }
+
+    // --- LAYER 9: SHIELDS (VISUAL) ---
+    if (fullShields && (shield || secondShield)) {
+        const drawShieldRing = (sDef: Shield, r: number) => {
+            if (!sDef) return;
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(50, 50, r, 0, Math.PI * 2);
+            ctx.strokeStyle = sDef.color || '#3b82f6';
+            ctx.lineWidth = 1.5;
+            ctx.shadowColor = sDef.color || '#3b82f6';
+            ctx.shadowBlur = 8;
+            ctx.globalAlpha = 0.8;
+            ctx.stroke();
+            
+            ctx.fillStyle = sDef.color || '#3b82f6';
+            ctx.globalAlpha = 0.1;
+            ctx.fill();
+            
+            // Glint
+            ctx.beginPath();
+            ctx.arc(50, 50, r, -Math.PI*0.3, -Math.PI*0.1);
+            ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 0;
+            ctx.globalAlpha = 0.5;
+            ctx.stroke();
+            
+            ctx.restore();
+        };
+
+        if (shield) drawShieldRing(shield, 65);
+        if (secondShield) drawShieldRing(secondShield, 75);
+    }
     
     ctx.restore();
   };
