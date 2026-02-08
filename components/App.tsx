@@ -1,39 +1,39 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from '../types.ts';
-import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from '../constants.ts';
-import { audioService } from '../services/audioService.ts';
-import { backendService } from '../services/backendService.ts';
-import { StoryScene } from './StoryScene.tsx';
-import { CommandCenter } from './CommandCenter.tsx';
-import { CargoDialog } from './CargoDialog.tsx';
-import { MarketDialog } from './MarketDialog.tsx';
-import { StoreDialog } from './StoreDialog.tsx';
-import { LoadoutDialog } from './LoadoutDialog.tsx';
-import { PaintDialog } from './PaintDialog.tsx';
-import { MessagesDialog } from './MessagesDialog.tsx';
-import { OptionsDialog } from './OptionsDialog.tsx';
-import { ManualDialog } from './ManualDialog.tsx';
-import SectorMap from './SectorMap.tsx';
-import LaunchSequence from './LaunchSequence.tsx';
-import WarpSequence from './WarpSequence.tsx';
-import GameEngine from './GameEngine.tsx';
-import { LandingScene } from './LandingScene.tsx';
-import { VictoryScene } from './VictoryScene.tsx';
+import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from './types.ts';
+import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from './constants.ts';
+import { audioService } from './services/audioService.ts';
+import { backendService } from './services/backendService.ts';
+import { StoryScene } from './components/StoryScene.tsx';
+import { CommandCenter } from './components/CommandCenter.tsx';
+import { CargoDialog } from './components/CargoDialog.tsx';
+import { MarketDialog } from './components/MarketDialog.tsx';
+import { StoreDialog } from './components/StoreDialog.tsx';
+import { LoadoutDialog } from './components/LoadoutDialog.tsx';
+import { PaintDialog } from './components/PaintDialog.tsx';
+import { MessagesDialog } from './components/MessagesDialog.tsx';
+import { OptionsDialog } from './components/OptionsDialog.tsx';
+import { ManualDialog } from './components/ManualDialog.tsx';
+import SectorMap from './components/SectorMap.tsx';
+import LaunchSequence from './components/LaunchSequence.tsx';
+import WarpSequence from './components/WarpSequence.tsx';
+import GameEngine from './components/GameEngine.tsx';
+import { LandingScene } from './components/LandingScene.tsx';
+import { VictoryScene } from './components/VictoryScene.tsx';
 
 const SAVE_KEY = 'galactic_defender_beta_35'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
-const MAX_MESSAGE_HISTORY = 50; // Memory optimization limit
+const MAX_MESSAGE_HISTORY = 50; 
 
 const getTransferBatchSize = (type: string) => {
     const t = type.toLowerCase();
     if (['weapon', 'shield', 'gun', 'projectile', 'laser'].includes(t)) return 1;
-    if (t === 'ammo') return 1; // Ammo moves in packs
+    if (t === 'ammo') return 1; 
     if (['missile', 'mine'].includes(t)) return 5;
     if (['fuel', 'water', 'energy', 'repair'].includes(t)) return 10;
-    return 10; // Resources and others
+    return 10; 
 };
 
 const StarBackground = () => {
@@ -80,7 +80,7 @@ export default function App() {
           redMineCount: 0, 
           hullPacks: 0, wingWeaponId: null, 
           health: 100, ammoPercent: 100, lives: 1, fuel: config.maxFuel, cargo: [],
-          water: 100, // Initial water
+          water: 100, 
           ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 },
           magazineCurrent: 200, 
           reloadTimer: 0,
@@ -111,7 +111,9 @@ export default function App() {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
-      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: true, testMode: false, fontSize: 'medium', speedMode: 'normal' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
+      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, 
+      settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: true, testMode: false, fontSize: 'medium', speedMode: 'normal', audioTheme: 'active' }, 
+      taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
       marketListingsByPlanet: {}, marketRefreshes: {},
       messages: [initialMessage],
       leaderboard: [],
@@ -128,6 +130,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (!parsed.settings.fontSize) parsed.settings.fontSize = 'medium';
         if (!parsed.settings.speedMode) parsed.settings.speedMode = 'normal';
+        if (!parsed.settings.audioTheme) parsed.settings.audioTheme = 'active'; 
         if (!parsed.customColors) parsed.customColors = ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'];
         if (!parsed.leaderboard) parsed.leaderboard = []; 
         if (!parsed.marketListingsByPlanet) parsed.marketListingsByPlanet = {};
@@ -226,6 +229,9 @@ export default function App() {
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
   
+  // Persistent reference for landing target to prevent closure staleness in onComplete
+  const landingTargetRef = useRef<Planet | null>(null);
+  
   const [isIntroPaused, setIsIntroPaused] = useState(false);
 
   useEffect(() => {
@@ -269,6 +275,7 @@ export default function App() {
       newState.leaderboard = [...gameState.leaderboard];
       newState.pilotName = pilotName;
       newState.pilotAvatar = pilotAvatar;
+      newState.pilotZoom = gameState.pilotZoom;
       
       const welcomeMsg: GameMessage = {
           id: `reset_${Date.now()}`,
@@ -535,7 +542,14 @@ export default function App() {
     audioService.setSfxVolume(gameState.settings.sfxVolume);
     audioService.setMusicEnabled(gameState.settings.musicEnabled);
     audioService.setSfxEnabled(gameState.settings.sfxEnabled);
+    audioService.setTheme(gameState.settings.audioTheme || 'active');
   }, [gameState]);
+
+  useEffect(() => {
+    if (gameState.currentQuadrant) {
+        audioService.setQuadrant(gameState.currentQuadrant);
+    }
+  }, [gameState.currentQuadrant]);
 
   useEffect(() => {
     const handleInteraction = () => { audioService.init(); window.removeEventListener('click', handleInteraction); };
@@ -618,12 +632,54 @@ export default function App() {
     });
   };
 
+  const returnToBase = () => {
+      setGameState(prev => {
+          const homeId = prev.dockedPlanetId || 'p1';
+          const homePlanet = PLANETS.find(p => p.id === homeId) || PLANETS[0];
+          return {
+              ...prev,
+              currentPlanet: homePlanet,
+              currentQuadrant: homePlanet.quadrant
+          };
+      });
+      setScreen('hangar');
+      audioService.playTrack('command');
+  };
+
   const handleLaunch = () => {
     if (!selectedFitting || !selectedShipConfig) return;
     const launchCost = 1.0;
     if (selectedFitting.fuel < launchCost) { audioService.playSfx('denied'); triggerSystemMessage("LAUNCH ABORTED: INSUFFICIENT FUEL RESERVES", 'error'); return; }
+    
+    // UNCONDITIONAL RESET: Force currentPlanet to be the docked home planet immediately before launching.
+    // This ensures the launch sequence always starts from the correct visual environment.
+    // Also handling fuel deduction here atomically.
+    setGameState(prev => {
+        const homeId = prev.dockedPlanetId || 'p1';
+        const home = PLANETS.find(p => p.id === homeId) || PLANETS[0];
+        
+        const sId = prev.selectedShipInstanceId!; 
+        const fit = prev.shipFittings[sId];
+        
+        return { 
+            ...prev, 
+            currentPlanet: home, 
+            currentQuadrant: home.quadrant,
+            shipFittings: { 
+                ...prev.shipFittings, 
+                [sId]: { ...fit, fuel: Math.max(0, fit.fuel - launchCost) } 
+            }
+        };
+    });
+
     setLaunchDestination('map'); 
-    if (gameState.settings.showTransitions) { setScreen('launch'); } else { setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: Math.max(0, fit.fuel - launchCost) } } }; }); setScreen('map'); audioService.playTrack('map'); }
+    
+    if (gameState.settings.showTransitions) { 
+        setScreen('launch'); 
+    } else { 
+        setScreen('map'); 
+        audioService.playTrack('map'); 
+    }
   };
 
   const handleLaunchSequenceComplete = () => { setGameState(prev => { const sId = prev.selectedShipInstanceId!; const fit = prev.shipFittings[sId]; return { ...prev, shipFittings: { ...prev.shipFittings, [sId]: { ...fit, fuel: Math.max(0, fit.fuel - 1.0) } } }; }); if (launchDestination === 'map') { setScreen('map'); audioService.playTrack('map'); } else { setScreen('game'); audioService.playTrack('combat'); } };
@@ -654,29 +710,22 @@ export default function App() {
            } 
            if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } 
        } else { 
-           // FAILURE Logic (Loss or Abort)
-           
-           // 1. Current Planet Regression
-           // If we fail to defend (status was 'siege'), it becomes occupied.
            if (pEntry.status === 'siege') {
                pEntry.status = 'occupied';
                newMessages.unshift({ id: `lost_curr_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE FAILED. ${prev.currentPlanet?.name} HAS FALLEN TO OCCUPATION.`, timestamp: Date.now() });
            }
 
-           // 2. Neighbor Planet Regression
            const pIndex = PLANETS.findIndex(p => p.id === currentPId);
            if (pIndex > 0) {
                const prevPId = PLANETS[pIndex - 1].id;
                const prevEntry = { ...reg[prevPId] };
                let regressionHappened = false;
                
-               // If neighbor is friendly, it becomes besieged
                if (prevEntry.status === 'friendly') {
                    prevEntry.status = 'siege';
                    regressionHappened = true;
                    newMessages.unshift({ id: `siege_prev_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `INVASION SPREADING. ${PLANETS[pIndex-1].name} IS NOW UNDER SIEGE.`, timestamp: Date.now() });
                } 
-               // If neighbor is already besieged, it falls (cascading failure implied)
                else if (prevEntry.status === 'siege') {
                    prevEntry.status = 'occupied';
                    regressionHappened = true;
@@ -698,11 +747,15 @@ export default function App() {
         const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; 
         const currentQuad = gameState.currentQuadrant; 
         const showTrans = gameState.settings.showTransitions; 
-        if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } 
-        else { setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } 
+        if (currentQuad !== homeQuad && showTrans) { 
+            setWarpDestination('hangar'); 
+            setScreen('warp'); 
+        } 
+        else { 
+            returnToBase();
+        } 
     } else { 
         if (success && gameState.currentPlanet?.id === 'p12') {
-            // Victory on Last Planet
             const useCinematic = gameState.settings.showTransitions;
             setVictoryMode(useCinematic ? 'cinematic' : 'simple');
             setScreen('victory');
@@ -710,13 +763,66 @@ export default function App() {
         else if (payload?.health > 0 && gameState.settings.showTransitions && success) { 
             setScreen('landing'); 
         } else { 
-            setScreen('hangar'); audioService.playTrack('command'); 
+            if (!success) {
+                 returnToBase();
+            } else {
+                 setScreen('hangar'); 
+                 audioService.playTrack('command'); 
+            }
         } 
     }
   };
 
-  const handlePlanetSelection = (planet: Planet) => { const status = gameState.planetRegistry[planet.id]?.status || 'occupied'; const isFriendly = status === 'friendly'; const isSameQuadrant = planet.quadrant === gameState.currentQuadrant; const showTransitions = gameState.settings.showTransitions; const shouldUpdateQuadrantNow = !isSameQuadrant && !showTransitions; setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: shouldUpdateQuadrantNow ? planet.quadrant : prev.currentQuadrant })); setLaunchDestination('planet'); if (isFriendly) { if (isSameQuadrant) { setScreen('landing'); } else { setWarpDestination('landing'); if (showTransitions) { setScreen('warp'); } else { setScreen('landing'); } } } else { setGameMode('combat'); setWarpDestination('game'); if (isSameQuadrant) { setScreen('game'); audioService.playTrack('combat'); } else { if (showTransitions) { setScreen('warp'); } else { setScreen('game'); audioService.playTrack('combat'); } } } };
-  const handleWarpComplete = () => { if (warpDestination === 'hangar') { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } else if (warpDestination === 'landing') { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('landing'); } else { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('game'); if (gameMode === 'combat') { audioService.playTrack('combat'); } else { audioService.playTrack('map'); } } };
+  const handlePlanetSelection = (planet: Planet) => { 
+      // Set the ref immediately so it survives any closures/re-renders during transition
+      landingTargetRef.current = planet;
+      
+      const status = gameState.planetRegistry[planet.id]?.status || 'occupied'; 
+      const isFriendly = status === 'friendly'; 
+      const isSameQuadrant = planet.quadrant === gameState.currentQuadrant; 
+      const showTransitions = gameState.settings.showTransitions; 
+      const shouldUpdateQuadrantNow = !isSameQuadrant && !showTransitions; 
+      
+      setGameState(prev => ({ 
+          ...prev, 
+          currentPlanet: planet, 
+          currentQuadrant: shouldUpdateQuadrantNow ? planet.quadrant : prev.currentQuadrant 
+      })); 
+      
+      setLaunchDestination('planet'); 
+      if (isFriendly) { 
+          if (isSameQuadrant) { 
+              setScreen('landing'); 
+          } else { 
+              setWarpDestination('landing'); 
+              if (showTransitions) { setScreen('warp'); } else { setScreen('landing'); } 
+          } 
+      } else { 
+          setGameMode('combat'); 
+          setWarpDestination('game'); 
+          if (isSameQuadrant) { 
+              setScreen('game'); audioService.playTrack('combat'); 
+          } else { 
+              if (showTransitions) { setScreen('warp'); } else { setScreen('game'); audioService.playTrack('combat'); } 
+          } 
+      } 
+  };
+  
+  const handleWarpComplete = () => { 
+      if (warpDestination === 'hangar') { 
+          returnToBase();
+      } else if (warpDestination === 'landing') { 
+          // Ensure ref is set if coming from warp
+          if (gameState.currentPlanet) landingTargetRef.current = gameState.currentPlanet;
+          
+          setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); 
+          setScreen('landing'); 
+      } else { 
+          setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); 
+          setScreen('game'); 
+          if (gameMode === 'combat') { audioService.playTrack('combat'); } else { audioService.playTrack('map'); } 
+      } 
+  };
   const getActiveShieldColor = () => { if (!selectedFitting) return '#3b82f6'; const sId = selectedFitting.shieldId || selectedFitting.secondShieldId; if (!sId) return '#3b82f6'; if (sId === 'dev_god_mode') return '#ffffff'; const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === sId); return sDef ? sDef.color : '#3b82f6'; };
   
   const replaceShip = (shipTypeId: string) => {
@@ -1024,7 +1130,9 @@ export default function App() {
           planetRegistry={gameState.planetRegistry}
           testMode={gameState.settings.testMode}
           onTestLanding={(planet) => {
-              setGameState(prev => ({ ...prev, currentPlanet: planet }));
+              // Ensure we track this target
+              landingTargetRef.current = planet;
+              setGameState(prev => ({ ...prev, currentPlanet: planet, currentQuadrant: planet.quadrant })); // Force quadrant update immediately
               setScreen('landing');
           }}
         />
@@ -1119,8 +1227,15 @@ export default function App() {
               shipShape={selectedShipConfig.shape} 
               shipConfig={selectedShipConfig}
               onComplete={() => { 
-                  const pid = gameState.currentPlanet?.id || 'p1';
-                  setGameState(p => ({ ...p, dockedPlanetId: pid })); 
+                  // Use the persistent ref to ensure we dock at the intended target, avoiding state closure issues
+                  const targetPlanet = landingTargetRef.current || gameState.currentPlanet;
+                  const pid = targetPlanet?.id || 'p1';
+                  
+                  setGameState(p => ({ 
+                      ...p, 
+                      dockedPlanetId: pid, 
+                      currentQuadrant: targetPlanet?.quadrant || p.currentQuadrant 
+                  })); 
                   setScreen('hangar'); 
                   audioService.playTrack('command'); 
               }} 

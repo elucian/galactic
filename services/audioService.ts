@@ -9,6 +9,8 @@ const TRACK_URLS = {
     victory: 'https://audio.jukehost.co.uk/85T6AXXtiiJ4p4tvwfDj1sEDeOrJaJd4'
 };
 
+const CACHE_NAME = 'galactic-music-v1';
+
 // --- MAIN SERVICE ---
 
 class AudioService {
@@ -24,6 +26,7 @@ class AudioService {
   private musicEnabled = true;
   private sfxEnabled = true;
   private trackCache: Record<string, HTMLAudioElement> = {};
+  private blobCache: Record<string, string> = {}; // In-memory blob URLs
   
   // SFX Buffers & Nodes
   private whiteNoise: AudioBuffer | null = null;
@@ -63,10 +66,23 @@ class AudioService {
               this.brownNoise = this.createNoiseBuffer('brown');
 
               this.updateVolumes();
+              this.cleanupOldCaches();
           }
       }
       if (this.ctx?.state === 'suspended') {
           this.ctx.resume().catch(() => {});
+      }
+  }
+
+  private async cleanupOldCaches() {
+      if ('caches' in window) {
+          const keys = await caches.keys();
+          for (const key of keys) {
+              if (key.startsWith('galactic-music-') && key !== CACHE_NAME) {
+                  console.log('Deleting old cache:', key);
+                  await caches.delete(key);
+              }
+          }
       }
   }
 
@@ -129,38 +145,96 @@ class AudioService {
       }
   }
 
-  playTrack(scene: string) {
+  private async getAudioSource(url: string): Promise<string> {
+      // 1. Check Memory Cache
+      if (this.blobCache[url]) return this.blobCache[url];
+
+      // 2. Check Browser Cache Storage
+      if ('caches' in window) {
+          try {
+              const cache = await caches.open(CACHE_NAME);
+              const cachedResponse = await cache.match(url);
+              
+              if (cachedResponse) {
+                  const blob = await cachedResponse.blob();
+                  const blobUrl = URL.createObjectURL(blob);
+                  this.blobCache[url] = blobUrl;
+                  return blobUrl;
+              } else {
+                  // Fetch and Cache
+                  try {
+                      const response = await fetch(url);
+                      if (response.ok) {
+                          cache.put(url, response.clone()); // Store clone in cache
+                          const blob = await response.blob();
+                          const blobUrl = URL.createObjectURL(blob);
+                          this.blobCache[url] = blobUrl;
+                          return blobUrl;
+                      }
+                  } catch (e) {
+                      console.warn('Network fetch failed, streaming directly:', e);
+                  }
+              }
+          } catch (e) {
+              console.warn('Cache API error:', e);
+          }
+      }
+
+      // 3. Fallback to direct URL (Streaming)
+      return url;
+  }
+
+  async playTrack(scene: string) {
       let trackKey = scene;
       if (scene === 'hangar') trackKey = 'command';
       if (scene === 'game') trackKey = 'combat';
       
       if (!TRACK_URLS[trackKey as keyof typeof TRACK_URLS]) return;
-      if (this.currentTrackId === trackKey && this.currentAudio && !this.currentAudio.paused) return;
-
-      this.stopMusic();
-
-      this.currentTrackId = trackKey;
+      
       const url = TRACK_URLS[trackKey as keyof typeof TRACK_URLS];
 
-      if (!this.trackCache[url]) {
-          this.trackCache[url] = new Audio(url);
-          this.trackCache[url].loop = true;
-          this.trackCache[url].preload = 'auto';
+      // If we are already playing this track, ensure volume is correct and return
+      if (this.currentTrackId === trackKey && this.currentAudio) {
+          if (this.currentAudio.paused && this.musicEnabled) {
+              this.currentAudio.play().catch(() => {});
+          }
+          return;
       }
 
-      const audio = this.trackCache[url];
-      this.currentAudio = audio;
-      
-      if (audio.paused) audio.currentTime = 0;
-      audio.volume = this.musicEnabled ? this.musicVolume : 0;
-      
-      if (this.musicEnabled) {
-          const playPromise = audio.play();
-          if (playPromise !== undefined) {
-              playPromise.catch(error => {
-                  console.warn("Audio auto-play prevented:", error);
-              });
+      this.stopMusic();
+      this.currentTrackId = trackKey;
+
+      try {
+          const src = await this.getAudioSource(url);
+          
+          // Check if track changed while awaiting
+          if (this.currentTrackId !== trackKey) return;
+
+          if (!this.trackCache[url]) {
+              this.trackCache[url] = new Audio(src);
+              this.trackCache[url].loop = true;
+          } else if (this.trackCache[url].src !== src) {
+              // Update src if it was a blob update
+              this.trackCache[url].src = src;
           }
+
+          const audio = this.trackCache[url];
+          this.currentAudio = audio;
+          
+          // Reset if paused/ended
+          if (audio.paused) audio.currentTime = 0;
+          audio.volume = this.musicEnabled ? this.musicVolume : 0;
+          
+          if (this.musicEnabled) {
+              const playPromise = audio.play();
+              if (playPromise !== undefined) {
+                  playPromise.catch(error => {
+                      console.warn("Audio auto-play prevented:", error);
+                  });
+              }
+          }
+      } catch (e) {
+          console.error("Failed to play track:", e);
       }
   }
   
@@ -219,16 +293,134 @@ class AudioService {
       panner.pan.value = Math.max(-1, Math.min(1, pan));
       masterG.connect(panner); panner.connect(this.sfxGain);
 
-      // Random pitch variation for realism
-      const detune = (Math.random() - 0.5) * 100; 
+      // "Raka Taka" - Mechanical Machine Gun (Cannon / Vulcan / Projectile)
+      if (type === 'cannon') {
+          // 1. The Thud (Sawtooth punch)
+          const osc = this.ctx.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(120, t);
+          osc.frequency.exponentialRampToValueAtTime(60, t + 0.08); // Fast pitch drop
+          
+          const oscG = this.ctx.createGain();
+          oscG.gain.setValueAtTime(0.25, t);
+          oscG.gain.exponentialRampToValueAtTime(0.01, t + 0.08);
+          
+          osc.connect(oscG); oscG.connect(masterG);
+          osc.start(t); osc.stop(t + 0.1);
 
+          // 2. The Crack (Filtered Noise)
+          if (this.whiteNoise) {
+              const src = this.ctx.createBufferSource();
+              src.buffer = this.whiteNoise;
+              const filt = this.ctx.createBiquadFilter();
+              filt.type = 'highpass';
+              filt.frequency.value = 1500; // Crisp high end
+              
+              const noiseG = this.ctx.createGain();
+              noiseG.gain.setValueAtTime(0.15, t);
+              noiseG.gain.exponentialRampToValueAtTime(0.01, t + 0.05); // Very short snap
+              
+              src.connect(filt); filt.connect(noiseG); noiseG.connect(masterG);
+              src.start(t); src.stop(t + 0.1);
+          }
+          return;
+      }
+
+      // "Fsiu Fshiu" - Fire (Exotic Flamer)
+      if (type === 'exotic_flame') {
+          if (this.whiteNoise) {
+              const src = this.ctx.createBufferSource();
+              src.buffer = this.whiteNoise;
+              
+              const filt = this.ctx.createBiquadFilter();
+              filt.type = 'bandpass';
+              filt.frequency.setValueAtTime(200, t);
+              filt.frequency.linearRampToValueAtTime(1200, t + 0.3); // Rise like a jet/fire
+              filt.Q.value = 1;
+
+              const g = this.ctx.createGain();
+              g.gain.setValueAtTime(0, t);
+              g.gain.linearRampToValueAtTime(0.3, t + 0.1);
+              g.gain.linearRampToValueAtTime(0, t + 0.4);
+              
+              src.connect(filt); filt.connect(g); g.connect(masterG);
+              src.start(t); src.stop(t + 0.5);
+          }
+          return;
+      }
+
+      // "Vij Bvij" - Plasma / Gravity (Exotic Plasma)
+      if (type === 'exotic_plasma' || type === 'exotic_gravity') {
+          const osc = this.ctx.createOscillator();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(300, t);
+          osc.frequency.linearRampToValueAtTime(700, t + 0.15); // Slide Up
+          
+          const g = this.ctx.createGain();
+          g.gain.setValueAtTime(0.2, t);
+          g.gain.exponentialRampToValueAtTime(0.01, t + 0.3);
+          
+          osc.connect(g); g.connect(masterG);
+          osc.start(t); osc.stop(t + 0.3);
+          return;
+      }
+
+      // "Strak Stak" - Shatter / Wave (Exotic Wave)
+      if (type === 'exotic_shatter' || type === 'exotic_wave') {
+          const osc = this.ctx.createOscillator();
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(800, t); 
+          
+          // Fast pitch modulation for "Strak" distortion
+          osc.frequency.exponentialRampToValueAtTime(200, t + 0.1);
+
+          const g = this.ctx.createGain();
+          g.gain.setValueAtTime(0.25, t);
+          g.gain.exponentialRampToValueAtTime(0.01, t + 0.1); 
+          
+          osc.connect(g); g.connect(masterG);
+          osc.start(t); osc.stop(t + 0.15);
+          return;
+      }
+
+      // "Sfrr Sfrr" - Electric / Rainbow (Exotic Electric)
+      if (type === 'exotic_rainbow' || type === 'exotic_electric') {
+          const osc = this.ctx.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(100, t); // Low buzz
+          
+          // Random Detune for electric "frizz"
+          osc.detune.setValueAtTime(Math.random() * 200, t);
+
+          const g = this.ctx.createGain();
+          g.gain.setValueAtTime(0.2, t);
+          g.gain.linearRampToValueAtTime(0, t + 0.25);
+          
+          // Mix some high noise
+          if (this.whiteNoise) {
+              const nSrc = this.ctx.createBufferSource();
+              nSrc.buffer = this.whiteNoise;
+              const nFilt = this.ctx.createBiquadFilter();
+              nFilt.type = 'highpass'; nFilt.frequency.value = 3000;
+              const nGain = this.ctx.createGain();
+              nGain.gain.setValueAtTime(0.1, t);
+              nGain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+              nSrc.connect(nFilt); nFilt.connect(nGain); nGain.connect(masterG);
+              nSrc.start(t); nSrc.stop(t+0.2);
+          }
+
+          osc.connect(g); g.connect(masterG);
+          osc.start(t); osc.stop(t + 0.3);
+          return;
+      }
+
+      // "Piu Piu" - Laser (Standard)
       if (type.includes('laser') || type.includes('mega')) {
            const osc = this.ctx.createOscillator();
            const g = this.ctx.createGain();
            osc.connect(g); g.connect(masterG);
            
            osc.type = 'square'; 
-           osc.detune.value = detune;
            
            if (type === 'mega') {
                // Deep powerful laser
@@ -265,7 +457,8 @@ class AudioService {
            }
       } 
       else { 
-           // Cannon / Projectile (Tight punchy sound)
+           // Projectile Fallback
+           // Should ideally call 'cannon' but this handles generic calls
            const osc = this.ctx.createOscillator();
            const g = this.ctx.createGain();
            osc.connect(g); g.connect(masterG);

@@ -4,6 +4,7 @@ import { ExtendedShipConfig, EXOTIC_SHIELDS, EXOTIC_WEAPONS, WEAPONS } from '../
 import { ShieldLayer, Projectile } from './types';
 import { calculateDamage, OCTO_COLORS } from './utils';
 import { audioService } from '../../services/audioService';
+import { getWingMounts } from '../../utils/drawingUtils';
 
 export class Enemy {
   x: number; y: number; z: number = 0; hp: number; maxHp: number; 
@@ -160,21 +161,43 @@ export class Enemy {
         }
 
     } else {
-        // Standard Enemy Config
-        const standardEnergy = 'gun_pulse';
-        if (this.config.isAlien) {
-            const wId = 'gun_photon'; 
-            if (this.config.defaultGuns === 1 || this.config.wingStyle === 'alien-a') {
-                this.equippedWeapons[0] = { id: wId, count: 1 };
-                this.equippedWeapons[1] = null;
-                this.equippedWeapons[2] = null;
+        // --- STANDARD ENEMY CONFIG ---
+        
+        let weaponId = 'gun_pulse';
+        let isExotic = false;
+
+        // ADVANCED SECTOR WEAPONS
+        if ((quadrant === QuadrantType.GAMA || quadrant === QuadrantType.DELTA) && diff >= 6) {
+            // 30% Chance for Exotic Weapon
+            if (Math.random() < 0.3) {
+                const exotics = EXOTIC_WEAPONS.map(w => w.id);
+                weaponId = exotics[Math.floor(Math.random() * exotics.length)];
+                isExotic = true;
             } else {
-                this.equippedWeapons[0] = null;
-                this.equippedWeapons[1] = { id: wId, count: 1 };
-                this.equippedWeapons[2] = { id: wId, count: 1 };
+                // High tier standard
+                weaponId = 'gun_photon';
             }
+        } else if (quadrant === QuadrantType.BETA) {
+            weaponId = Math.random() > 0.6 ? 'gun_heavy' : 'gun_pulse';
+        }
+
+        // Alien ships prefer energy weapons
+        if (this.config.isAlien && !isExotic) {
+            weaponId = 'gun_photon';
+        }
+
+        // Assign to Slots based on Hull Config
+        const useWings = this.config.gunMount === 'wing' || this.config.gunMount === 'strut' || (this.config.isAlien && this.config.wingStyle !== 'alien-a');
+        
+        if (useWings) {
+            this.equippedWeapons[0] = null;
+            this.equippedWeapons[1] = { id: weaponId, count: 1 };
+            this.equippedWeapons[2] = { id: weaponId, count: 1 };
         } else {
-            this.equippedWeapons[0] = { id: standardEnergy, count: 1 };
+            // Center mount
+            this.equippedWeapons[0] = { id: weaponId, count: 1 };
+            this.equippedWeapons[1] = null;
+            this.equippedWeapons[2] = null;
         }
 
         // Shield Logic by Quadrant
@@ -241,65 +264,45 @@ export class Enemy {
             // Z-Level Evasion Logic (Beta, Gamma, Delta)
             if (this.quadrant !== QuadrantType.ALFA) {
                 const distToPlayer = Math.hypot(this.x - px, this.y - py);
-                
-                // If player has shields and we are close, change Z to avoid collision
-                // Or if we are just close and want to perform a fly-over
                 if (playerShieldsActive && distToPlayer < 350) {
                     if (Math.abs(this.targetZ) < 10) {
-                        // Dive or Climb (200 is visually distinctive enough)
                         this.targetZ = Math.random() > 0.5 ? 200 : -200;
                     }
                 } else if (distToPlayer > 450) {
-                    // Return to combat plane when safe
                     this.targetZ = 0;
                 }
-                
-                // Smooth Z movement
                 this.z += (this.targetZ - this.z) * 0.05;
             }
 
             const hasShields = this.shieldLayers.some(l => l.current > 0);
             
             // --- RESOURCE MANAGEMENT & MOVEMENT ---
-            
-            // If out of fuel, drift slowly
             if (this.fuel <= 0) {
                 this.isThrusting = false;
                 this.vx *= 0.98; // Gradual slow down
                 this.vy = (this.vy * 0.98) + 0.05; // Slight gravity drift
             } else {
-                // FUEL IS AVAILABLE - EXECUTE AI
-                
                 let desiredVx = 0;
                 let desiredVy = 0;
                 let dodging = false;
                 
-                // 1. Sector Constraints & AI Logic
                 if (this.quadrant === QuadrantType.ALFA) {
-                    // ALPHA: Strict Top-Down constraint. Side-to-Side only.
-                    this.targetY = h * 0.15; // Stay near top
-                    
-                    // Lazy tracking X
+                    this.targetY = h * 0.15; 
                     const dx = px - this.x;
-                    desiredVx = dx * 0.05; // Gentle seeking
-                    
-                    // Ensure Y stays at top
+                    desiredVx = dx * 0.05; 
                     const dy = this.targetY - this.y;
                     desiredVy = dy * 0.1;
                 } else {
-                    // BETA+ : Advanced Maneuvers
                     this.maneuverTimer--;
-                    
-                    // State Transitions
                     if (this.maneuverTimer <= 0) {
                         if (this.maneuverState === 'idle') {
                             const roll = Math.random();
                             if (roll < 0.4) {
                                 this.maneuverState = 'charge';
-                                this.maneuverTimer = 180; // 3s
+                                this.maneuverTimer = 180; 
                             } else if (roll < 0.7) {
                                 this.maneuverState = 'flank';
-                                this.maneuverTimer = 120; // 2s
+                                this.maneuverTimer = 120;
                                 this.targetX = this.x < w/2 ? w - 100 : 100;
                             } else {
                                 this.maneuverState = 'idle';
@@ -316,20 +319,18 @@ export class Enemy {
                         }
                     }
 
-                    // Execute State
                     if (this.maneuverState === 'idle') {
                         this.targetY = h * 0.15;
                         const dx = px - this.x;
                         desiredVx = dx * 0.03;
                     } 
                     else if (this.maneuverState === 'charge') {
-                        this.targetY = h * 0.5; // Advance to mid-screen
+                        this.targetY = h * 0.5;
                         const dx = px - this.x;
-                        desiredVx = dx * 0.05; // Aggressive track
+                        desiredVx = dx * 0.05;
                     }
                     else if (this.maneuverState === 'retreat') {
                         this.targetY = h * 0.15;
-                        // Move sideways while retreating to avoid fire
                         desiredVx = (this.x < w/2 ? -1 : 1) * 3;
                     }
                     else if (this.maneuverState === 'flank') {
@@ -342,44 +343,30 @@ export class Enemy {
                     desiredVy = dy * 0.05;
                 }
 
-                // 2. Collision Avoidance (Player Hull & Shields)
-                // Boss actively avoids crashing into player IF on same Z plane
-                // If we are avoiding Z, we don't need to dodge XY as much
                 const distToPlayer = Math.hypot(this.x - px, this.y - py);
                 const avoidRadius = playerShieldsActive ? 250 : 200;
                 
-                // Only dodge if on same plane
                 if (Math.abs(this.z) < 50 && distToPlayer < avoidRadius) {
                     dodging = true;
-                    // Push away vector
                     const pushX = this.x - px;
                     const pushY = this.y - py;
                     const mag = Math.max(1, Math.hypot(pushX, pushY));
-                    
-                    // Stronger push if closer
                     const strength = 5 * (1 - (distToPlayer / avoidRadius));
-                    
                     desiredVx += (pushX / mag) * strength * 2;
                     desiredVy += (pushY / mag) * strength * 2;
-                    
-                    this.fuel -= 0.05; // Evasion costs fuel
+                    this.fuel -= 0.05; 
                 }
 
-                // Apply Physics
                 const accel = 0.08;
                 this.vx = this.vx + (desiredVx - this.vx) * accel;
                 this.vy = this.vy + (desiredVy - this.vy) * accel;
-                
-                // Visual Jets Trigger
                 this.isThrusting = (Math.abs(desiredVx) > 0.5 || desiredVy > 0.5 || dodging);
             }
 
-            // 3. Screen Clamping
             const margin = 60;
             if (this.x < margin) { this.x = margin; this.vx *= -0.5; }
             if (this.x > w - margin) { this.x = w - margin; this.vx *= -0.5; }
             
-            // Hard Y Clamp for Alpha to ensure "No Forward" rule is respected physically
             let limitY = h * 0.6;
             if (this.quadrant === QuadrantType.ALFA) limitY = h * 0.25;
             
@@ -387,20 +374,11 @@ export class Enemy {
             if (this.y > limitY) { this.y = limitY; this.vy *= -0.5; }
 
             // --- BOSS FIRING LOGIC ---
-            
-            // Determine Fire Rate (Delta is 20% faster)
             const baseInterval = 60;
             const interval = this.quadrant === QuadrantType.DELTA ? Math.floor(baseInterval * 0.8) : baseInterval;
+            const playerVulnerable = Math.hypot(px - this.x, py - this.y) > 300; 
 
-            // Ordnance Logic (Missiles / Mines)
-            // Only fire if inventory exists
-            // Boss saves ordnance for when player is vulnerable or far
-            const distToPlayer = Math.hypot(px - this.x, py - this.y);
-            const playerVulnerable = distToPlayer > 300; 
-
-            // Missile Launch
             if (this.missileAmmo > 0 && this.tick % 180 === 0 && playerVulnerable) {
-                // Fire Missile
                 bulletsRef.push({ 
                     x: this.x, y: this.y + 40, vx: 0, vy: 5, 
                     damage: 150, color: '#ef4444', type: 'missile_enemy', life: 400, isEnemy: true, 
@@ -411,54 +389,40 @@ export class Enemy {
                 audioService.playWeaponFire('missile', 0);
             }
 
-            // Mine Logic (Delta Only or Advanced)
             if (this.mineAmmo > 0 && this.tick % 120 === 0 && this.quadrant === QuadrantType.DELTA) {
-                // Fire mine horizontally towards player
                 const dir = px > this.x ? 1 : -1;
                 bulletsRef.push({ 
-                    x: this.x + (dir * 40), 
-                    y: this.y + 20, 
-                    vx: dir * 8, 
-                    vy: 0, 
-                    damage: 200, 
-                    color: '#fbbf24', 
-                    type: 'mine_enemy', 
-                    life: 600, 
-                    isEnemy: true, 
-                    width: 24, 
-                    height: 24, 
-                    z: 0,
-                    homingState: 'searching', 
-                    turnRate: 0.03, 
-                    maxSpeed: 7,
-                    launchTime: this.tick
+                    x: this.x + (dir * 40), y: this.y + 20, vx: dir * 8, vy: 0, damage: 200, color: '#fbbf24', type: 'mine_enemy', life: 600, isEnemy: true, width: 24, height: 24, z: 0, homingState: 'searching', turnRate: 0.03, maxSpeed: 7, launchTime: this.tick
                 });
                 this.mineAmmo--;
                 audioService.playWeaponFire('mine', 0);
             }
 
-            // Standard/Exotic Weapon Fire
             if (this.tick % interval === 0) {
                 const fireWeapon = (slot: number) => {
                     const wDef = this.equippedWeapons[slot] ? [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === this.equippedWeapons[slot]!.id) : null;
                     if (!wDef) return;
+                    if (this.energy < 2.0) return; 
+                    this.energy -= 2.0;
 
-                    // Energy Cost Check
-                    const cost = 2.0; 
-                    if (this.energy < cost) return; 
-                    this.energy -= cost;
-
-                    // Determine Angles - Single Shot vs Spread
                     let angles = [0];
                     let speed = 15;
+                    let sfxType = 'exotic_plasma';
                     
-                    // Exotic logic for Boss
                     if (wDef.id.includes('exotic')) {
-                        if (this.config.wingStyle === 'alien-a' && slot === 0) {
-                            angles = [-15, 0, 15];
-                        } else {
-                            angles = [0];
-                        }
+                        if (this.config.wingStyle === 'alien-a' && slot === 0) angles = [-15, 0, 15];
+                        else angles = [0];
+                        
+                        // Map sound type
+                        if (wDef.id === 'exotic_star_shatter') sfxType = 'exotic_shatter';
+                        else if (wDef.id === 'exotic_flamer') sfxType = 'exotic_flame';
+                        else if (wDef.id === 'exotic_rainbow_spread') sfxType = 'exotic_rainbow';
+                        else if (wDef.id === 'exotic_electric') sfxType = 'exotic_electric';
+                        else if (wDef.id === 'exotic_octo_burst') sfxType = 'missile'; // Use missile sound for squishy burst
+                        else if (wDef.id === 'exotic_wave') sfxType = 'exotic_wave';
+                        else if (wDef.id === 'exotic_gravity_wave') sfxType = 'exotic_gravity';
+                        else if (wDef.id === 'exotic_plasma_orb') sfxType = 'exotic_plasma';
+                        else if (wDef.id === 'exotic_phaser_sweep') sfxType = 'phaser';
                     }
 
                     const originX = slot === 0 ? this.x : (slot === 1 ? this.x - 30 : this.x + 30);
@@ -479,6 +443,8 @@ export class Enemy {
                              bulletsRef.push({ x: originX, y: originY, vx: bvx, vy: bvy, damage: wDef.damage, color: wDef.beamColor || '#f00', type: 'projectile', life: 60, isEnemy: true, width: 6, height: 16, weaponId: wDef.id });
                         }
                     });
+                    
+                    audioService.playWeaponFire(sfxType, 0);
                 }
 
                 if (this.config.wingStyle === 'alien-a') {
@@ -487,13 +453,11 @@ export class Enemy {
                     if (this.equippedWeapons[1]) fireWeapon(1);
                     if (this.equippedWeapons[2]) fireWeapon(2);
                 }
-                
-                audioService.playWeaponFire('exotic_single', 0);
             }
 
         } else {
-            // --- STANDARD ENEMY LOGIC ---
-            this.isThrusting = true; // Standard enemies always burn
+            // --- STANDARD ENEMY LOGIC (Updated Multi-Gun) ---
+            this.isThrusting = true;
             this.y += verticalSpeed; 
 
             if (this.movementPattern === 'z') { const cycle = Math.floor(this.tick / 60) % 2; this.vx = cycle === 0 ? 3 : -3; } 
@@ -509,6 +473,93 @@ export class Enemy {
             
             // Dodge Fire
             if (this.y > h * 0.5 && Math.abs(this.z) < 50) { incomingFire.forEach(b => { if (!b.isEnemy && Math.abs(b.y - this.y) < 150 && Math.abs(b.x - this.x) < 50) { this.vx += (this.x < b.x ? -1 : 1) * 0.4; } }); }
+
+            // --- STANDARD FIRE PATTERN ---
+            let fireInterval = 180; 
+            if (this.quadrant === QuadrantType.BETA) fireInterval = 140;
+            if (this.quadrant === QuadrantType.GAMA) fireInterval = 90; 
+            if (this.quadrant === QuadrantType.DELTA) fireInterval = 45; 
+            if (this.config.isAlien) fireInterval = Math.floor(fireInterval * 0.8);
+
+            // Distance Check
+            if (Math.abs(this.x - px) < 300) {
+                // Loop through weapons to support multi-gun or single-gun
+                this.equippedWeapons.forEach((w, slotIdx) => {
+                    if (!w) return;
+                    
+                    const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === w.id);
+                    if (!wDef) return;
+
+                    // Exotic Weapon Downgrade: Fire 2x slower
+                    const isExotic = wDef.id.includes('exotic');
+                    if (isExotic && this.tick % (fireInterval * 2) !== 0) return;
+                    if (!isExotic && this.tick % fireInterval !== 0) return;
+
+                    // Firing Pattern for Dual Guns (Slots 1 & 2)
+                    let shouldFire = true;
+                    if (slotIdx === 1 || slotIdx === 2) {
+                        // 33% Left, 33% Right, 33% Both (Random per interval)
+                        // Use tick as seed to sync or desync
+                        const pattern = Math.floor(this.tick / fireInterval) % 3;
+                        if (pattern === 0) shouldFire = (slotIdx === 1); // Left Only
+                        else if (pattern === 1) shouldFire = (slotIdx === 2); // Right Only
+                        else shouldFire = true; // Both
+                    }
+
+                    if (shouldFire) {
+                        // Calculate Position
+                        let spawnX = this.x;
+                        const shipScale = 0.5; // Enemy visual scale
+                        
+                        if (slotIdx > 0) {
+                            const mounts = getWingMounts(this.config);
+                            const mount = mounts[slotIdx - 1]; // 0 or 1
+                            if (mount) {
+                                // Since enemy is rotated 180, Left wing (x < 50) appears on Right
+                                // Formula: this.x - (mount.x - 50) * scale
+                                const offsetX = (mount.x - 50) * shipScale;
+                                spawnX = this.x - offsetX;
+                            }
+                        }
+
+                        const spawnY = this.y + 20;
+                        const speed = wDef.type === 'LASER' || isExotic ? 12 : 8;
+                        const color = wDef.beamColor || '#ef4444';
+                        
+                        bulletsRef.push({ 
+                            x: spawnX, 
+                            y: spawnY, 
+                            vx: 0, 
+                            vy: speed, 
+                            damage: wDef.damage * (isExotic ? 0.7 : 1.0), // Reduced damage for exotic balance
+                            color: color, 
+                            type: wDef.type === 'LASER' ? 'laser' : 'projectile', 
+                            life: 100, 
+                            isEnemy: true, 
+                            width: 6, 
+                            height: 16,
+                            weaponId: wDef.id
+                        });
+                        
+                        // SOUND TYPE MAPPING
+                        let sfxType = 'cannon';
+                        if (wDef.type === WeaponType.LASER) sfxType = 'laser';
+                        if (isExotic) {
+                            if (wDef.id === 'exotic_star_shatter') sfxType = 'exotic_shatter';
+                            else if (wDef.id === 'exotic_flamer') sfxType = 'exotic_flame';
+                            else if (wDef.id === 'exotic_rainbow_spread') sfxType = 'exotic_rainbow';
+                            else if (wDef.id === 'exotic_electric') sfxType = 'exotic_electric';
+                            else if (wDef.id === 'exotic_octo_burst') sfxType = 'missile';
+                            else if (wDef.id === 'exotic_wave') sfxType = 'exotic_wave';
+                            else if (wDef.id === 'exotic_gravity_wave') sfxType = 'exotic_gravity';
+                            else if (wDef.id === 'exotic_plasma_orb') sfxType = 'exotic_plasma';
+                            else if (wDef.id === 'exotic_phaser_sweep') sfxType = 'phaser';
+                        }
+                        
+                        audioService.playWeaponFire(sfxType, 0);
+                    }
+                });
+            }
         }
     }
     
