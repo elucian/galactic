@@ -17,7 +17,7 @@ import { ManualDialog } from './components/ManualDialog.tsx';
 import SectorMap from './components/SectorMap.tsx';
 import { LaunchSequence } from './components/LaunchSequence.tsx';
 import WarpSequence from './components/WarpSequence.tsx';
-import GameEngine from './components/GameEngine.tsx';
+import GameEngine from './components/GameEngine'; // Fixed import
 import { LandingScene } from './components/LandingScene.tsx';
 import { VictoryScene } from './components/VictoryScene.tsx';
 
@@ -244,7 +244,8 @@ export default function App() {
                 if (nextState) {
                     audioService.stop();
                 } else {
-                    audioService.playTrack('intro');
+                    // Intro music is intentionally disabled on start, but resume might play it if needed
+                    // For now, we keep intro silent as per user request
                 }
                 return nextState;
             });
@@ -556,7 +557,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (screen === 'intro') audioService.playTrack('intro');
+    if (screen === 'intro') {
+        // Preload tracks silently on intro screen
+        audioService.preload();
+    }
     else if (screen === 'hangar') audioService.playTrack('command');
     else if (screen === 'map') audioService.playTrack('map');
     else if (screen === 'game') audioService.playTrack('combat');
@@ -1279,59 +1283,62 @@ export default function App() {
               const sId = gameState.selectedShipInstanceId!;
               setGameState(p => {
                   const key = activePart === 'hull' ? 'shipColors' : activePart === 'wings' ? 'shipWingColors' : activePart === 'cockpit' ? 'shipCockpitColors' : activePart === 'guns' ? 'shipGunColors' : activePart === 'secondary_guns' ? 'shipSecondaryGunColors' : activePart === 'gun_body' ? 'shipGunBodyColors' : activePart === 'engines' ? 'shipEngineColors' : activePart === 'nozzles' ? 'shipNozzleColors' : 'shipBarColors';
-                  return { ...p, [key]: { ...p[key as keyof GameState] as any, [sId]: c } };
+                  return { ...p, [key]: { ...(p as any)[key], [sId]: c } };
               });
-          }} 
-          updateCustomColor={(idx, c) => setGameState(p => { const n = [...p.customColors]; n[idx] = c; return { ...p, customColors: n }; })} 
-          fontSize={gameState.settings.fontSize || 'medium'} 
+              audioService.playSfx('click');
+          }}
+          updateCustomColor={(index, color) => {
+              setGameState(prev => {
+                  const newColors = [...prev.customColors];
+                  newColors[index] = color;
+                  return { ...prev, customColors: newColors };
+              });
+          }}
+          fontSize={gameState.settings.fontSize || 'medium'}
       />
       <MessagesDialog 
           isOpen={isMessagesOpen} 
           onClose={() => setIsMessagesOpen(false)} 
           messages={gameState.messages} 
           leaderboard={gameState.leaderboard}
-          fontSize={gameState.settings.fontSize || 'medium'} 
+          fontSize={gameState.settings.fontSize || 'medium'}
       />
-      {selectedFitting && (
-          <CargoDialog 
-              isOpen={isCargoOpen} 
-              onClose={() => setIsCargoOpen(false)} 
-              fitting={selectedFitting} 
-              shipConfig={selectedShipConfig} 
-              reserves={currentReserves} 
-              selectedCargoIdx={selectedCargoIdx} 
-              selectedReserveIdx={selectedReserveIdx} 
-              setSelectedCargoIdx={setSelectedCargoIdx} 
-              setSelectedReserveIdx={setSelectedReserveIdx} 
-              onMoveItems={moveItems} 
-              onMoveAll={moveAllItems} 
-              fontSize={gameState.settings.fontSize || 'medium'}
-          />
-      )}
-      
       <MarketDialog 
-        isOpen={isMarketOpen} 
-        onClose={() => setIsMarketOpen(false)} 
-        marketTab={marketTab} 
-        setMarketTab={setMarketTab} 
-        currentReserves={currentReserves} 
-        credits={gameState.credits} 
-        testMode={!!gameState.settings.testMode} 
-        marketBuy={marketBuy} 
-        marketSell={marketSell} 
-        fontSize={gameState.settings.fontSize}
-        currentPlanet={dockedPlanet || PLANETS[0]}
-        marketListings={gameState.marketListingsByPlanet[dockedId] || []}
-        shipFitting={selectedFitting || undefined}
-        shipConfig={selectedShipConfig || undefined}
+          isOpen={isMarketOpen} 
+          onClose={() => setIsMarketOpen(false)} 
+          marketTab={marketTab} 
+          setMarketTab={setMarketTab} 
+          currentReserves={currentReserves} 
+          credits={gameState.credits} 
+          testMode={!!gameState.settings.testMode} 
+          marketBuy={marketBuy} 
+          marketSell={marketSell} 
+          fontSize={gameState.settings.fontSize || 'medium'}
+          currentPlanet={gameState.dockedPlanetId ? PLANETS.find(p => p.id === gameState.dockedPlanetId) || PLANETS[0] : PLANETS[0]}
+          marketListings={gameState.marketListingsByPlanet[dockedId] || []}
+          shipFitting={selectedFitting || undefined}
+          shipConfig={selectedShipConfig}
       />
-      
+      <CargoDialog 
+          isOpen={isCargoOpen} 
+          onClose={() => setIsCargoOpen(false)} 
+          fitting={selectedFitting!} 
+          shipConfig={selectedShipConfig} 
+          reserves={currentReserves} 
+          selectedCargoIdx={selectedCargoIdx} 
+          selectedReserveIdx={selectedReserveIdx} 
+          setSelectedCargoIdx={setSelectedCargoIdx} 
+          setSelectedReserveIdx={setSelectedReserveIdx} 
+          onMoveItems={moveItems} 
+          onMoveAll={moveAllItems} 
+          fontSize={gameState.settings.fontSize || 'medium'}
+      />
       <ManualDialog 
           isOpen={isManualOpen} 
           onClose={() => setIsManualOpen(false)} 
           manualPage={manualPage} 
           setManualPage={setManualPage} 
-          fontSize={gameState.settings.fontSize || 'medium'} 
+          fontSize={gameState.settings.fontSize || 'medium'}
       />
     </>
   );

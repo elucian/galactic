@@ -27,6 +27,7 @@ class AudioService {
   private sfxEnabled = true;
   private trackCache: Record<string, HTMLAudioElement> = {};
   private blobCache: Record<string, string> = {}; // In-memory blob URLs
+  private loadingPromises: Map<string, Promise<string>> = new Map(); // Deduplication for in-flight requests
   
   // SFX Buffers & Nodes
   private whiteNoise: AudioBuffer | null = null;
@@ -84,6 +85,12 @@ class AudioService {
               }
           }
       }
+  }
+
+  preload() {
+      Object.values(TRACK_URLS).forEach(url => {
+          this.getAudioSource(url).catch(() => {});
+      });
   }
 
   private createNoiseBuffer(type: 'white' | 'brown'): AudioBuffer {
@@ -149,39 +156,63 @@ class AudioService {
       // 1. Check Memory Cache
       if (this.blobCache[url]) return this.blobCache[url];
 
-      // 2. Check Browser Cache Storage
-      if ('caches' in window) {
+      // 2. Check Deduplication Map
+      if (this.loadingPromises.has(url)) {
+          return this.loadingPromises.get(url)!;
+      }
+
+      const loadTask = (async () => {
+          // 3. Check Browser Cache Storage
+          if ('caches' in window) {
+              try {
+                  const cache = await caches.open(CACHE_NAME);
+                  const cachedResponse = await cache.match(url);
+                  
+                  if (cachedResponse) {
+                      const blob = await cachedResponse.blob();
+                      const blobUrl = URL.createObjectURL(blob);
+                      this.blobCache[url] = blobUrl;
+                      return blobUrl;
+                  }
+              } catch (e) {
+                  console.warn('Cache check error:', e);
+              }
+          }
+
+          // 4. Fetch and Cache
           try {
-              const cache = await caches.open(CACHE_NAME);
-              const cachedResponse = await cache.match(url);
-              
-              if (cachedResponse) {
-                  const blob = await cachedResponse.blob();
+              const response = await fetch(url);
+              if (response.ok) {
+                  // Clone BEFORE blob() to ensure stream is available for both
+                  if ('caches' in window) {
+                      const cacheResponse = response.clone();
+                      const cache = await caches.open(CACHE_NAME);
+                      // Handle put errors silently (e.g. QuotaExceeded, NetworkError)
+                      cache.put(url, cacheResponse).catch(e => {
+                          console.warn('Cache put failed:', e);
+                      });
+                  }
+
+                  const blob = await response.blob();
                   const blobUrl = URL.createObjectURL(blob);
                   this.blobCache[url] = blobUrl;
                   return blobUrl;
-              } else {
-                  // Fetch and Cache
-                  try {
-                      const response = await fetch(url);
-                      if (response.ok) {
-                          cache.put(url, response.clone()); // Store clone in cache
-                          const blob = await response.blob();
-                          const blobUrl = URL.createObjectURL(blob);
-                          this.blobCache[url] = blobUrl;
-                          return blobUrl;
-                      }
-                  } catch (e) {
-                      console.warn('Network fetch failed, streaming directly:', e);
-                  }
               }
           } catch (e) {
-              console.warn('Cache API error:', e);
+              console.warn('Network fetch failed, streaming directly:', e);
           }
-      }
 
-      // 3. Fallback to direct URL (Streaming)
-      return url;
+          // 5. Fallback
+          return url;
+      })();
+
+      this.loadingPromises.set(url, loadTask);
+      
+      try {
+          return await loadTask;
+      } finally {
+          this.loadingPromises.delete(url);
+      }
   }
 
   async playTrack(scene: string) {
@@ -229,7 +260,7 @@ class AudioService {
               const playPromise = audio.play();
               if (playPromise !== undefined) {
                   playPromise.catch(error => {
-                      console.warn("Audio auto-play prevented:", error);
+                      // Autoplay prevented
                   });
               }
           }

@@ -21,7 +21,10 @@ export const createExplosion = (state: GameEngineState, x: number, y: number, co
 
 export const takeDamage = (state: GameEngineState, amt: number, type: string, shield: Shield | null, secondShield: Shield | null, setHud: any) => {
     if (state.rescueMode) return;
-    state.shakeX = 15; state.shakeY = 15;
+    
+    // Removed screen shake as requested
+    // state.shakeX = 0; state.shakeY = 0; 
+    
     let activeShieldColor = ''; 
     if (state.sh1 > 0 && shield) activeShieldColor = shield.color; 
     else if (state.sh2 > 0 && secondShield) activeShieldColor = secondShield.color;
@@ -232,6 +235,19 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
     }
 
     const capRatio = state.capacitor / 100;
+    
+    // FIRE RATE THROTTLE
+    // Normal Fire Rate (e.g. 4/sec) -> Delay = 250ms
+    // Power Shot Delay = NormalDelay * (1 + 3 * capRatio)
+    // at 100% cap: Delay = 250 * 4 = 1000ms
+    // at 0% cap: Delay = 250 * 1 = 250ms
+    const normalFireRate = mainDef ? mainDef.fireRate : 4;
+    const normalDelay = 1000 / normalFireRate;
+    const powerDelay = normalDelay * (1 + 3 * capRatio);
+    
+    if (Date.now() - state.lastRapidFire < powerDelay) return;
+
+    // DAMAGE SCALING: 1x to 10x
     const damageMult = 1.0 + (9.0 * capRatio); 
     const dmg = baseDamage * damageMult; 
     
