@@ -15,7 +15,7 @@ import { MessagesDialog } from './components/MessagesDialog.tsx';
 import { OptionsDialog } from './components/OptionsDialog.tsx';
 import { ManualDialog } from './components/ManualDialog.tsx';
 import SectorMap from './components/SectorMap.tsx';
-import LaunchSequence from './components/LaunchSequence.tsx';
+import { LaunchSequence } from './components/LaunchSequence.tsx';
 import WarpSequence from './components/WarpSequence.tsx';
 import GameEngine from './components/GameEngine.tsx';
 import { LandingScene } from './components/LandingScene.tsx';
@@ -1042,9 +1042,10 @@ export default function App() {
         />
       )}
 
-      {screen === 'launch' && gameState.currentPlanet && selectedShipConfig && (
+      {screen === 'launch' && dockedPlanet && selectedShipConfig && (
         <LaunchSequence 
-          planet={gameState.currentPlanet} 
+          key={`${dockedPlanet.id}_launch`}
+          planet={dockedPlanet} 
           shipConfig={selectedShipConfig} 
           shipColors={{ 
               hull: gameState.shipColors[activeShipId], 

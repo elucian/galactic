@@ -600,26 +600,19 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                       const p1 = hill.points[t.segIdx]; const p2 = hill.points[t.segIdx+1];
                       if (p1 && p2) {
                           const x1 = p1.xRatio * 3000 - 1500; const y1 = - (p1.heightRatio * 300) - yOff; const x2 = p2.xRatio * 3000 - 1500; const y2 = - (p2.heightRatio * 300) - yOff; const tx = x1 + (x2 - x1) * t.offset; let ty = y1 + (y2 - y1) * t.offset;
-                          if (hill.hasRoad) { const side = tIdx % 2 === 0 ? 1 : -1; ty += side * 25; }
-                          if (t.type === 'resort') { 
-                              const halfWidth = 30 * t.scale * 0.8;
+                          
+                          if (t.type === 'resort') {
+                              const halfWidth = 30 * t.scale * 0.8; 
                               const slope = (y2 - y1) / (x2 - x1);
                               const drop = Math.abs(slope * halfWidth);
                               let drawY = ty;
                               let foundationH = 0;
-                              if (drop > 8) {
-                                  const adjustment = drop - 8;
-                                  drawY = ty + adjustment;
-                                  foundationH = 8; 
-                              } else {
-                                  foundationH = drop;
-                              }
-                              const lightSeed = (t.segIdx * 1000) + Math.floor(t.offset * 100);
-                              drawResort(ctx, tx, drawY, t.scale, effectiveIsDay, foundationH, lightSeed); 
+                              if (drop > 8) { const adjustment = drop - 8; drawY = ty + adjustment; foundationH = 8; } else { foundationH = drop; }
+                              drawResort(ctx, tx, drawY, t.scale, env.isDay, foundationH); 
                           }
-                          else if (t.type === 'windmill') { drawBuilding(ctx, { x: tx, y: ty, type: 'windmill', scale: t.scale, windmillType: t.windmillType }, effectiveIsDay, false); }
+                          else if (t.type === 'windmill') { drawBuilding(ctx, { x: tx, y: ty, type: 'windmill', scale: t.scale, windmillType: t.windmillType }, env.isDay, false); }
                           else if (t.type === 'mining') { drawMining(ctx, tx, ty, t.scale); }
-                          else { drawBuilding(ctx, { x: tx, y: ty, type: t.type, w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, effectiveIsDay, false); }
+                          else { drawBuilding(ctx, { x: tx, y: ty, type: t.type, w: t.w, h: t.h, color: t.color, trunkColor: '#78350f' }, env.isDay, false); }
                       }
                   });
               }
@@ -712,10 +705,16 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               
               s.rain.forEach(drop => {
                   drop.y += drop.speed;
-                  if (drop.y > 1000) { drop.y = -1200; drop.x = (Math.random() - 0.5) * 2000; }
+                  if (drop.y > 1000) {
+                      drop.y = -1200;
+                      drop.x = (Math.random() - 0.5) * 2000;
+                  }
                   const visualY = ((drop.y + s.viewY) % 2200) - 1100 + (h/2);
                   const visualX = drop.x + (w/2);
-                  if (visualY > -100 && visualY < h + 100) { rainCtx.moveTo(visualX, visualY); rainCtx.lineTo(visualX, visualY + drop.len); }
+                  if (visualY > -100 && visualY < h + 100) {
+                      rainCtx.moveTo(visualX, visualY);
+                      rainCtx.lineTo(visualX, visualY + drop.len);
+                  }
               });
               rainCtx.stroke();
           }
@@ -794,7 +793,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
               }
           }
 
-          s.particles.forEach(p => { if (p.type === 'plasma') { p.x += p.vx; p.y += p.vy; p.life -= p.decay || 0.02; p.size *= 0.96; } else { p.x += p.vx; p.y += p.vy; p.life -= p.decay || 0.01; if (p.grow) p.size += p.grow; const currentGroundY = worldY; if (p.y > currentGroundY && p.vy > 0 && p.type !== 'steam') { p.y = currentGroundY; p.vy = 0; p.vx = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 10); p.grow = 2.0; p.decay = 0.1; } } if (p.life > 0) { ctx.save(); ctx.globalAlpha = p.life; ctx.fillStyle = p.color || '#fff'; if (p.type === 'fire' || p.type === 'ion' || p.type === 'plasma') { ctx.globalCompositeOperation = 'screen'; ctx.shadowColor = p.color || '#f00'; ctx.shadowBlur = p.type === 'plasma' ? 20 : 10; } ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); ctx.restore(); } });
+          s.particles.forEach(p => { if (p.type === 'plasma') { p.x += p.vx; p.y += p.vy; p.life -= p.decay || 0.02; p.size *= 0.96; } else { p.x += p.vx; p.y += p.vy; p.life -= p.decay || 0.01; if (p.grow) p.size += p.grow; const currentGroundY = worldY; if (p.y > currentGroundY && p.vy > 0 && p.type !== 'steam') { p.y = currentGroundY; p.vy = 0; p.vx = (Math.random() < 0.5 ? -1 : 1) * (10 + Math.random() * 10); p.grow = 2.0; p.decay = 0.1; } } if (p.life > 0) { ctx.save(); ctx.globalAlpha = p.life; ctx.fillStyle = p.color || '#fff'; if (p.type === 'fire' || p.type === 'ion') ctx.globalCompositeOperation = 'lighter'; ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1; } });
           s.particles = s.particles.filter(p => p.life > 0);
 
           if (shipDOMRef.current) { const shipScreenY = s.shipY + s.shake; shipDOMRef.current.style.transform = `translate(-50%, -50%) translate(${cx}px, ${shipScreenY}px) scale(${currentScale})`; }
@@ -811,6 +810,13 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       <canvas ref={canvasRef} className="absolute inset-0 z-0 w-full h-full" />
       <canvas ref={fgCanvasRef} className="absolute inset-0 z-30 pointer-events-none w-full h-full" />
       <SequenceStatusBar altitude={altitude} velocity={speed} fuel={visualFuel} maxFuel={maxFuel} status={status} onSkip={() => { audioService.stopReEntryWind(); audioService.stopLandingThruster(); audioService.stop(); onCompleteRef.current(); }} phase={phase} />
+      
+      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50 text-right pointer-events-none">
+          <div className="text-[8px] md:text-[10px] text-emerald-500 font-black uppercase tracking-widest mb-1 bg-black/40 inline-block px-2 py-1 rounded backdrop-blur-sm">Approaching Surface</div>
+          <h1 className="text-3xl md:text-5xl font-black text-white uppercase tracking-tighter drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] leading-none">{planet.name}</h1>
+          <div className="text-zinc-400 font-mono text-[9px] md:text-xs uppercase tracking-[0.2em] mt-1 bg-black/40 inline-block px-2 py-1 rounded backdrop-blur-sm">CLASS {planet.difficulty} • {planet.quadrant} SECTOR</div>
+      </div>
+
       <div ref={shipDOMRef} className="absolute left-0 top-0 w-32 h-32 will-change-transform z-20">
         <div className="absolute inset-0 z-0 overflow-visible">
              <svg className="absolute w-full h-full" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>

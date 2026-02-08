@@ -35,7 +35,7 @@ const mixColor = (c1: string, c2: string, weight: number) => {
     return `rgb(${r},${g},${b})`;
 };
 
-const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shipColors, onComplete, testMode, weaponId, equippedWeapons, currentFuel, maxFuel }) => {
+export const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shipColors, onComplete, testMode, weaponId, equippedWeapons, currentFuel, maxFuel }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fgCanvasRef = useRef<HTMLCanvasElement>(null); // Foreground Canvas for overlaying ship
   const shipDOMRef = useRef<HTMLDivElement>(null);
@@ -301,6 +301,8 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
           const dynamicJetType = (isSpace || currentPhase === 'orbit') ? 'ion' : 'combustion';
           setActiveJetType(dynamicJetType);
 
+          const effectiveIsDay = env.isDay && !s.isNight;
+
           if (currentPhase === 'countdown') { 
               s.suspension = 0.8; s.legExtension = 1; s.shipY = uncompressedShipY + (1 - s.suspension) * compressionPixels; setThrustActive(false); 
               
@@ -357,20 +359,20 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
               const zDepth = Math.sin(slowTime); 
               const isBehind = zDepth < 0; 
               
-              if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9);
+              if (isBehind) dimFactor = Math.min(0.7, Math.abs(zDepth) * 0.9); 
               
               const eclipseFactor = isBehind ? 1.0 : 0.0;
               starVis = eclipseFactor * (0.8 + (spaceRatio * 0.2)); 
 
               // Render Stars with new visibility
               if (starVis > 0) { 
-                  ctx.fillStyle = '#fff'; s.starScrollY += 0.002; 
+                  ctx.fillStyle = '#ffffff'; s.starScrollY += 0.002; 
                   env.stars.forEach(st => { 
                       ctx.globalAlpha = st.alpha * starVis; 
                       const sy = (st.y * h + s.viewY * 0.05) % h; 
-                      ctx.beginPath(); ctx.arc(st.x * w, sy, st.size, 0, Math.PI*2); ctx.fill(); 
+                      ctx.beginPath(); ctx.arc(st.x * w, (sy < 0 ? sy + h : sy), st.size, 0, Math.PI*2); ctx.fill(); 
                   }); 
-                  ctx.globalAlpha = 1; 
+                  ctx.globalAlpha = 1.0; 
               }
 
               const drawJets = () => {
@@ -379,7 +381,6 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                   ctx.translate(celX, celY);
                   const oscillation = Math.sin(time * 0.005) * (5 * Math.PI / 180);
                   ctx.rotate(oscillation);
-                  
                   const jetH = 600 * celScale;
                   const jetW = 15 * celScale;
                   const gTop = ctx.createLinearGradient(0, 0, 0, -jetH); gTop.addColorStop(0, `rgba(168, 85, 247, ${0.8 * jetFade})`); gTop.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = gTop; ctx.fillRect(-jetW/2, -jetH, jetW, jetH);
@@ -465,7 +466,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       });
                   }
 
-                  if (hill.roadBuildingsBack) { hill.roadBuildingsBack.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, drawFoundation: b.drawFoundation }, env.isDay, false); } }); }
+                  if (hill.roadBuildingsBack) { hill.roadBuildingsBack.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, effectiveIsDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, drawFoundation: b.drawFoundation }, effectiveIsDay, false); } }); }
 
                   if (hill.hasRoad && pathPoints.length > 0) {
                       ctx.beginPath(); pathPoints.forEach((p, idx) => { if(idx===0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); }); ctx.strokeStyle = '#333'; ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.stroke(); ctx.strokeStyle = '#666'; ctx.lineWidth = 1; ctx.setLineDash([10, 10]); ctx.stroke(); ctx.setLineDash([]);
@@ -475,11 +476,11 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                               const trackLen = pathPoints.length - 1; const exactIdx = car.progress * trackLen; const idx = Math.floor(exactIdx); const sub = exactIdx - idx; const p1 = pathPoints[idx]; const p2 = pathPoints[Math.min(idx + 1, trackLen)];
                               if (p1 && p2) {
                                   const vx = p1.x + (p2.x - p1.x) * sub; const vy = p1.y + (p2.y - p1.y) * sub; const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-                                  drawVehicle(ctx, vx, vy - 4, angle, 'car', car.color, env.isDay, car.dir);
+                                  drawVehicle(ctx, vx, vy - 4, angle, 'car', car.color, effectiveIsDay, car.dir);
                               }
                           });
                       }
-                      if (env.streetLights) { env.streetLights.forEach(sl => { const ratio = (sl.x + 1500) / 3000; if (ratio >= 0 && ratio <= 1) { const idx = Math.floor(ratio * (pathPoints.length - 1)); const p = pathPoints[idx]; if (p) drawStreetLight(ctx, p.x, p.y, sl.h, env.isDay); } }); }
+                      if (env.streetLights) { env.streetLights.forEach(sl => { const ratio = (sl.x + 1500) / 3000; if (ratio >= 0 && ratio <= 1) { const idx = Math.floor(ratio * (pathPoints.length - 1)); const p = pathPoints[idx]; if (p) drawStreetLight(ctx, p.x, p.y, sl.h, effectiveIsDay); } }); }
                   }
 
                   if (hill.hasTrainTrack && pathPoints.length > 0) {
@@ -495,7 +496,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                                       const tp1 = pathPoints[tIdx]; const tp2 = pathPoints[Math.min(tIdx + 1, trackLen)];
                                       if (tp1 && tp2) {
                                           const tx = tp1.x + (tp2.x - tp1.x) * tSub; const ty = tp1.y + (tp2.y - tp1.y) * tSub; const ta = Math.atan2(tp2.y - tp1.y, tp2.x - tp1.x);
-                                          drawVehicle(ctx, tx, ty - 6, ta, k===0 ? 'train_engine' : 'train_carriage', train.color, env.isDay, train.dir);
+                                          drawVehicle(ctx, tx, ty - 6, ta, k===0 ? 'train_engine' : 'train_carriage', train.color, effectiveIsDay, train.dir);
                                       }
                                   }
                               }
@@ -503,7 +504,7 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
                       }
                   }
 
-                  if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, env.isDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, hasBalcony: b.hasBalcony }, env.isDay, false); } }); }
+                  if (hill.roadBuildingsFront) { hill.roadBuildingsFront.forEach((b: any) => { const bx = (b.xRatio * 3000) - 1500; const by = -(b.yBase * 300) - yOff + b.yOffset; if (b.type === 'dome_std') { drawDome(ctx, bx, by, b, !!env.isOcean); } else if (b.type === 'hangar') { drawBuilding(ctx, { x: bx, y: by, type: 'hangar', w: b.w, h: b.h }, effectiveIsDay, false); } else { drawBuilding(ctx, { x: bx, y: by, type: 'building_std', w: b.w, h: b.h, color: b.color, windowData: b.windowData, hasRedRoof: b.hasRedRoof, windowW: b.windowW, windowH: b.windowH, acUnits: b.acUnits, hasBalcony: b.hasBalcony }, effectiveIsDay, false); } }); }
 
                   if (hill.trees) {
                       hill.trees.forEach((t: any, tIdx: number) => {
@@ -740,17 +741,21 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-0" />
       <SequenceStatusBar altitude={altitude} velocity={velocity} fuel={visualFuel} maxFuel={maxFuel} status={statusText} onSkip={() => { audioService.stopLaunchSequence(); audioService.stop(); onCompleteRef.current(); }} phase={phase} />
       {countdown !== null && countdown > 0 && ( <div className="absolute top-[25%] left-0 right-0 flex flex-col items-center justify-center z-40 pointer-events-none"> <div className="text-sm md:text-xl text-emerald-500 font-black tracking-[0.5em] mb-1 drop-shadow-[0_2px_2px_rgba(0,0,0,1)]">T-MINUS</div> <div className="text-8xl md:text-[10rem] font-black text-white drop-shadow-[0_0_20px_rgba(0,0,0,1)] animate-pulse">{countdown}</div> </div> )}
+      
+      <div className="absolute top-4 right-4 md:top-8 md:right-8 z-50 text-right pointer-events-none">
+          <div className="text-[8px] md:text-[10px] text-emerald-500 font-black uppercase tracking-widest mb-1 bg-black/40 inline-block px-2 py-1 rounded backdrop-blur-sm">Departure</div>
+          <h1 className="text-3xl md:text-5xl font-black text-white uppercase tracking-tighter drop-shadow-[0_4px_4px_rgba(0,0,0,0.8)] leading-none">{planet.name}</h1>
+          <div className="text-zinc-400 font-mono text-[9px] md:text-xs uppercase tracking-[0.2em] mt-1 bg-black/40 inline-block px-2 py-1 rounded backdrop-blur-sm">CLASS {planet.difficulty} • {planet.quadrant} SECTOR</div>
+      </div>
+
       <div ref={shipDOMRef} className="absolute left-0 top-0 w-32 h-32 will-change-transform z-20">
         <div className="absolute inset-0 z-0 overflow-visible">
              <svg className="absolute w-full h-full" viewBox="0 0 100 100" style={{ overflow: 'visible' }}>
                 <g transform={`translate(50, 50)`}> {['left', 'right'].map((side) => ( <LandingGear key={side} type={shipConfig.landingGearType} extension={legExtension} compression={suspension} side={side as any} /> ))} </g>
              </svg>
         </div>
-        <ShipIcon config={shipConfig} className="w-full h-full drop-shadow-2xl relative z-10" showJets={thrustActive} jetType={activeJetType} showGear={false} hullColor={shipColors.hull} wingColor={shipColors.wings} cockpitColor={shipColors.cockpit} gunColor={shipColors.guns} secondaryGunColor={shipColors.secondary_guns} gunBodyColor={shipColors.gun_body} engineColor={shipColors.engines} nozzleColor={shipColors.nozzles} weaponId={weaponId} equippedWeapons={equippedWeapons} />
+        <ShipIcon config={shipConfig} className="w-full h-full drop-shadow-2xl relative z-10" showJets={false} hullColor={shipColors.hull} wingColor={shipColors.wings} cockpitColor={shipColors.cockpit} gunColor={shipColors.guns} secondaryGunColor={shipColors.secondary_guns} gunBodyColor={shipColors.gun_body} engineColor={shipColors.engines} nozzleColor={shipColors.nozzles} weaponId={weaponId} equippedWeapons={equippedWeapons} />
       </div>
-      <canvas ref={fgCanvasRef} className="absolute inset-0 z-30 pointer-events-none w-full h-full" />
     </div>
   );
 };
-
-export default LaunchSequence;
