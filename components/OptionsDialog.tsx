@@ -81,6 +81,11 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
       }));
   };
 
+  const updateTheme = (theme: 'active' | 'serene' | 'heroic') => {
+      setGameState(prev => ({ ...prev, settings: { ...prev.settings, audioTheme: theme } }));
+      // Effect in App.tsx will handle the audioService update
+  };
+
   const toggleSetting = (key: keyof typeof gameState.settings) => {
       setGameState(prev => ({
           ...prev,
@@ -277,6 +282,25 @@ export const OptionsDialog: React.FC<OptionsDialogProps> = ({ isOpen, onClose, g
                                     className="w-32 h-2 bg-zinc-800 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:bg-amber-500 [&::-webkit-slider-thumb]:rounded-full hover:[&::-webkit-slider-thumb]:bg-amber-400"
                                 />
                                 <span className="text-[10px] font-mono text-amber-400 w-8 text-right">{Math.round(gameState.settings.sfxVolume * 100)}%</span>
+                            </div>
+                        </div>
+
+                        {/* Audio Theme */}
+                        <div className="flex justify-between items-center pt-4 border-t border-zinc-800">
+                            <div className="flex flex-col">
+                                <span className={`font-black uppercase text-white ${titleSize}`}>Audio Theme</span>
+                                <span className={`text-zinc-500 uppercase ${btnSize}`}>Soundtrack Style</span>
+                            </div>
+                            <div className="flex gap-1 bg-zinc-800 p-1 rounded">
+                                {(['active', 'serene', 'heroic'] as const).map(mode => (
+                                    <button 
+                                        key={mode} 
+                                        onClick={() => updateTheme(mode)}
+                                        className={`px-3 py-1 rounded text-[10px] font-black uppercase transition-colors ${gameState.settings.audioTheme === mode ? 'bg-purple-600 text-white' : 'text-zinc-400 hover:text-white'}`}
+                                    >
+                                        {mode}
+                                    </button>
+                                ))}
                             </div>
                         </div>
                      </div>

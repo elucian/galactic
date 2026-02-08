@@ -215,7 +215,7 @@ export interface GameSettings {
   testMode?: boolean;
   fontSize: 'small' | 'medium' | 'large' | 'extra-large'; 
   speedMode?: 'slow' | 'normal' | 'fast';
-  audioTheme?: 'retro' | 'classic' | 'modern';
+  audioTheme?: 'active' | 'serene' | 'heroic';
 }
 
 export interface Moon {

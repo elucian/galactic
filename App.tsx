@@ -25,15 +25,15 @@ const SAVE_KEY = 'galactic_defender_beta_35';
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
-const MAX_MESSAGE_HISTORY = 50; // Memory optimization limit
+const MAX_MESSAGE_HISTORY = 50; 
 
 const getTransferBatchSize = (type: string) => {
     const t = type.toLowerCase();
     if (['weapon', 'shield', 'gun', 'projectile', 'laser'].includes(t)) return 1;
-    if (t === 'ammo') return 1; // Ammo moves in packs
+    if (t === 'ammo') return 1; 
     if (['missile', 'mine'].includes(t)) return 5;
     if (['fuel', 'water', 'energy', 'repair'].includes(t)) return 10;
-    return 10; // Resources and others
+    return 10; 
 };
 
 const StarBackground = () => {
@@ -75,12 +75,12 @@ export default function App() {
       initialFittings[os.instanceId] = { 
           weapons, 
           shieldId: null, secondShieldId: null, flareId: null, reactorLevel: 1, engineType: 'standard', 
-          rocketCount: 2, 
-          mineCount: 2,   
+          rocketCount: 10, 
+          mineCount: 20,   
           redMineCount: 0, 
           hullPacks: 0, wingWeaponId: null, 
           health: 100, ammoPercent: 100, lives: 1, fuel: config.maxFuel, cargo: [],
-          water: 100, // Initial water
+          water: 100, 
           ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 },
           magazineCurrent: 200, 
           reloadTimer: 0,
@@ -111,7 +111,9 @@ export default function App() {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
       shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
-      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: true, testMode: false, fontSize: 'medium', speedMode: 'normal' }, taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
+      currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, 
+      settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: true, testMode: false, fontSize: 'medium', speedMode: 'normal', audioTheme: 'active' }, 
+      taskForceShipIds: [], activeTaskForceIndex: 0, pilotName: 'STRATOS', pilotAvatar: '👨🏻', pilotZoom: 1.0, gameInProgress: false, victories: 0, failures: 0, typeColors: {}, reserveByPlanet: {}, 
       marketListingsByPlanet: {}, marketRefreshes: {},
       messages: [initialMessage],
       leaderboard: [],
@@ -128,6 +130,7 @@ export default function App() {
         const parsed = JSON.parse(saved);
         if (!parsed.settings.fontSize) parsed.settings.fontSize = 'medium';
         if (!parsed.settings.speedMode) parsed.settings.speedMode = 'normal';
+        if (!parsed.settings.audioTheme) parsed.settings.audioTheme = 'active'; 
         if (!parsed.customColors) parsed.customColors = ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'];
         if (!parsed.leaderboard) parsed.leaderboard = []; 
         if (!parsed.marketListingsByPlanet) parsed.marketListingsByPlanet = {};
@@ -269,6 +272,7 @@ export default function App() {
       newState.leaderboard = [...gameState.leaderboard];
       newState.pilotName = pilotName;
       newState.pilotAvatar = pilotAvatar;
+      newState.pilotZoom = gameState.pilotZoom;
       
       const welcomeMsg: GameMessage = {
           id: `reset_${Date.now()}`,
@@ -535,7 +539,15 @@ export default function App() {
     audioService.setSfxVolume(gameState.settings.sfxVolume);
     audioService.setMusicEnabled(gameState.settings.musicEnabled);
     audioService.setSfxEnabled(gameState.settings.sfxEnabled);
+    audioService.setTheme(gameState.settings.audioTheme || 'active');
   }, [gameState]);
+
+  useEffect(() => {
+    // Notify audio service of quadrant changes for combat music
+    if (gameState.currentQuadrant) {
+        audioService.setQuadrant(gameState.currentQuadrant);
+    }
+  }, [gameState.currentQuadrant]);
 
   useEffect(() => {
     const handleInteraction = () => { audioService.init(); window.removeEventListener('click', handleInteraction); };
@@ -641,7 +653,55 @@ export default function App() {
        const currentPId = prev.currentPlanet!.id;
        const pEntry = { ...reg[currentPId] };
        let newMessages = [...prev.messages];
-       if (success) { pEntry.wins += 1; pEntry.losses = 0; if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { pEntry.status = 'friendly'; pEntry.wins = 0; newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); } else { newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); } if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } } else { if (!aborted) { pEntry.losses += 1; if (pEntry.losses >= 1) { pEntry.losses = 0; const pIndex = PLANETS.findIndex(p => p.id === currentPId); if (pIndex > 0) { const prevPId = PLANETS[pIndex - 1].id; const prevEntry = { ...reg[prevPId] }; let regressionHappened = false; if (prevEntry.status === 'friendly') { prevEntry.status = 'siege'; regressionHappened = true; } else if (prevEntry.status === 'siege') { prevEntry.status = 'occupied'; regressionHappened = true; } if (regressionHappened) { reg[prevPId] = prevEntry; newMessages.unshift({ id: `loss_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE LINE COLLAPSED. ${PLANETS[pIndex-1].name} SECTOR COMPROMISED.`, timestamp: Date.now() }); } } } } } reg[currentPId] = pEntry;
+       
+       if (success) { 
+           pEntry.wins += 1; 
+           pEntry.losses = 0; 
+           if (pEntry.status !== 'friendly' && pEntry.wins >= 1) { 
+               pEntry.status = 'friendly'; 
+               pEntry.wins = 0; 
+               newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `VICTORY IN SECTOR ${prev.currentPlanet?.name}. +${score + 5000} CREDITS AWARDED.`, timestamp: Date.now() }); 
+           } else { 
+               newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); 
+           } 
+           if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } 
+       } else { 
+           // FAILURE Logic (Loss or Abort)
+           
+           // 1. Current Planet Regression
+           // If we fail to defend (status was 'siege'), it becomes occupied.
+           if (pEntry.status === 'siege') {
+               pEntry.status = 'occupied';
+               newMessages.unshift({ id: `lost_curr_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `DEFENSE FAILED. ${prev.currentPlanet?.name} HAS FALLEN TO OCCUPATION.`, timestamp: Date.now() });
+           }
+
+           // 2. Neighbor Planet Regression
+           const pIndex = PLANETS.findIndex(p => p.id === currentPId);
+           if (pIndex > 0) {
+               const prevPId = PLANETS[pIndex - 1].id;
+               const prevEntry = { ...reg[prevPId] };
+               let regressionHappened = false;
+               
+               // If neighbor is friendly, it becomes besieged
+               if (prevEntry.status === 'friendly') {
+                   prevEntry.status = 'siege';
+                   regressionHappened = true;
+                   newMessages.unshift({ id: `siege_prev_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `INVASION SPREADING. ${PLANETS[pIndex-1].name} IS NOW UNDER SIEGE.`, timestamp: Date.now() });
+               } 
+               // If neighbor is already besieged, it falls (cascading failure implied)
+               else if (prevEntry.status === 'siege') {
+                   prevEntry.status = 'occupied';
+                   regressionHappened = true;
+                   newMessages.unshift({ id: `lost_prev_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '⚠️', text: `PERIMETER COLLAPSE. ${PLANETS[pIndex-1].name} LOST TO ENEMY FORCES.`, timestamp: Date.now() });
+               }
+               
+               if (regressionHappened) {
+                   reg[prevPId] = prevEntry;
+               }
+           }
+       } 
+       
+       reg[currentPId] = pEntry;
        return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
     });
     
@@ -688,7 +748,7 @@ export default function App() {
       const newFittings = { ...prev.shipFittings };
       const newWeapons = Array(3).fill(null);
       if (shipConfig.isAlien) { const wId = shipConfig.weaponId || 'exotic_plasma_orb'; if (shipConfig.defaultGuns === 1) { newWeapons[0] = { id: wId, count: 1 }; } else { newWeapons[1] = { id: wId, count: 1 }; newWeapons[2] = { id: wId, count: 1 }; } } else { const shipIndex = SHIPS.findIndex(s => s.id === shipTypeId); if (shipIndex >= 3 && shipIndex <= 4) { newWeapons[0] = { id: 'gun_photon', count: 1 }; } else { newWeapons[0] = { id: 'gun_pulse', count: 1 }; } }
-      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, water: shipConfig.maxWater || 100, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 2, mineCount: 2, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
+      newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, water: shipConfig.maxWater || 100, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 10, mineCount: 20, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
       return { ...prev, credits: prev.credits - shipConfig.price, ownedShips: newOwned, shipFittings: newFittings, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: reserve }, shipColors: { ...prev.shipColors, [sId]: shipConfig.defaultColor || '#94a3b8' } };
     });
     setIsStoreOpen(false); 
@@ -927,7 +987,7 @@ export default function App() {
                   Beta 35 - February <span 
                       onClick={() => { 
                           if(gameState.settings.testMode) { 
-                              setVictoryMode(gameState.settings.showTransitions ? 'cinematic' : 'simple'); 
+                              setVictoryMode('cinematic'); // ALWAYS FORCE CINEMATIC FOR TESTING
                               setScreen('victory'); 
                           } 
                       }} 

@@ -41,7 +41,6 @@ export const takeDamage = (state: GameEngineState, amt: number, type: string, sh
         state.hp = Math.max(0, state.hp - finalDmg);
         if (state.hp <= 0) {
             state.hp = 0; state.rescueMode = true; state.asteroids = []; state.bullets = [];
-            audioService.updateReactorHum(false, 0); 
             createExplosion(state, state.px, state.py, '#ef4444', 50, 'boss'); 
             audioService.playExplosion(0, 2.0, 'player'); 
             setHud((h: any) => ({...h, alert: "CRITICAL FAILURE - CAPSULE EJECTED", alertType: 'alert'}));
@@ -225,10 +224,6 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
     const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null; 
     const baseDamage = mainDef ? mainDef.damage : 45; 
     
-    // Safety check for generator power (10% minimum to fire anything once empty)
-    const maxEnergy = activeShip.config.maxEnergy || 1000;
-    if (state.energy < maxEnergy * 0.1) return;
-
     // Automatic fallback to normal shot if capacitor is depleted
     if (state.capacitor <= 0) {
         state.capacitorLocked = true;
@@ -356,9 +351,6 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
 export const fireNormalShot = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any, gunColor?: string }, globalScale: number = 1.0) => { 
     if (state.weaponCoolDownTimer > state.frame) return;
     
-    const maxEnergy = activeShip.config.maxEnergy || 1000;
-    if (state.energy < maxEnergy * 0.1) return;
-
     const mainWeapon = activeShip.fitting.weapons[0]; 
     const mainDef = mainWeapon ? [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWeapon.id) : null; 
     const fireRate = (mainDef?.id === 'exotic_rainbow_spread' || mainDef?.id === 'exotic_star_shatter') ? 6 : (mainDef ? mainDef.fireRate : 4); 

@@ -418,7 +418,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         const sizeScale = fontSize === 'small' ? 0.8 : (fontSize === 'large' ? 1.25 : (fontSize === 'extra-large' ? 1.5 : 1.0));
 
         // REGENERATION LOGIC
-        const baseRegen = (2.0 + (activeShip.config.price / 100000)) * 1.5;
+        // Logarithmic scaling: Drastically reduces energy for starter ships (approx 1.0/frame), 
+        // while allowing top-tier ships to reach high regeneration (approx 4.0+/frame).
+        const logPrice = Math.log10(Math.max(1000, activeShip.config.price/2));
+        const baseRegen = Math.max(0.2, (logPrice * 1.2) - 4.5);
+
         const isStress = s.wasShieldHit && s.isShooting;
         
         // Reactor Output: Reduced efficiency under combat stress
@@ -432,8 +436,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 
                 let newActive = isActive;
                 
-                // Trigger condition: Drop below 10%
-                if (!newActive && current < def.capacity * 0.1) {
+                // Trigger condition: Drop below 50%
+                if (!newActive && current < def.capacity * 0.5) {
                     newActive = true;
                 }
                 
@@ -445,8 +449,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 
                 if (newActive) {
                     // Rates per frame (assuming ~60 FPS)
-                    const regenPerFrame = def.regenRate / 60;
-                    const costPerFrame = def.energyCost / 60;
+                    const regenPerFrame = def.regenRate / 30;
+                    const costPerFrame  = def.energyCost / 30;
                     
                     if (costPerFrame <= 0) {
                          return { val: Math.min(def.capacity, current + regenPerFrame), active: true };
@@ -802,7 +806,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             }
             if (s.capacitor <= 0) s.capacitorLocked = true;
             
-            audioService.updateReactorHum(canRecharge && s.capacitor < 100, s.capacitor);
             
             // ALIENS: Check for Power Shot logic (Test Mode Bypass)
             const isTestMode = shield && shield.id === 'dev' || secondShield && secondShield.id === 'dev' || activeShip.fitting.shieldId === 'dev_god_mode';
