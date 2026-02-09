@@ -4,8 +4,7 @@ import { Asteroid } from './Asteroid';
 import { Enemy } from './Enemy';
 import { drawShip, drawRetro } from './renderers';
 import { mixColor, getAlienColors, OCTO_COLORS } from './utils';
-import { QuadrantType, WeaponType } from '../../types';
-import { WEAPONS, EXOTIC_WEAPONS } from '../../constants';
+import { QuadrantType } from '../../types';
 
 export const renderGame = (
     ctx: CanvasRenderingContext2D, 
@@ -112,20 +111,12 @@ export const renderGame = (
             if (e.vx < -0.5) enemyMovement.right = true; 
             if (e.vx > 0.5) enemyMovement.left = true;
 
-            // Determine gun color from equipped weapon
-            let enemyGunColor = '#ef4444'; // Default red
-            const mainWep = e.equippedWeapons.find(w => w !== null);
-            if (mainWep) {
-                const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === mainWep.id);
-                if (wDef && wDef.beamColor) enemyGunColor = wDef.beamColor;
-            }
-
             drawShip(ctx, { 
                 config: e.config, 
                 fitting: null, 
                 color: e.type==='boss'?'#a855f7':alienCols.hull, 
                 wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, 
-                gunColor: enemyGunColor, 
+                gunColor: '#ef4444', 
                 equippedWeapons: e.equippedWeapons 
             }, false, enemyMovement, false, false, forceEnemyJetsOff, globalScale);
 

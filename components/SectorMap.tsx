@@ -37,11 +37,6 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const dragRef = useRef({ startX: 0, startY: 0, initialPanX: 0, initialPanY: 0 });
   const isRecalculatingRef = useRef(false);
 
-  // Sync activeQuadrant with prop when it changes (e.g. launching from a new home base)
-  useEffect(() => {
-      setActiveQuadrant(currentQuadrant);
-  }, [currentQuadrant]);
-
   // Calculate dynamic scale based on zoom step (Range 0.3 to 1.5)
   const currentScale = useMemo(() => 0.3 + (zoomStep * 0.12), [zoomStep]);
 

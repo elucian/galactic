@@ -21,10 +21,7 @@ export const createExplosion = (state: GameEngineState, x: number, y: number, co
 
 export const takeDamage = (state: GameEngineState, amt: number, type: string, shield: Shield | null, secondShield: Shield | null, setHud: any) => {
     if (state.rescueMode) return;
-    
-    // Removed screen shake as requested
-    // state.shakeX = 0; state.shakeY = 0; 
-    
+    state.shakeX = 15; state.shakeY = 15;
     let activeShieldColor = ''; 
     if (state.sh1 > 0 && shield) activeShieldColor = shield.color; 
     else if (state.sh2 > 0 && secondShield) activeShieldColor = secondShield.color;
@@ -235,19 +232,6 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
     }
 
     const capRatio = state.capacitor / 100;
-    
-    // FIRE RATE THROTTLE
-    // Normal Fire Rate (e.g. 4/sec) -> Delay = 250ms
-    // Power Shot Delay = NormalDelay * (1 + 3 * capRatio)
-    // at 100% cap: Delay = 250 * 4 = 1000ms
-    // at 0% cap: Delay = 250 * 1 = 250ms
-    const normalFireRate = mainDef ? mainDef.fireRate : 4;
-    const normalDelay = 1000 / normalFireRate;
-    const powerDelay = normalDelay * (1 + 3 * capRatio);
-    
-    if (Date.now() - state.lastRapidFire < powerDelay) return;
-
-    // DAMAGE SCALING: 1x to 10x
     const damageMult = 1.0 + (9.0 * capRatio); 
     const dmg = baseDamage * damageMult; 
     
@@ -287,16 +271,14 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
         let type = 'projectile';
         let detY = undefined;
         let isMulti = false;
-        
-        let sfxType = 'exotic_plasma';
 
-        if (isOrb) { w = 8; h = 8; speed = 16; grow = 1.05; sfxType = 'exotic_plasma'; }
-        else if (isWave) { w = 10; h = 6; speed = 16; grow = 1.05; sfxType = 'exotic_wave'; }
-        else if (isGravity) { w = 10; h = 6; speed = 16; grow = 1.06; sfxType = 'exotic_gravity'; }
-        else if (isStar) { w = 12; h = 12; speed = 18; grow = 1.045; sfxType = 'exotic_shatter'; } 
-        else if (isRainbow) { w = 10; h = 4; speed = 14; sfxType = 'exotic_rainbow'; }
-        else if (isFlamer) { w = 30; h = 30; speed = 20; grow = 1.03; color = '#3b82f6'; sfxType = 'exotic_flame'; }
-        else if (isElectric) { type = 'laser'; w = 4; h = 20; speed = 28; sfxType = 'exotic_electric'; }
+        if (isOrb) { w = 8; h = 8; speed = 16; grow = 1.05; }
+        else if (isWave) { w = 10; h = 6; speed = 16; grow = 1.05; }
+        else if (isGravity) { w = 10; h = 6; speed = 16; grow = 1.06; }
+        else if (isStar) { w = 12; h = 12; speed = 18; grow = 1.045; } 
+        else if (isRainbow) { w = 10; h = 4; speed = 14; }
+        else if (isFlamer) { w = 30; h = 30; speed = 20; grow = 1.03; color = '#3b82f6'; }
+        else if (isElectric) { type = 'laser'; w = 4; h = 20; speed = 28; }
         else if (isOcto) { 
             type = 'octo_shell';
             w = 12; h = 12; grow = 0; speed = 12; 
@@ -304,10 +286,9 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
             const distRatio = 0.5 + ((Math.random() + Math.random()) / 2) * 0.5; 
             const dist = canvasHeight * distRatio;
             detY = state.py - dist;
-            isMulti = Math.random() > 0.7;
-            sfxType = 'exotic_plasma'; 
+            isMulti = Math.random() > 0.7; 
         }
-        else if (isPhaser) { type = 'laser'; w = 5; h = 40; speed = 32; color = '#d946ef'; sfxType = 'phaser'; }
+        else if (isPhaser) { type = 'laser'; w = 5; h = 40; speed = 32; color = '#d946ef'; }
 
         // Scale projectiles slightly
         const projScale = Math.max(1, globalScale * 0.8);
@@ -342,7 +323,8 @@ export const firePowerShot = (state: GameEngineState, activeShip: { config: Exte
             isMulticolor: isMulti
         });
         
-        audioService.playWeaponFire(sfxType, 0);
+        if (isPhaser) audioService.playWeaponFire('phaser', 0); 
+        else audioService.playWeaponFire('exotic_power', 0);
     } else { 
         const beamState = getCapacitorBeamState(state.capacitor);
         const baseW = 4 * Math.max(1, globalScale * 0.8); 
@@ -420,37 +402,16 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
 
         if (mainDef?.id.includes('exotic')) {
             let speed = 20;
-            let sfxType = 'exotic_plasma';
             
             if (mainDef.id === 'exotic_flamer') {
-                crystalColor = '#3b82f6'; sfxType = 'exotic_flame';
+                crystalColor = '#3b82f6'; 
             } else if (mainDef.id === 'exotic_octo_burst') {
                 crystalColor = OCTO_COLORS[Math.floor(Math.random() * OCTO_COLORS.length)];
             } else if (mainDef.id === 'exotic_rainbow_spread') {
                 const rainbowColors = ['#ef4444', '#f97316', '#facc15', '#22c55e', '#3b82f6', '#a855f7'];
                 crystalColor = rainbowColors[Math.floor(Math.random() * rainbowColors.length)];
-                sfxType = 'exotic_rainbow';
-            } else if (mainDef.id === 'exotic_phaser_sweep') {
-                sfxType = 'phaser';
-            } else if (mainDef.id === 'exotic_star_shatter') {
-                sfxType = 'exotic_shatter';
-            } else if (mainDef.id === 'exotic_electric') {
-                sfxType = 'exotic_electric';
-            } else if (mainDef.id === 'exotic_gravity_wave') {
-                sfxType = 'exotic_gravity';
-            } else if (mainDef.id === 'exotic_wave') {
-                sfxType = 'exotic_wave';
-            } else {
-                sfxType = 'exotic_plasma';
-            }
-            
-            if (mainDef.id !== 'exotic_phaser_sweep') {
-                // Determine audio trigger
-                if (mainDef.id === 'exotic_octo_burst') {
-                    audioService.playWeaponFire('missile', 0); // Squishy/Missile sound
-                } else {
-                    audioService.playWeaponFire(sfxType, 0);
-                }
+            } else if (mainDef.id !== 'exotic_phaser_sweep') {
+                audioService.playWeaponFire('exotic_single', 0);
             }
 
             let w = 6 * projScale; 
@@ -481,6 +442,7 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
                     growthRate: 0,
                     detonationY: undefined 
                 });
+                audioService.playWeaponFire('missile', 0);
             } else if (mainDef.id === 'exotic_phaser_sweep') {
                 const spawnY = state.py - 30 * globalScale - (h / 2);
                  state.bullets.push({ 
@@ -519,16 +481,16 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
                     weaponId,
                     growthRate: growth 
                 });
+                if (mainDef.id === 'exotic_flamer') {
+                    audioService.playWeaponFire('flame', 0);
+                }
             }
         } else { 
             const speed = 30;
             const vx = Math.sin(rad) * speed;
             const vy = -Math.cos(rad) * speed;
             state.bullets.push({ x: state.px, y: state.py - 24 * globalScale, vx, vy, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4 * projScale, height: 25 * projScale, glow: true, glowIntensity: 5, isMain: true, weaponId }); 
-            
-            // "Raka Taka" logic for Projectile weapons
-            const isProjectile = mainDef?.type === WeaponType.PROJECTILE;
-            audioService.playWeaponFire(isProjectile ? 'cannon' : 'laser', 0, activeShip.config.id); 
+            audioService.playWeaponFire(mainDef?.type === WeaponType.LASER ? 'laser' : 'cannon', 0, activeShip.config.id); 
         } 
         
         state.weaponFireTimes[0] = Date.now(); 
@@ -582,9 +544,16 @@ export const fireWingWeapon = (state: GameEngineState, activeShip: { config: Ext
     if (!mounts[mountIdx]) return;
     
     const m = mounts[mountIdx];
+    // Coordinate Logic:
+    // Ship is drawn centered at state.px, state.py.
+    // Ship drawing coordinates are 0-100, center at 50,50.
+    // We calculate offset from center (50,50)
     const offsetX = m.x - 50;
     const offsetY = m.y - 50;
     
+    // Scale Logic:
+    // The player ship is drawn with `ctx.scale(scale, scale)` where scale = 0.6 * globalScale (for player).
+    // So visual offset = logical offset * 0.6 * globalScale.
     const shipScale = 0.6 * globalScale;
     
     const spawnX = state.px + (offsetX * shipScale);
@@ -592,28 +561,21 @@ export const fireWingWeapon = (state: GameEngineState, activeShip: { config: Ext
 
     let type = 'projectile';
     let color = wDef.beamColor || '#fff';
+    // Scale projectile size slightly to match larger ships
     const projScale = Math.max(1, globalScale * 0.8);
     let w = 4 * projScale;
     let h = 16 * projScale;
     let speed = 20;
     let life = 50;
     
-    let sfxType = 'cannon';
-
     if (wDef.id.includes('exotic')) {
-        if (wDef.id === 'exotic_plasma_orb') { w = 8 * projScale; h = 8 * projScale; speed = 16; type = 'projectile'; sfxType = 'exotic_plasma'; }
-        else if (wDef.id === 'exotic_flamer') { w = 20 * projScale; h = 20 * projScale; speed = 18; color='#3b82f6'; sfxType = 'exotic_flame'; }
-        else if (wDef.id === 'exotic_electric') { type = 'laser'; w = 3 * projScale; h = 20 * projScale; speed = 25; color='#00ffff'; sfxType = 'exotic_electric'; }
-        else if (wDef.id === 'exotic_wave') { w = 12 * projScale; h = 6 * projScale; speed = 15; sfxType = 'exotic_wave'; }
-        else if (wDef.id === 'exotic_rainbow_spread') { w = 8 * projScale; h = 4 * projScale; speed = 14; sfxType = 'exotic_rainbow'; }
-        else if (wDef.id === 'exotic_star_shatter') { sfxType = 'exotic_shatter'; }
-        else if (wDef.id === 'exotic_gravity_wave') { sfxType = 'exotic_gravity'; }
-        else if (wDef.id === 'exotic_octo_burst') { sfxType = 'missile'; }
-        else if (wDef.id === 'exotic_phaser_sweep') { sfxType = 'phaser'; }
-        else { sfxType = 'exotic_plasma'; }
+        if (wDef.id === 'exotic_plasma_orb') { w = 8 * projScale; h = 8 * projScale; speed = 16; type = 'projectile'; }
+        else if (wDef.id === 'exotic_flamer') { w = 20 * projScale; h = 20 * projScale; speed = 18; color='#3b82f6'; }
+        else if (wDef.id === 'exotic_electric') { type = 'laser'; w = 3 * projScale; h = 20 * projScale; speed = 25; color='#00ffff'; }
+        else if (wDef.id === 'exotic_wave') { w = 12 * projScale; h = 6 * projScale; speed = 15; }
+        else if (wDef.id === 'exotic_rainbow_spread') { w = 8 * projScale; h = 4 * projScale; speed = 14; }
     } else {
-        if (wDef.type === WeaponType.LASER) { type = 'laser'; h = 20 * projScale; speed = 25; sfxType = 'laser'; }
-        else { sfxType = 'cannon'; } // Raka Taka
+        if (wDef.type === WeaponType.LASER) { type = 'laser'; h = 20 * projScale; speed = 25; }
     }
 
     state.bullets.push({ 
@@ -631,7 +593,13 @@ export const fireWingWeapon = (state: GameEngineState, activeShip: { config: Ext
         weaponId: wDef.id 
     }); 
     
-    audioService.playWeaponFire(sfxType, 0);
+    if (wDef.id.includes('exotic')) {
+        audioService.playWeaponFire('exotic_single', 0);
+    } else if (wDef.type === WeaponType.LASER) {
+        audioService.playWeaponFire('laser', 0);
+    } else {
+        audioService.playWeaponFire('cannon', 0);
+    }
 
     state.weaponFireTimes[slotIndex] = now;
     state.weaponHeat[slotIndex] = Math.min(100, (state.weaponHeat[slotIndex] || 0) + 2);

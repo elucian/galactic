@@ -15,9 +15,9 @@ import { MessagesDialog } from './components/MessagesDialog.tsx';
 import { OptionsDialog } from './components/OptionsDialog.tsx';
 import { ManualDialog } from './components/ManualDialog.tsx';
 import SectorMap from './components/SectorMap.tsx';
-import { LaunchSequence } from './components/LaunchSequence.tsx';
+import LaunchSequence from './components/LaunchSequence.tsx';
 import WarpSequence from './components/WarpSequence.tsx';
-import GameEngine from './components/GameEngine'; // Fixed import
+import GameEngine from './components/GameEngine.tsx';
 import { LandingScene } from './components/LandingScene.tsx';
 import { VictoryScene } from './components/VictoryScene.tsx';
 
@@ -244,8 +244,7 @@ export default function App() {
                 if (nextState) {
                     audioService.stop();
                 } else {
-                    // Intro music is intentionally disabled on start, but resume might play it if needed
-                    // For now, we keep intro silent as per user request
+                    audioService.playTrack('intro');
                 }
                 return nextState;
             });
@@ -557,10 +556,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (screen === 'intro') {
-        // Preload tracks silently on intro screen
-        audioService.preload();
-    }
+    if (screen === 'intro') audioService.playTrack('intro');
     else if (screen === 'hangar') audioService.playTrack('command');
     else if (screen === 'map') audioService.playTrack('map');
     else if (screen === 'game') audioService.playTrack('combat');
@@ -706,7 +702,26 @@ export default function App() {
        } 
        
        reg[currentPId] = pEntry;
-       return { ...prev, credits: newCredits, shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, gameInProgress: false, planetRegistry: reg, messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, currentQuadrant: prev.currentPlanet!.quadrant, dockedPlanetId: success ? prev.currentPlanet!.id : prev.dockedPlanetId };
+
+       // DETERMINING LOCATION AFTER MISSION
+       // If success, we stay at target. If abort/fail, we return to last docked planet.
+       const nextDockedId = success ? currentPId : (prev.dockedPlanetId || 'p1');
+       const nextPlanet = PLANETS.find(p => p.id === nextDockedId) || PLANETS[0];
+
+       return { 
+           ...prev, 
+           credits: newCredits, 
+           shipFittings: { ...prev.shipFittings, [sId]: updatedFitting }, 
+           gameInProgress: false, 
+           planetRegistry: reg, 
+           messages: newMessages.slice(0, MAX_MESSAGE_HISTORY), 
+           leaderboard: newLeaderboard.length > 0 ? newLeaderboard : prev.leaderboard, 
+           
+           // Ensure location is reset to docked planet if mission ended
+           dockedPlanetId: nextDockedId,
+           currentPlanet: nextPlanet,
+           currentQuadrant: nextPlanet.quadrant 
+       };
     });
     
     if (aborted) { 
@@ -715,7 +730,7 @@ export default function App() {
         const currentQuad = gameState.currentQuadrant; 
         const showTrans = gameState.settings.showTransitions; 
         if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } 
-        else { setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } 
+        else { setScreen('hangar'); audioService.playTrack('command'); } 
     } else { 
         if (success && gameState.currentPlanet?.id === 'p12') {
             // Victory on Last Planet
@@ -1046,10 +1061,9 @@ export default function App() {
         />
       )}
 
-      {screen === 'launch' && dockedPlanet && selectedShipConfig && (
+      {screen === 'launch' && gameState.currentPlanet && selectedShipConfig && (
         <LaunchSequence 
-          key={`${dockedPlanet.id}_launch`}
-          planet={dockedPlanet} 
+          planet={gameState.currentPlanet} 
           shipConfig={selectedShipConfig} 
           shipColors={{ 
               hull: gameState.shipColors[activeShipId], 
@@ -1283,62 +1297,59 @@ export default function App() {
               const sId = gameState.selectedShipInstanceId!;
               setGameState(p => {
                   const key = activePart === 'hull' ? 'shipColors' : activePart === 'wings' ? 'shipWingColors' : activePart === 'cockpit' ? 'shipCockpitColors' : activePart === 'guns' ? 'shipGunColors' : activePart === 'secondary_guns' ? 'shipSecondaryGunColors' : activePart === 'gun_body' ? 'shipGunBodyColors' : activePart === 'engines' ? 'shipEngineColors' : activePart === 'nozzles' ? 'shipNozzleColors' : 'shipBarColors';
-                  return { ...p, [key]: { ...(p as any)[key], [sId]: c } };
+                  return { ...p, [key]: { ...p[key as keyof GameState] as any, [sId]: c } };
               });
-              audioService.playSfx('click');
-          }}
-          updateCustomColor={(index, color) => {
-              setGameState(prev => {
-                  const newColors = [...prev.customColors];
-                  newColors[index] = color;
-                  return { ...prev, customColors: newColors };
-              });
-          }}
-          fontSize={gameState.settings.fontSize || 'medium'}
+          }} 
+          updateCustomColor={(idx, c) => setGameState(p => { const n = [...p.customColors]; n[idx] = c; return { ...p, customColors: n }; })} 
+          fontSize={gameState.settings.fontSize || 'medium'} 
       />
       <MessagesDialog 
           isOpen={isMessagesOpen} 
           onClose={() => setIsMessagesOpen(false)} 
           messages={gameState.messages} 
           leaderboard={gameState.leaderboard}
-          fontSize={gameState.settings.fontSize || 'medium'}
+          fontSize={gameState.settings.fontSize || 'medium'} 
       />
+      {selectedFitting && (
+          <CargoDialog 
+              isOpen={isCargoOpen} 
+              onClose={() => setIsCargoOpen(false)} 
+              fitting={selectedFitting} 
+              shipConfig={selectedShipConfig} 
+              reserves={currentReserves} 
+              selectedCargoIdx={selectedCargoIdx} 
+              selectedReserveIdx={selectedReserveIdx} 
+              setSelectedCargoIdx={setSelectedCargoIdx} 
+              setSelectedReserveIdx={setSelectedReserveIdx} 
+              onMoveItems={moveItems} 
+              onMoveAll={moveAllItems} 
+              fontSize={gameState.settings.fontSize || 'medium'}
+          />
+      )}
+      
       <MarketDialog 
-          isOpen={isMarketOpen} 
-          onClose={() => setIsMarketOpen(false)} 
-          marketTab={marketTab} 
-          setMarketTab={setMarketTab} 
-          currentReserves={currentReserves} 
-          credits={gameState.credits} 
-          testMode={!!gameState.settings.testMode} 
-          marketBuy={marketBuy} 
-          marketSell={marketSell} 
-          fontSize={gameState.settings.fontSize || 'medium'}
-          currentPlanet={gameState.dockedPlanetId ? PLANETS.find(p => p.id === gameState.dockedPlanetId) || PLANETS[0] : PLANETS[0]}
-          marketListings={gameState.marketListingsByPlanet[dockedId] || []}
-          shipFitting={selectedFitting || undefined}
-          shipConfig={selectedShipConfig}
+        isOpen={isMarketOpen} 
+        onClose={() => setIsMarketOpen(false)} 
+        marketTab={marketTab} 
+        setMarketTab={setMarketTab} 
+        currentReserves={currentReserves} 
+        credits={gameState.credits} 
+        testMode={!!gameState.settings.testMode} 
+        marketBuy={marketBuy} 
+        marketSell={marketSell} 
+        fontSize={gameState.settings.fontSize}
+        currentPlanet={dockedPlanet || PLANETS[0]}
+        marketListings={gameState.marketListingsByPlanet[dockedId] || []}
+        shipFitting={selectedFitting || undefined}
+        shipConfig={selectedShipConfig || undefined}
       />
-      <CargoDialog 
-          isOpen={isCargoOpen} 
-          onClose={() => setIsCargoOpen(false)} 
-          fitting={selectedFitting!} 
-          shipConfig={selectedShipConfig} 
-          reserves={currentReserves} 
-          selectedCargoIdx={selectedCargoIdx} 
-          selectedReserveIdx={selectedReserveIdx} 
-          setSelectedCargoIdx={setSelectedCargoIdx} 
-          setSelectedReserveIdx={setSelectedReserveIdx} 
-          onMoveItems={moveItems} 
-          onMoveAll={moveAllItems} 
-          fontSize={gameState.settings.fontSize || 'medium'}
-      />
+      
       <ManualDialog 
           isOpen={isManualOpen} 
           onClose={() => setIsManualOpen(false)} 
           manualPage={manualPage} 
           setManualPage={setManualPage} 
-          fontSize={gameState.settings.fontSize || 'medium'}
+          fontSize={gameState.settings.fontSize || 'medium'} 
       />
     </>
   );
