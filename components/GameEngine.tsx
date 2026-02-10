@@ -1073,15 +1073,15 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
                         if (Math.random() < equipChance) {
                             if (Math.random() < 0.5) {
-                                // WEAPON DROP MODIFICATION HERE
+                                // WEAPON DROP MODIFICATION
                                 let dropSlot = 0;
                                 if (quadrant === QuadrantType.ALFA && difficulty === 1) {
-                                    // 10% Chance for Secondary (Slot 1)
+                                    // 10% shift: increase probability for secondary weapon
                                     if (Math.random() < 0.1) dropSlot = 1;
                                 }
 
-                                let wId = e.equippedWeapons[dropSlot]?.id;
-                                if (!wId) wId = e.equippedWeapons[0]?.id; // Fallback
+                                let wId = e.equippedWeapons[dropSlot]?.id || e.equippedWeapons[0]?.id; // Prefer selected slot, fallback to main
+                                if (!wId) wId = e.equippedWeapons[0]?.id;
 
                                 let wDef = WEAPONS.find(w => w.id === wId);
                                 if (!wDef) {

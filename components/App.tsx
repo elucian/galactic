@@ -21,7 +21,7 @@ import GameEngine from './GameEngine.tsx';
 import { LandingScene } from './LandingScene.tsx';
 import { VictoryScene } from './VictoryScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_39'; 
+const SAVE_KEY = 'galactic_defender_beta_40'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -77,13 +77,9 @@ export default function App() {
     initialOwned.forEach((os, idx) => { 
       const config = SHIPS.find(s => s.id === os.shipTypeId)!;
       const weapons = Array(3).fill(null);
-      const shipIndex = SHIPS.findIndex(s => s.id === config.id);
       
-      if (shipIndex >= 3 && shipIndex <= 4) {
-          weapons[0] = { id: 'gun_photon', count: 1 };
-      } else {
-          weapons[0] = { id: 'gun_pulse', count: 1 };
-      }
+      // All starter ships get Level 1 Pulse Laser for balance
+      weapons[0] = { id: 'gun_pulse', count: 1 };
 
       initialFittings[os.instanceId] = { 
           weapons, 
@@ -108,7 +104,7 @@ export default function App() {
     
     PLANETS.forEach((p, i) => {
       initialOffsets[p.id] = Math.random() * Math.PI * 2;
-      // Set Terra Nova (i===0) to siege initially instead of friendly
+      // Set Terra Nova (i===0) to siege initially
       initialRegistry[p.id] = { id: p.id, status: i === 0 ? 'siege' : p.status, wins: 0, losses: 0 };
     });
 
@@ -118,7 +114,7 @@ export default function App() {
         category: 'system', 
         pilotName: 'COMMAND', 
         pilotAvatar: '🛰️', 
-        text: 'Terra Nova is under siege. Scramble all fighters.', 
+        text: 'Terra Nova is under siege. Defend the colony immediately.', 
         timestamp: Date.now() 
     };
 
@@ -151,7 +147,7 @@ export default function App() {
         if (!parsed.marketListingsByPlanet) parsed.marketListingsByPlanet = {};
         if (!parsed.marketRefreshes) parsed.marketRefreshes = {};
         
-        // MIGRATION: FIX UNDEFINED COLORS
+        // MIGRATION: FIX UNDEFINED COLORS AND PROPERTIES
         if (!parsed.shipCockpitHighlightColors) parsed.shipCockpitHighlightColors = {};
         if (!parsed.shipWingColors) parsed.shipWingColors = {};
         if (!parsed.shipCockpitColors) parsed.shipCockpitColors = {};
@@ -426,23 +422,6 @@ export default function App() {
               });
           }
       });
-
-      // Special Request: Ensure shields available on Terra Nova
-      if (planetId === 'p1') {
-          const basicShield = SHIELDS.find(s => s.id === 'sh_alpha');
-          if (basicShield) {
-             newListings.push({
-                  instanceId: `market_${planetId}_${basicShield.id}_forced_${Date.now()}`,
-                  id: basicShield.id,
-                  type: 'shield',
-                  name: basicShield.name,
-                  quantity: 10,
-                  weight: 1,
-                  price: basicShield.price,
-                  description: 'Standard Defense System'
-              });
-          }
-      }
 
       const exoticPool = [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
       exoticPool.forEach(e => {
@@ -1063,7 +1042,7 @@ export default function App() {
                 </div>
 
                 <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em] pointer-events-auto`}>
-                  Beta 39 - February <span 
+                  Beta 40 - February <span 
                       onClick={() => { 
                           if(gameState.settings.testMode) { 
                               setVictoryMode('cinematic'); // ALWAYS FORCE CINEMATIC FOR TESTING
