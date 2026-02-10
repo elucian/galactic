@@ -9,7 +9,7 @@ import { Projectile, Particle, Loot, GameEngineState } from './game/types.ts';
 import { Asteroid } from './game/Asteroid.ts';
 import { calculateDamage, OCTO_COLORS } from './game/utils.ts';
 import { GameHUD } from './game/GameHUD.tsx';
-import { fireMissile, fireMine, fireRedMine, firePowerShot, fireNormalShot, fireAlienWeapons, fireWingWeapon, createExplosion, createAreaDamage, takeDamage, applyShieldRamDamage, applyJetDamage } from './game/CombatMechanics.ts';
+import { fireMissile, fireMine, fireRedMine, firePowerShot, fireNormalShot, fireAlienWeapons, fireWingWeapon, createExplosion, createAreaDamage, takeDamage, applyShieldRamDamage, applyJetDamage, fireBlasterPistol } from './game/CombatMechanics.ts';
 import { renderGame } from './game/GameRenderer.ts';
 
 interface GameEngineProps {
@@ -373,9 +373,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             audioService.playSfx('click');
         }
 
-        if(!state.current.paused && state.current.active && !state.current.rescueMode) {
-            if(e.code === 'KeyB') fireRedMine(state.current, setHud); 
-            if(e.code === 'KeyN' || e.code === 'NumpadEnter' || e.code === 'Enter') fireMine(state.current, 'both');
+        if(!state.current.paused && state.current.active) {
+            // Missile/Mine triggers
+            if (!state.current.rescueMode) {
+                if(e.code === 'KeyB') fireRedMine(state.current, setHud); 
+                if(e.code === 'KeyN' || e.code === 'NumpadEnter' || e.code === 'Enter') fireMine(state.current, 'both');
+            }
             
             if (e.code === 'Space') inputRef.current.main = true;
             if (e.code === 'ControlLeft' || e.code === 'ControlRight') inputRef.current.secondary = true;
@@ -398,7 +401,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
   useEffect(() => {
     const cvs = canvasRef.current; if(!cvs) return;
-    const ctx = cvs.getContext('2d'); if(!ctx) return;
+    const ctx = cvs.getContext('2d', { alpha: false }); if(!ctx) return;
     let raf: number;
     const s = state.current;
 
@@ -780,7 +783,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             // Consumes Reactor Energy to recharge Capacitor
             // Only recharge if not actively firing Power Shot (to allow drain)
             const capDeficit = 100 - s.capacitor;
-            const canRecharge = capDeficit > 0 && !s.rescueMode && !(s.isShooting && s.capsLock && !s.capacitorLocked);
+            const canRecharge = capDeficit > 0 && !(s.isShooting && s.capsLock && !s.capacitorLocked);
             
             if (canRecharge) {
                 // Recharge Speed: Linear
@@ -812,14 +815,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             
             if (activeShip.config.isAlien) { 
                 if (isFiring) {
-                    // Allow aliens to use Power Shot if Test Mode is active (via God Mode shield usually, or global test flag)
-                    // We assume 'isTestMode' here is sufficient, or check global context if available.
-                    // Since we don't have direct access to 'gameState.settings.testMode' here easily without prop drilling,
-                    // we'll rely on the existing 'capsLock' check combined with alien logic.
-                    // Actually, let's just allow it if caps lock is on for aliens, assuming user knows what they are doing or it's a feature.
-                    // The prompt says "Enable power shot in test mode". Let's assume if they have caps lock on, they want it.
-                    // But to be safe, let's just enable it.
-                    
                     if (s.capsLock && !s.capacitorLocked) {
                          const capRatio = s.capacitor / 100;
                          const baseDelay = 6; 
@@ -871,6 +866,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             if (firingSecondary && !activeShip.config.isAlien) { 
                 fireWingWeapon(s, activeShip, 1, sizeScale);
                 fireWingWeapon(s, activeShip, 2, sizeScale);
+            }
+        } else {
+            // RESCUE MODE LOGIC - Personal Blaster
+            if (isFiring) {
+                fireBlasterPistol(s);
             }
         }
 
@@ -934,25 +934,69 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             const canSpawn = s.enemies.length < maxEnemies;
 
             if (canSpawn && Date.now() - s.lastSpawn > 1500 && !s.rescueMode) { 
-                let spawnPool = SHIPS.filter(s => !s.isAlien); 
-                if (difficulty >= 2) spawnPool = [...spawnPool, ...SHIPS.filter(s => s.isAlien)];
+                let spawnPool: ExtendedShipConfig[] = [];
+                let isRareAlien = false;
+
+                // SHIP SELECTION LOGIC based on Quadrant
+                // Alpha (Diff 1-3): Vanguard (0), Ranger (1)
+                // Beta (Diff 4-6): Ranger (1), Eclipse (2)
+                // Gamma (Diff 7-9): Eclipse (2), Striker (3)
+                // Delta (Diff 10-12): Striker (3), Behemoth (4)
+                
+                let shipIndexBase = 0;
+                if (quadrant === QuadrantType.ALFA) shipIndexBase = 0;
+                else if (quadrant === QuadrantType.BETA) shipIndexBase = 1;
+                else if (quadrant === QuadrantType.GAMA) shipIndexBase = 2;
+                else if (quadrant === QuadrantType.DELTA) shipIndexBase = 3;
+
+                // Rare Alien Injection (Gamma & Delta only)
+                if (quadrant === QuadrantType.GAMA || quadrant === QuadrantType.DELTA) {
+                    const alienChance = quadrant === QuadrantType.DELTA ? 0.15 : 0.05;
+                    if (Math.random() < alienChance) {
+                        spawnPool = SHIPS.filter(s => s.isAlien);
+                        isRareAlien = true;
+                    }
+                }
+
+                if (!isRareAlien) {
+                    const shipA = SHIPS[shipIndexBase];
+                    const shipB = SHIPS[Math.min(SHIPS.length - 1, shipIndexBase + 1)]; // Ensure no overflow, though logic caps at 3+1=4 (Behemoth)
+                    
+                    // Probability Shift: 
+                    // Level 1 of Quadrant -> Mostly Ship A
+                    // Level 3 of Quadrant -> Mostly Ship B
+                    const progress = (difficulty - 1) % 3; // 0, 1, 2
+                    const chanceB = 0.2 + (progress * 0.3); // 0.2, 0.5, 0.8
+                    
+                    if (Math.random() < chanceB) {
+                        spawnPool = [shipB];
+                    } else {
+                        spawnPool = [shipA];
+                    }
+                }
+
                 const selectedShip = spawnPool[Math.floor(Math.random() * spawnPool.length)] || SHIPS[0]; 
                 
                 let spawnBatch = 1;
-                if (quadrant === QuadrantType.GAMA) spawnBatch = 2; 
-                if (quadrant === QuadrantType.DELTA) spawnBatch = Math.random() > 0.5 ? 2 : 1;
+                
+                if (isRareAlien) {
+                    spawnBatch = 1; // Solo
+                } else {
+                    if (quadrant === QuadrantType.GAMA) spawnBatch = 2; 
+                    if (quadrant === QuadrantType.DELTA) spawnBatch = Math.random() > 0.5 ? 2 : 1;
+                }
 
                 if (s.enemies.length + spawnBatch > maxEnemies) spawnBatch = maxEnemies - s.enemies.length;
 
                 if (spawnBatch > 0) {
                     const squadId = Math.floor(Math.random() * 100000);
                     
-                    if (quadrant === QuadrantType.GAMA && spawnBatch === 2) {
+                    if (quadrant === QuadrantType.GAMA && spawnBatch === 2 && !isRareAlien) {
                         const leftEnemy = new Enemy(width * 0.25, -50, 'fighter', selectedShip, difficulty, quadrant, squadId, 0, 'z');
                         const rightEnemy = new Enemy(width * 0.75, -50, 'fighter', selectedShip, difficulty, quadrant, squadId, 0, 'mirror_z');
                         s.enemies.push(leftEnemy, rightEnemy);
                     } 
-                    else if (quadrant === QuadrantType.DELTA) {
+                    else if (quadrant === QuadrantType.DELTA && !isRareAlien) {
                         for(let i=0; i<spawnBatch; i++) {
                              const side = Math.random() > 0.5 ? 'left' : 'right';
                              const startX = side === 'left' ? 50 : width - 50;
@@ -998,46 +1042,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (e.hp < e.maxHp && e.hp > 0) {
                     if (e.hp < e.maxHp * 0.9 && Math.random() < 0.2) s.particles.push({ x: e.x + (Math.random()-0.5)*30, y: e.y + (Math.random()-0.5)*30, vx: (Math.random()-0.5)*2, vy: (Math.random()-0.5)*2, life: 0.5 + Math.random()*0.5, size: 3 + Math.random()*4, color: '#52525b', type: 'smoke' });
                     if (e.hp < e.maxHp * 0.5 && Math.random() < 0.3) s.particles.push({ x: e.x + (Math.random()-0.5)*20, y: e.y + (Math.random()-0.5)*20, vx: (Math.random()-0.5), vy: (Math.random()-0.5), life: 0.4 + Math.random()*0.3, size: 2 + Math.random()*3, color: '#ef4444', type: 'fire' });
-                }
-                if (difficulty >= 2 && e.type !== 'boss') {
-                    let fireInterval = 180; 
-                    if (quadrant === QuadrantType.BETA) fireInterval = 140;
-                    if (quadrant === QuadrantType.GAMA) fireInterval = 90; 
-                    if (quadrant === QuadrantType.DELTA) fireInterval = 45; 
-                    
-                    if (e.config.isAlien) fireInterval = Math.floor(fireInterval * 0.8);
-
-                    if (s.frame % fireInterval === 0 && Math.abs(e.x - s.px) < 300) {
-                        let firedMissile = false;
-                        
-                        // NEW: Delta Quadrant Alien Missile Capability
-                        if (quadrant === QuadrantType.DELTA) {
-                            // Base 10%, max 30%. Difficulty for Delta starts at 10.
-                            // Map diff 10->0.1, 11->0.2, 12->0.3
-                            const chance = Math.min(0.3, 0.1 + (Math.max(0, difficulty - 10) * 0.1));
-                            
-                            if (Math.random() < chance) {
-                                s.bullets.push({ 
-                                    x: e.x, y: e.y + 20, vx: 0, vy: 5, 
-                                    damage: 80, color: '#ef4444', type: 'missile_enemy', life: 300, isEnemy: true, 
-                                    width: 10, height: 20, homingState: 'searching', launchTime: s.frame, 
-                                    headColor: '#ef4444', finsColor: '#7f1d1d', turnRate: 0.025, maxSpeed: 8, z: 0 
-                                });
-                                audioService.playWeaponFire('missile', 0);
-                                firedMissile = true;
-                            }
-                        }
-
-                        if (!firedMissile) {
-                            const w = e.equippedWeapons[0]; 
-                            if (w) { 
-                                s.bullets.push({ x: e.x, y: e.y + 20, vx: 0, vy: 5, damage: 10, color: '#ef4444', type: 'projectile', life: 100, isEnemy: true, width: 6, height: 12 }); 
-                            }
-                        }
-                    }
-                }
-                if (e.type === 'boss') {
-                    // Boss firing is handled inside Enemy.ts directly to coordinate patterns
                 }
                 
                 if (Math.abs(e.z) < 50 && Math.hypot(e.x-s.px, e.y-s.py) < (60 * sizeScale)) {
@@ -1088,9 +1092,17 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     } else {
                         audioService.playExplosion(e.x, 1.0, 'normal');
                         s.score += 100 * difficulty;
-                        if (Math.random() < 0.5) {
+                        
+                        // NEW LOOT LOGIC
+                        // 10% Chance to drop equipped weapon
+                        if (Math.random() < 0.1 && e.equippedWeapons[0]) {
+                            const wId = e.equippedWeapons[0].id;
+                            const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === wId);
+                            if (wDef) {
+                                spawnLoot(e.x, e.y, 0, 'weapon', wId, wDef.name, 1);
+                            }
+                        } else if (Math.random() < 0.4) { // 40% Chance for other supplies
                             if (Math.random() < 0.5) {
-                                // Updated to spawn with ID 'batt_cell' for Energy
                                 spawnLoot(e.x, e.y, 0, 'energy', 'batt_cell', 'Energy Pack', 1);
                             } else {
                                 const ammos = ['iron', 'titanium', 'cobalt', 'iridium', 'tungsten', 'explosive'];
@@ -1099,6 +1111,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             }
                         }
                     }
+                } else if (e.hp <= 0 && s.rescueMode) {
+                    // Score even in rescue mode if killed
+                    audioService.playExplosion(e.x, 1.0, 'normal');
+                    createExplosion(s, e.x, e.y, '#f97316', 15);
+                    s.score += 50 * difficulty;
                 }
                 s.enemies.splice(i, 1);
             }
@@ -1505,20 +1522,37 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         <canvas ref={canvasRef} className="block w-full h-full" />
         
         <GameHUD 
-            hud={hud}
-            shield={shield}
-            secondShield={secondShield}
-            maxEnergy={maxEnergy}
-            maxFuel={maxFuel}
-            maxWater={maxWater}
-            hasGuns={hasGuns}
-            hasAmmoWeapons={hasAmmoWeapons}
-            maxAmmoInMags={maxAmmoInMags}
+            hud={hud} 
+            shield={shield} 
+            secondShield={secondShield} 
+            maxEnergy={maxEnergy} 
+            maxFuel={maxFuel} 
+            maxWater={maxWater} 
+            hasGuns={!!activeShip.fitting.weapons[0]} 
+            hasAmmoWeapons={!!activeShip.fitting.weapons[1] || !!activeShip.fitting.weapons[2]} 
+            maxAmmoInMags={200}
             fontSize={fontSize}
             onPauseToggle={() => togglePause()}
-            onAbort={() => { const s = state.current; onGameOver(false, hud.score, true, { health: s.hp, fuel: s.fuel, water: s.water }); }}
-            onExitDialogClose={() => { state.current.isExitDialogOpen = false; setShowExitDialog(false); togglePause(false); }}
-            onExitGame={handleExit}
+            onAbort={() => {
+                const s = state.current;
+                onGameOver(false, s.score, true, {
+                    health: s.hp,
+                    fuel: s.fuel,
+                    water: s.water,
+                    rockets: s.missiles,
+                    mines: s.mines,
+                    redMineCount: s.redMines,
+                    cargo: s.cargo,
+                    ammo: s.ammo,
+                    magazineCurrent: Object.values(s.gunStates)[0]?.mag || s.magazineCurrent,
+                    reloadTimer: s.reloadTimer,
+                    weapons: activeShip.fitting.weapons,
+                    shieldId: activeShip.fitting.shieldId,
+                    secondShieldId: activeShip.fitting.secondShieldId
+                });
+            }}
+            onExitDialogClose={() => setShowExitDialog(false)}
+            onExitGame={() => handleExit()}
             showExitDialog={showExitDialog}
             fireMissile={() => fireMissile(state.current)}
             fireMine={() => fireMine(state.current)}

@@ -2,6 +2,7 @@
 import { ExtendedShipConfig, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS } from '../../constants';
 import { ShipPart, Shield, EquippedWeapon, WeaponType } from '../../types';
 import { getEngineCoordinates, getWingMounts } from '../../utils/drawingUtils';
+import { resolveColor } from '../../utils/patternUtils';
 
 export const drawRetro = (ctx: CanvasRenderingContext2D, x: number, y: number, angleDeg: number, usingWater: boolean) => {
     // Legacy function, using drawJet internally now for consistency if called
@@ -109,7 +110,8 @@ export const drawShip = (
         ctx.save();
         ctx.translate(50, 50);
         
-        ctx.fillStyle = '#e2e8f0'; 
+        // Use resolved hull color for the egg body
+        ctx.fillStyle = resolveColor(ctx, hullColor || config.defaultColor || '#e2e8f0'); 
         ctx.beginPath();
         ctx.ellipse(0, 5, 20, 28, 0, 0, Math.PI * 2); 
         ctx.fill();
@@ -117,7 +119,7 @@ export const drawShip = (
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        ctx.fillStyle = cockpitColor || '#0ea5e9';
+        ctx.fillStyle = resolveColor(ctx, cockpitColor || '#0ea5e9');
         ctx.beginPath();
         ctx.ellipse(0, -2, 12, 16, 0, 0, Math.PI * 2);
         ctx.fill();
@@ -127,7 +129,7 @@ export const drawShip = (
         ctx.ellipse(-4, -6, 3, 5, -0.3, 0, Math.PI * 2);
         ctx.fill();
 
-        ctx.fillStyle = engineColor || '#334155';
+        ctx.fillStyle = resolveColor(ctx, engineColor || '#334155');
         ctx.fillRect(-6, 28, 12, 6);
         
         if (movement?.up && !forceMainJetsOff) {
@@ -141,7 +143,7 @@ export const drawShip = (
         const { wingStyle, hullShapeType } = config;
         
         // 1. WINGS
-        ctx.fillStyle = wingColor || config.defaultColor || '#64748b';
+        ctx.fillStyle = resolveColor(ctx, wingColor || config.defaultColor || '#64748b');
         ctx.beginPath();
         if (config.isAlien) {
             ctx.lineWidth = 14; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = ctx.fillStyle;
@@ -221,11 +223,11 @@ export const drawShip = (
             const drawX = eng.x - (eng.w+2)/2;
             const drawY = eng.y;
             // Body
-            ctx.fillStyle = eColor;
+            ctx.fillStyle = resolveColor(ctx, eColor);
             if (config.isAlien) { ctx.beginPath(); ctx.ellipse(eng.x, eng.y + (eng.h+2)/2, (eng.w+2)/2, (eng.h+2)/2, 0, 0, Math.PI * 2); ctx.fill(); }
             else { ctx.fillRect(drawX, drawY, eng.w+2, eng.h+2); }
             // Nozzle
-            ctx.fillStyle = nColor;
+            ctx.fillStyle = resolveColor(ctx, nColor);
             const nH = config.isAlien ? 6 : 5;
             const flare = config.isAlien ? 4 : 3;
             const inset = config.isAlien ? 1 : 0;
@@ -242,7 +244,7 @@ export const drawShip = (
         });
 
         // 4. HULL
-        ctx.fillStyle = hullColor || config.defaultColor || '#94a3b8';
+        ctx.fillStyle = resolveColor(ctx, hullColor || config.defaultColor || '#94a3b8');
         ctx.beginPath();
         if (wingStyle === 'x-wing') { ctx.ellipse(50, 50, 18, 45, 0, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#64748b'; ctx.fillRect(36, 40, 4, 20); ctx.fillRect(60, 40, 4, 20); }
         else if (hullShapeType === 'none') { }
@@ -256,7 +258,7 @@ export const drawShip = (
         ctx.fill();
 
         // 5. COCKPIT
-        ctx.fillStyle = cockpitColor || '#0ea5e9';
+        ctx.fillStyle = resolveColor(ctx, cockpitColor || '#0ea5e9');
         ctx.beginPath();
         if (config.isAlien) { const cy = wingStyle === 'alien-a' ? 65 : 45; ctx.ellipse(50, cy, 8, 20, 0, 0, Math.PI * 2); } 
         else if (wingStyle === 'x-wing') { ctx.ellipse(50, 55, 8, 12, 0, 0, Math.PI * 2); } 
@@ -311,12 +313,12 @@ export const drawShip = (
 
             if (def && def.type === WeaponType.PROJECTILE && !isExotic) {
                 // Ballistic Gun
-                ctx.fillStyle = bodyCol;
+                ctx.fillStyle = resolveColor(ctx, bodyCol);
                 if (id.includes('vulcan')) ctx.fillRect(-4.25, 0, 8.5, 12);
                 else ctx.fillRect(-4.25, 0, 8.5, 10);
                 
                 // Barrel with Heat
-                ctx.fillStyle = heatColor || '#52525b';
+                ctx.fillStyle = resolveColor(ctx, heatColor || '#52525b');
                 
                 const isRotary = (def.barrelCount || 1) > 1;
                 if (isRotary) {
@@ -376,10 +378,10 @@ export const drawShip = (
                 }
             } else {
                 // Energy / Exotic
-                ctx.fillStyle = isAlien ? '#374151' : bodyCol;
+                ctx.fillStyle = resolveColor(ctx, isAlien ? '#374151' : bodyCol);
                 ctx.fillRect(-4.25, 0, 8.5, 10);
                 // Crystal
-                ctx.fillStyle = crystalCol;
+                ctx.fillStyle = resolveColor(ctx, crystalCol);
                 if (id?.includes('plasma') || isExotic) {
                     ctx.beginPath(); ctx.arc(0, -8, 3, 0, Math.PI*2); ctx.fill();
                 } else {

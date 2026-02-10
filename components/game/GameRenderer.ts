@@ -117,7 +117,9 @@ export const renderGame = (
                 color: e.type==='boss'?'#a855f7':alienCols.hull, 
                 wingColor: e.type==='boss'?'#d8b4fe':alienCols.wing, 
                 gunColor: '#ef4444', 
-                equippedWeapons: e.equippedWeapons 
+                equippedWeapons: e.equippedWeapons,
+                weaponFireTimes: e.weaponFireTimes, // Tracking for muzzle flash
+                weaponHeat: e.weaponHeat            // Tracking for barrel heat
             }, false, enemyMovement, false, false, forceEnemyJetsOff, globalScale);
 
             if (e.shieldLayers.length > 0) { 

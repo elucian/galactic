@@ -170,23 +170,32 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
       
       const calcItems = () => {
           if (!listContainerRef.current) return;
+          
           const h = listContainerRef.current.clientHeight;
           // Approximate item heights based on font size + padding + border
-          let itemHeight = 66; // Medium default
+          // Optimized for tighter fit across devices
+          let itemHeight = 64; // Medium default (reduced from 66)
           if (fontSize === 'small') itemHeight = 54;
-          if (fontSize === 'large') itemHeight = 80;
-          if (fontSize === 'extra-large') itemHeight = 92;
+          if (fontSize === 'large') itemHeight = 76;
+          if (fontSize === 'extra-large') itemHeight = 88;
           
           const count = Math.floor(h / itemHeight);
-          // Ensure at least 4 items to prevent broken UI
-          setItemsPerPage(Math.max(4, count));
+          // Allow fewer items on short screens to maintain pagination flow
+          setItemsPerPage(Math.max(2, count));
       };
 
       const observer = new ResizeObserver(calcItems);
       observer.observe(listContainerRef.current);
+      
+      // Listen to window resize to switch modes (Mobile/Desktop)
+      window.addEventListener('resize', calcItems);
+      
       calcItems(); // Initial
 
-      return () => observer.disconnect();
+      return () => {
+          observer.disconnect();
+          window.removeEventListener('resize', calcItems);
+      };
   }, [fontSize, isOpen]);
 
   const handleItemClick = (idx: number) => {
@@ -518,9 +527,9 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
           
           <div className="flex-grow flex flex-col md:flex-row overflow-hidden relative">
                 {/* LEFT PANEL: LISTING */}
-                <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col border-b-2 md:border-b-0 md:border-r-2 border-zinc-800 bg-zinc-900/20 relative">
+                <div className="w-full md:w-1/2 lg:w-2/5 flex flex-col h-full border-b-2 md:border-b-0 md:border-r-2 border-zinc-800 bg-zinc-900/20 relative">
                     
-                    <div ref={listContainerRef} className="flex-grow overflow-y-hidden p-2 space-y-1">
+                    <div ref={listContainerRef} className="flex-grow overflow-y-auto md:overflow-y-hidden p-2 space-y-1 custom-scrollbar">
                         {displayItems.length === 0 ? (
                             <div className="flex flex-col items-center justify-center h-40 opacity-30 mt-10">
                                 <span className="text-2xl text-zinc-600 mb-2">∅</span>
@@ -565,39 +574,42 @@ export const MarketDialog: React.FC<MarketDialogProps> = ({
                         )}
                     </div>
 
-                    {/* PAGINATION FOOTER */}
-                    <div className="p-3 border-t border-zinc-800 bg-zinc-950 flex justify-between items-center shrink-0 shadow-[0_-5px_15px_rgba(0,0,0,0.5)] z-30 h-16">
+                    {/* PAGINATION FOOTER - VISIBLE ON ALL DEVICES */}
+                    <div className="flex p-3 border-t-2 border-zinc-800 bg-zinc-950 justify-between items-center shrink-0 shadow-[0_-5px_15px_rgba(0,0,0,0.8)] z-30 h-20 safe-area-bottom">
                         {totalPages > 1 ? (
                             <>
                                 <button 
                                     onClick={() => currentPage > 0 && setCurrentPage(p => p - 1)}
                                     disabled={currentPage === 0}
-                                    className={`w-12 h-10 flex items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-[9px] font-black uppercase tracking-wider transition-all ${currentPage === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:border-white hover:text-white active:scale-95'}`}
+                                    className={`w-16 h-12 flex items-center justify-center rounded-lg border-2 border-zinc-700 bg-zinc-900 text-[10px] font-black uppercase tracking-wider transition-all ${currentPage === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:border-white hover:text-white active:scale-95 shadow-lg'}`}
                                 >
-                                    Prev
+                                    PREV
                                 </button>
                                 
-                                <div className="flex gap-2">
-                                    {totalPages <= 8 ? (
-                                        Array.from({ length: totalPages }).map((_, i) => (
-                                            <div 
-                                                key={i} 
-                                                className={`rounded-full transition-all duration-300 ${i === currentPage ? 'bg-emerald-500 w-2 h-2 scale-125 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-zinc-700 w-1.5 h-1.5'}`}
-                                            />
-                                        ))
-                                    ) : (
-                                        <div className="text-[9px] font-black text-zinc-500 uppercase tracking-widest">
-                                            PAGE {currentPage + 1} / {totalPages}
-                                        </div>
-                                    )}
+                                <div className="flex flex-col items-center gap-1">
+                                    <div className="flex gap-2">
+                                        {totalPages <= 8 ? (
+                                            Array.from({ length: totalPages }).map((_, i) => (
+                                                <div 
+                                                    key={i} 
+                                                    className={`rounded-full transition-all duration-300 ${i === currentPage ? 'bg-emerald-500 w-2.5 h-2.5 scale-125 shadow-[0_0_8px_rgba(16,185,129,0.8)]' : 'bg-zinc-700 w-2 h-2'}`}
+                                                />
+                                            ))
+                                        ) : (
+                                            <div className="text-[10px] font-black text-zinc-500 uppercase tracking-widest bg-zinc-900 px-3 py-1 rounded border border-zinc-800">
+                                                PAGE {currentPage + 1} / {totalPages}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="text-[8px] text-zinc-600 font-mono tracking-widest mt-1">LISTING {currentPage * itemsPerPage + 1} - {Math.min((currentPage + 1) * itemsPerPage, displayItems.length)} OF {displayItems.length}</div>
                                 </div>
 
                                 <button 
                                     onClick={() => currentPage < totalPages - 1 && setCurrentPage(p => p + 1)}
                                     disabled={currentPage === totalPages - 1}
-                                    className={`w-12 h-10 flex items-center justify-center rounded border border-zinc-700 bg-zinc-900 text-[9px] font-black uppercase tracking-wider transition-all ${currentPage === totalPages - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:border-white hover:text-white active:scale-95'}`}
+                                    className={`w-16 h-12 flex items-center justify-center rounded-lg border-2 border-zinc-700 bg-zinc-900 text-[10px] font-black uppercase tracking-wider transition-all ${currentPage === totalPages - 1 ? 'opacity-30 cursor-not-allowed' : 'hover:border-white hover:text-white active:scale-95 shadow-lg'}`}
                                 >
-                                    Next
+                                    NEXT
                                 </button>
                             </>
                         ) : (

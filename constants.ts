@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 35
-// VERSION: Beta 35 - February 2026
+// CHECKPOINT: Beta 37
+// VERSION: Beta 37 - February 2026
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;
@@ -60,7 +60,7 @@ export interface ExtendedShipConfig extends ShipConfig {
   maxWater?: number;
 }
 
-// --- LOCKED: SHIP DESIGNS (DO NOT MODIFY WITHOUT EXPLICIT REQUEST) ---
+// --- LOCKED: SHIP DESIGNS ---
 export const SHIPS: ExtendedShipConfig[] = [
   { 
     id: 'vanguard', 
@@ -117,13 +117,40 @@ export const SHIPS: ExtendedShipConfig[] = [
     noseGunColor: '#3b82f6' 
   },
   { 
-    id: 'striker', 
-    name: 'Heavy Fighter', 
-    description: 'Class 3 Combat Fighter. Reinforced hull and upgraded reactor for extended engagements. Limited cargo.', 
+    id: 'eclipse', 
+    name: 'Stealth Infiltrator', 
+    description: 'Class 3 Tactical Fighter. Advanced stealth geometry with mid-range capabilities. Agile but lightly armored.', 
     price: 95000, 
     maxEnergy: 6000, 
     maxCargo: 450, 
-    speed: 6.5, 
+    speed: 8.0, 
+    shape: 'stealth', 
+    canLayMines: true, 
+    defaultColor: '#312e81', // Midnight Indigo
+    engines: 2, 
+    defaultGuns: 3, 
+    noseType: 'rounded', 
+    wingConfig: 'rear-heavy', 
+    gunMount: 'hull', 
+    wingStyle: 'pincer', 
+    wingCurve: 'forward', 
+    hullShapeType: 'rounded', 
+    extraDetail: 'both', 
+    maxFuel: 7.0,
+    maxWater: 150,
+    landingGearType: 'insect',
+    noseGunDamage: 80,
+    noseGunCooldown: 200,
+    noseGunColor: '#3b82f6'
+  },
+  { 
+    id: 'striker', 
+    name: 'Heavy Fighter', 
+    description: 'Class 4 Assault Ship. Reinforced dragonfly chassis with massive cargo hold and superior reactor output.', 
+    price: 180000, 
+    maxEnergy: 10000, 
+    maxCargo: 800, 
+    speed: 6.0, 
     shape: 'dragonfly', 
     canLayMines: true, 
     defaultColor: '#d97706', // Industrial Orange
@@ -136,39 +163,12 @@ export const SHIPS: ExtendedShipConfig[] = [
     wingCurve: 'forward', 
     hullShapeType: 'finger', 
     extraDetail: 'reservoir', 
-    maxFuel: 7.0,
-    maxWater: 150,
-    landingGearType: 'telescopic',
-    noseGunDamage: 80,
-    noseGunCooldown: 200,
-    noseGunColor: '#ef4444' 
-  },
-  { 
-    id: 'eclipse', 
-    name: 'Stealth Infiltrator', 
-    description: 'Class 4 Advanced Tech. Tri-engine inverted wing configuration. Superior speed and energy density.', 
-    price: 180000, 
-    maxEnergy: 10000, 
-    maxCargo: 800, 
-    speed: 8.5, 
-    shape: 'stealth', 
-    canLayMines: true, 
-    defaultColor: '#312e81', // Midnight Indigo
-    engines: 1, 
-    defaultGuns: 3, 
-    noseType: 'flat', 
-    wingConfig: 'rear-heavy', 
-    gunMount: 'hull', 
-    wingStyle: 'pincer', 
-    wingCurve: 'forward', 
-    hullShapeType: 'needle', 
-    extraDetail: 'both', 
     maxFuel: 9.0,
     maxWater: 180,
-    landingGearType: 'insect',
+    landingGearType: 'telescopic',
     noseGunDamage: 100,
     noseGunCooldown: 150,
-    noseGunColor: '#3b82f6'
+    noseGunColor: '#ef4444' 
   },
   { 
     id: 'behemoth', 
@@ -198,7 +198,6 @@ export const SHIPS: ExtendedShipConfig[] = [
     noseGunColor: '#ef4444' 
   },
   // --- LOCKED: ALIEN SHIP DESIGNS ---
-  // Modified: Removed default exotic weapons, set noseGunColor to standard energy colors
   {
     id: 'alien_h', name: 'Xenon H-Class', description: 'Heavy twin-pontoon cruiser.',
     price: 900000, maxEnergy: 20000, maxCargo: 2500, speed: 6, shape: 'block', canLayMines: true,

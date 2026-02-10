@@ -125,7 +125,7 @@ export interface OwnedShipInstance {
   shipTypeId: string;
 }
 
-export type ShipPart = 'hull' | 'wings' | 'cockpit' | 'guns' | 'secondary_guns' | 'gun_body' | 'engines' | 'bars' | 'nozzles';
+export type ShipPart = 'hull' | 'wings' | 'cockpit' | 'cockpit_highlight' | 'guns' | 'secondary_guns' | 'gun_body' | 'engines' | 'bars' | 'nozzles';
 
 export type MessageCategory = 'system' | 'combat';
 
@@ -162,6 +162,7 @@ export interface GameState {
   shipColors: Record<string, string>; 
   shipWingColors: Record<string, string>; 
   shipCockpitColors: Record<string, string>; 
+  shipCockpitHighlightColors: Record<string, string>; // New separate color map
   shipBeamColors: Record<string, string>;
   shipGunColors: Record<string, string>; 
   shipSecondaryGunColors: Record<string, string>;

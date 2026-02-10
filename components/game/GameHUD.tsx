@@ -127,7 +127,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 )}
 
                 <div className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 flex flex-row gap-[6px] pointer-events-none bg-zinc-950 p-2 border border-zinc-800 rounded">
-                    {!hud.rescueMode && <LEDMeter value={hud.overload} max={100} colorStart={hud.capacitorLocked ? '#52525b' : '#10b981'} label={hud.capacitorLocked ? "LCK" : "C"} vertical={true} reverseColor={true} />}
+                    {!hud.rescueMode && <LEDMeter value={hud.overload} max={100} colorStart={hud.capacitorLocked ? '#52525b' : '#10b981'} label={hud.capacitorLocked ? "LCK" : "C"} vertical={true} reverseColor={false} warnThreshold={hud.capacitorLocked ? 0 : 0.7} critThreshold={hud.capacitorLocked ? 0 : 0.2} />}
                     <LEDMeter value={hud.energy} max={1000} colorStart="#22d3ee" label="E" vertical={true} />
                 </div>
 

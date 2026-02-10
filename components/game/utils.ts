@@ -23,6 +23,10 @@ export const calculateDamage = (baseDamage: number, type: string, targetType: 'h
     } else if (type === 'projectile' || type === 'cannon' || type === 'gun_vulcan' || type === 'gun_heavy' || type === 'gun_repeater' || type === 'gun_plasma' || type === 'gun_hyper') {
         powerMult = 1.2;
         disruptionMult = 0.4;
+    } else if (type === 'blaster') {
+        // Personal Blaster: Neutral damage profile
+        powerMult = 1.0;
+        disruptionMult = 1.0;
     } else if (type.includes('missile') || type.includes('mine') || type === 'rocket' || type === 'firework_shell' || type === 'octo_shell') {
         powerMult = 1.0;
         disruptionMult = 1.0;

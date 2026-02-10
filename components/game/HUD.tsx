@@ -1,7 +1,7 @@
 
 import React from 'react';
 
-export const LEDMeter = ({ value, max, colorStart, label, vertical = false, reverseColor = false }: { value: number, max: number, colorStart: string, label: string, vertical?: boolean, reverseColor?: boolean }) => {
+export const LEDMeter = ({ value, max, colorStart, label, vertical = false, reverseColor = false, warnThreshold = 0.3, critThreshold = 0.1 }: { value: number, max: number, colorStart: string, label: string, vertical?: boolean, reverseColor?: boolean, warnThreshold?: number, critThreshold?: number }) => {
     const segments = 20; 
     const pct = Math.max(0, Math.min(1, value / max));
     const filled = Math.ceil(pct * segments);
@@ -9,11 +9,17 @@ export const LEDMeter = ({ value, max, colorStart, label, vertical = false, reve
     let activeColor = colorStart;
     
     if (reverseColor) {
-        if (pct > 0.9) activeColor = '#ef4444'; 
-        else if (pct > 0.7) activeColor = '#facc15'; 
+        // High value is critical (e.g. Overheat)
+        // Map standard thresholds to upper range for reverse logic consistency if needed, 
+        // though typically reverse uses high % for danger.
+        // Assuming default logic for reverse was >0.9 (Crit) and >0.7 (Warn) which matches 1-crit(0.1) and 1-warn(0.3).
+        // We use the passed thresholds to invert them.
+        if (pct > (1 - critThreshold)) activeColor = '#ef4444'; 
+        else if (pct > (1 - warnThreshold)) activeColor = '#facc15'; 
     } else {
-        if (pct < 0.1) activeColor = '#ef4444'; 
-        else if (pct < 0.3) activeColor = '#facc15'; 
+        // Low value is critical (e.g. Health, Fuel, Charge)
+        if (pct < critThreshold) activeColor = '#ef4444'; 
+        else if (pct < warnThreshold) activeColor = '#facc15'; 
     }
 
     return (

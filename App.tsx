@@ -57,20 +57,29 @@ const StarBackground = () => {
 
 export default function App() {
   const createInitialState = (): GameState => {
-    const initialOwned = Array.from({ length: MAX_FLEET_SIZE }).map((_, idx) => ({ instanceId: `fleet_slot_${idx}`, shipTypeId: DEFAULT_SHIP_ID }));
+    // Define the specific starter ships: Scout (vanguard), Patrol (ranger), Stealth (eclipse)
+    const STARTER_SHIPS = ['vanguard', 'ranger', 'eclipse'];
+    const SHIP_PALETTE = [
+        '#ef4444', '#f97316', '#facc15', '#84cc16', '#10b981', 
+        '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef', '#f43f5e',
+        '#ffffff', '#94a3b8', '#64748b'
+    ];
+
+    const initialOwned = Array.from({ length: MAX_FLEET_SIZE }).map((_, idx) => ({ 
+        instanceId: `fleet_slot_${idx}`, 
+        shipTypeId: STARTER_SHIPS[idx % STARTER_SHIPS.length] 
+    }));
+
     const initialFittings: Record<string, ShipFitting> = {};
     const initialColors: Record<string, string> = {};
+    const initialCockpitHighlightColors: Record<string, string> = {};
     
     initialOwned.forEach((os, idx) => { 
       const config = SHIPS.find(s => s.id === os.shipTypeId)!;
       const weapons = Array(3).fill(null);
-      const shipIndex = SHIPS.findIndex(s => s.id === config.id);
       
-      if (shipIndex >= 3 && shipIndex <= 4) {
-          weapons[0] = { id: 'gun_photon', count: 1 };
-      } else {
-          weapons[0] = { id: 'gun_pulse', count: 1 };
-      }
+      // All starter ships get Level 1 Pulse Laser for balance
+      weapons[0] = { id: 'gun_pulse', count: 1 };
 
       initialFittings[os.instanceId] = { 
           weapons, 
@@ -86,7 +95,8 @@ export default function App() {
           reloadTimer: 0,
           selectedAmmo: 'iron'
       }; 
-      initialColors[os.instanceId] = config.defaultColor || '#94a3b8'; 
+      initialColors[os.instanceId] = SHIP_PALETTE[Math.floor(Math.random() * SHIP_PALETTE.length)]; 
+      initialCockpitHighlightColors[os.instanceId] = 'rgba(255,255,255,0.7)';
     });
     
     const initialOffsets: Record<string, number> = {};
@@ -109,7 +119,7 @@ export default function App() {
 
     return {
       credits: INITIAL_CREDITS, selectedShipInstanceId: initialOwned[0].instanceId, ownedShips: initialOwned,
-      shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
+      shipFittings: initialFittings, shipColors: initialColors, shipWingColors: {}, shipCockpitColors: {}, shipCockpitHighlightColors: initialCockpitHighlightColors, shipBeamColors: {}, shipGunColors: {}, shipSecondaryGunColors: {}, shipGunBodyColors: {}, shipEngineColors: {}, shipBarColors: {}, shipNozzleColors: {},
       customColors: ['#3f3f46', '#71717a', '#a1a1aa', '#52525b', '#27272a', '#18181b', '#09090b', '#000000'],
       currentPlanet: PLANETS[0], currentMoon: null, currentMission: null, currentQuadrant: QuadrantType.ALFA, conqueredMoonIds: [], shipMapPosition: { [QuadrantType.ALFA]: { x: 50, y: 50 }, [QuadrantType.BETA]: { x: 50, y: 50 }, [QuadrantType.GAMA]: { x: 50, y: 50 }, [QuadrantType.DELTA]: { x: 50, y: 50 } }, shipRotation: 0, orbitingEntityId: null, orbitAngle: 0, dockedPlanetId: 'p1', tutorialCompleted: false, 
       settings: { musicVolume: 0.3, sfxVolume: 0.5, musicEnabled: true, sfxEnabled: true, displayMode: 'windowed', autosaveEnabled: true, showTransitions: true, testMode: false, fontSize: 'medium', speedMode: 'normal', audioTheme: 'active' }, 
@@ -135,6 +145,17 @@ export default function App() {
         if (!parsed.leaderboard) parsed.leaderboard = []; 
         if (!parsed.marketListingsByPlanet) parsed.marketListingsByPlanet = {};
         if (!parsed.marketRefreshes) parsed.marketRefreshes = {};
+        
+        // MIGRATION: FIX UNDEFINED COLORS AND PROPERTIES
+        if (!parsed.shipCockpitHighlightColors) parsed.shipCockpitHighlightColors = {};
+        if (!parsed.shipWingColors) parsed.shipWingColors = {};
+        if (!parsed.shipCockpitColors) parsed.shipCockpitColors = {};
+        if (!parsed.shipGunColors) parsed.shipGunColors = {};
+        if (!parsed.shipSecondaryGunColors) parsed.shipSecondaryGunColors = {};
+        if (!parsed.shipGunBodyColors) parsed.shipGunBodyColors = {};
+        if (!parsed.shipEngineColors) parsed.shipEngineColors = {};
+        if (!parsed.shipNozzleColors) parsed.shipNozzleColors = {};
+        if (!parsed.shipBarColors) parsed.shipBarColors = {};
         
         if (!parsed.planetRegistry) {
             const reg: Record<string, PlanetStatusData> = {};
@@ -644,11 +665,28 @@ export default function App() {
     let rankAchieved: number | null = null;
     let newLeaderboard: LeaderboardEntry[] = [];
     if (success) { rankAchieved = await backendService.submitScore(gameState.pilotName, gameState.credits + score + 5000, gameState.pilotAvatar); newLeaderboard = await backendService.getLeaderboard(); }
+    
     setGameState(prev => {
        const newCredits = prev.credits + score + (success ? 5000 : 0);
        const sId = prev.selectedShipInstanceId!;
        const fitting = prev.shipFittings[sId];
-       const updatedFitting = { ...fitting, health: payload?.health ?? 0, fuel: payload?.fuel ?? 0, water: payload?.water ?? fitting.water, rocketCount: payload?.rockets ?? fitting.rocketCount, mineCount: payload?.mines ?? fitting.mineCount, redMineCount: payload?.redMineCount ?? fitting.redMineCount, hullPacks: payload?.hullPacks ?? fitting.hullPacks, cargo: payload?.cargo ?? fitting.cargo, ammo: payload?.ammo ?? fitting.ammo, magazineCurrent: payload?.magazineCurrent ?? fitting.magazineCurrent, reloadTimer: payload?.reloadTimer ?? fitting.reloadTimer };
+       const updatedFitting = { 
+           ...fitting, 
+           health: payload?.health ?? 0, 
+           fuel: payload?.fuel ?? 0, 
+           water: payload?.water ?? fitting.water, 
+           rocketCount: payload?.rockets ?? fitting.rocketCount, 
+           mineCount: payload?.mines ?? fitting.mineCount, 
+           redMineCount: payload?.redMineCount ?? fitting.redMineCount, 
+           hullPacks: payload?.hullPacks ?? fitting.hullPacks, 
+           cargo: payload?.cargo ?? fitting.cargo, 
+           ammo: payload?.ammo ?? fitting.ammo, 
+           magazineCurrent: payload?.magazineCurrent ?? fitting.magazineCurrent, 
+           reloadTimer: payload?.reloadTimer ?? fitting.reloadTimer,
+           weapons: payload?.weapons ?? fitting.weapons,
+           shieldId: payload?.shieldId ?? fitting.shieldId,
+           secondShieldId: payload?.secondShieldId ?? fitting.secondShieldId
+       };
        const reg = { ...prev.planetRegistry };
        const currentPId = prev.currentPlanet!.id;
        const pEntry = { ...reg[currentPId] };
@@ -706,7 +744,7 @@ export default function App() {
        // DETERMINING LOCATION AFTER MISSION
        // If success, we stay at target. If abort/fail, we return to last docked planet.
        const nextDockedId = success ? currentPId : (prev.dockedPlanetId || 'p1');
-       const nextPlanet = PLANETS.find(p => p.id === nextDockedId) || PLANETS[0];
+       const nextDockedPlanet = PLANETS.find(p => p.id === nextDockedId) || PLANETS[0];
 
        return { 
            ...prev, 
@@ -719,8 +757,8 @@ export default function App() {
            
            // Ensure location is reset to docked planet if mission ended
            dockedPlanetId: nextDockedId,
-           currentPlanet: nextPlanet,
-           currentQuadrant: nextPlanet.quadrant 
+           currentPlanet: nextDockedPlanet,
+           currentQuadrant: nextDockedPlanet.quadrant
        };
     });
     
@@ -1003,7 +1041,7 @@ export default function App() {
                 </div>
 
                 <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em] pointer-events-auto`}>
-                  Beta 35 - February <span 
+                  Beta 37 - February <span 
                       onClick={() => { 
                           if(gameState.settings.testMode) { 
                               setVictoryMode('cinematic'); // ALWAYS FORCE CINEMATIC FOR TESTING
@@ -1069,6 +1107,7 @@ export default function App() {
               hull: gameState.shipColors[activeShipId], 
               wings: gameState.shipWingColors[activeShipId],
               cockpit: gameState.shipCockpitColors[activeShipId],
+              cockpit_highlight: gameState.shipCockpitHighlightColors[activeShipId] || 'rgba(255,255,255,0.7)',
               guns: gameState.shipGunColors[activeShipId],
               secondary_guns: gameState.shipSecondaryGunColors[activeShipId],
               gun_body: gameState.shipGunBodyColors[activeShipId],
@@ -1090,6 +1129,7 @@ export default function App() {
               hull: gameState.shipColors[activeShipId], 
               wings: gameState.shipWingColors[activeShipId],
               cockpit: gameState.shipCockpitColors[activeShipId],
+              cockpit_highlight: gameState.shipCockpitHighlightColors[activeShipId] || 'rgba(255,255,255,0.7)',
               guns: gameState.shipGunColors[activeShipId],
               gun_body: gameState.shipGunBodyColors[activeShipId],
               engines: gameState.shipEngineColors[activeShipId],
@@ -1285,47 +1325,6 @@ export default function App() {
               fontSize={gameState.settings.fontSize || 'medium'}
           />
       )}
-      <PaintDialog 
-          isOpen={isPaintOpen} 
-          onClose={() => setIsPaintOpen(false)} 
-          selectedShipInstanceId={gameState.selectedShipInstanceId || ''} 
-          selectedShipConfig={selectedShipConfig} 
-          activePart={activePart} 
-          setActivePart={setActivePart} 
-          gameState={gameState} 
-          setPartColor={(c) => {
-              const sId = gameState.selectedShipInstanceId!;
-              setGameState(p => {
-                  const key = activePart === 'hull' ? 'shipColors' : activePart === 'wings' ? 'shipWingColors' : activePart === 'cockpit' ? 'shipCockpitColors' : activePart === 'guns' ? 'shipGunColors' : activePart === 'secondary_guns' ? 'shipSecondaryGunColors' : activePart === 'gun_body' ? 'shipGunBodyColors' : activePart === 'engines' ? 'shipEngineColors' : activePart === 'nozzles' ? 'shipNozzleColors' : 'shipBarColors';
-                  return { ...p, [key]: { ...p[key as keyof GameState] as any, [sId]: c } };
-              });
-          }} 
-          updateCustomColor={(idx, c) => setGameState(p => { const n = [...p.customColors]; n[idx] = c; return { ...p, customColors: n }; })} 
-          fontSize={gameState.settings.fontSize || 'medium'} 
-      />
-      <MessagesDialog 
-          isOpen={isMessagesOpen} 
-          onClose={() => setIsMessagesOpen(false)} 
-          messages={gameState.messages} 
-          leaderboard={gameState.leaderboard}
-          fontSize={gameState.settings.fontSize || 'medium'} 
-      />
-      {selectedFitting && (
-          <CargoDialog 
-              isOpen={isCargoOpen} 
-              onClose={() => setIsCargoOpen(false)} 
-              fitting={selectedFitting} 
-              shipConfig={selectedShipConfig} 
-              reserves={currentReserves} 
-              selectedCargoIdx={selectedCargoIdx} 
-              selectedReserveIdx={selectedReserveIdx} 
-              setSelectedCargoIdx={setSelectedCargoIdx} 
-              setSelectedReserveIdx={setSelectedReserveIdx} 
-              onMoveItems={moveItems} 
-              onMoveAll={moveAllItems} 
-              fontSize={gameState.settings.fontSize || 'medium'}
-          />
-      )}
       
       <MarketDialog 
         isOpen={isMarketOpen} 
@@ -1351,6 +1350,80 @@ export default function App() {
           setManualPage={setManualPage} 
           fontSize={gameState.settings.fontSize || 'medium'} 
       />
+
+      <MessagesDialog 
+          isOpen={isMessagesOpen} 
+          onClose={() => setIsMessagesOpen(false)} 
+          messages={gameState.messages} 
+          leaderboard={gameState.leaderboard}
+          fontSize={gameState.settings.fontSize || 'medium'}
+      />
+
+      {selectedFitting && (
+          <CargoDialog 
+              isOpen={isCargoOpen}
+              onClose={() => setIsCargoOpen(false)}
+              fitting={selectedFitting}
+              shipConfig={selectedShipConfig}
+              reserves={gameState.reserveByPlanet[dockedId] || []}
+              selectedCargoIdx={selectedCargoIdx}
+              selectedReserveIdx={selectedReserveIdx}
+              setSelectedCargoIdx={setSelectedCargoIdx}
+              setSelectedReserveIdx={setSelectedReserveIdx}
+              onMoveItems={moveItems}
+              onMoveAll={moveAllItems}
+              fontSize={gameState.settings.fontSize || 'medium'}
+          />
+      )}
+
+      <PaintDialog 
+          isOpen={isPaintOpen} 
+          onClose={() => setIsPaintOpen(false)} 
+          selectedShipInstanceId={gameState.selectedShipInstanceId || ''}
+          selectedShipConfig={selectedShipConfig}
+          activePart={activePart}
+          setActivePart={setActivePart}
+          gameState={gameState}
+          setPartColor={(color) => {
+              if (!gameState.selectedShipInstanceId) return;
+              setGameState(prev => {
+                  const sId = prev.selectedShipInstanceId!;
+                  const colors = { ...prev.shipColors };
+                  const wingColors = { ...prev.shipWingColors };
+                  const cockpitColors = { ...prev.shipCockpitColors };
+                  const cockpitHighlightColors = { ...prev.shipCockpitHighlightColors };
+                  const gunColors = { ...prev.shipGunColors };
+                  const secGunColors = { ...prev.shipSecondaryGunColors };
+                  const gunBodyColors = { ...prev.shipGunBodyColors };
+                  const engineColors = { ...prev.shipEngineColors };
+                  const nozzleColors = { ...prev.shipNozzleColors };
+                  const barColors = { ...prev.shipBarColors };
+                  
+                  if (activePart === 'hull') colors[sId] = color;
+                  else if (activePart === 'wings') wingColors[sId] = color;
+                  else if (activePart === 'cockpit') cockpitColors[sId] = color;
+                  else if (activePart === 'cockpit_highlight') cockpitHighlightColors[sId] = color;
+                  else if (activePart === 'guns') gunColors[sId] = color;
+                  else if (activePart === 'secondary_guns') secGunColors[sId] = color;
+                  else if (activePart === 'gun_body') gunBodyColors[sId] = color;
+                  else if (activePart === 'engines') engineColors[sId] = color;
+                  else if (activePart === 'nozzles') nozzleColors[sId] = color;
+                  else if (activePart === 'bars') barColors[sId] = color;
+                  
+                  return { ...prev, shipColors: colors, shipWingColors: wingColors, shipCockpitColors: cockpitColors, shipCockpitHighlightColors: cockpitHighlightColors, shipGunColors: gunColors, shipSecondaryGunColors: secGunColors, shipGunBodyColors: gunBodyColors, shipEngineColors: engineColors, shipNozzleColors: nozzleColors, shipBarColors: barColors };
+              });
+              audioService.playSfx('click');
+          }}
+          updateCustomColor={(index, color) => {
+              setGameState(prev => {
+                  const newCustom = [...prev.customColors];
+                  newCustom[index] = color;
+                  return { ...prev, customColors: newCustom };
+              });
+          }}
+          fontSize={gameState.settings.fontSize || 'medium'}
+      />
+
     </>
   );
 }

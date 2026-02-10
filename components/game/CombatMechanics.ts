@@ -207,6 +207,52 @@ export const fireRedMine = (state: GameEngineState, setHud: any) => {
     } 
 };
 
+// --- NEW FUNCTION: PERSONAL BLASTER FIRE (RESCUE MODE) ---
+export const fireBlasterPistol = (state: GameEngineState) => {
+    // Check for pistol in cargo
+    const hasPistol = state.cargo.some(c => c.id === 'com_pistol');
+    if (!hasPistol) return;
+
+    // Fire rate: 4 shots/sec (15 frames at 60fps)
+    if (state.frame - state.lastRapidFire < 15) return;
+
+    // Find closest enemy
+    let target = null;
+    let minD = 800; // Max range for pistol targeting
+
+    state.enemies.forEach(e => {
+        if (e.hp > 0 && e.y < 2000 && e.y > -200) {
+            const d = Math.hypot(e.x - state.px, e.y - state.py);
+            if (d < minD) {
+                minD = d;
+                target = e;
+            }
+        }
+    });
+
+    if (target) {
+        const angle = Math.atan2(target.y - state.py, target.x - state.px);
+        const speed = 15;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed;
+
+        state.bullets.push({
+            x: state.px, y: state.py,
+            vx, vy,
+            damage: 200, // 200 damage as requested
+            color: '#ec4899', // Pinkish/Magenta matches market icon
+            type: 'blaster',
+            life: 60,
+            isEnemy: false,
+            width: 4, height: 4,
+            glow: true,
+            glowIntensity: 5
+        });
+        audioService.playWeaponFire('laser', 0); 
+        state.lastRapidFire = state.frame;
+    }
+};
+
 const getCapacitorBeamState = (chargeLevel: number) => {
     let color = '#ef4444'; 
     if (chargeLevel > 80) { color = '#e0f2fe'; } else if (chargeLevel > 40) { color = '#facc15'; }
