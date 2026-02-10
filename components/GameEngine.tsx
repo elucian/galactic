@@ -146,7 +146,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     isShooting: false,
     // Initialize regen flags
     sh1RegenActive: false,
-    sh2RegenActive: false
+    sh2RegenActive: false,
+    distressTimer: 0
   });
 
   const togglePause = (forceVal?: boolean) => {
@@ -587,7 +588,41 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }
 
         const isDistress = !s.rescueMode && s.fuel <= fuelLimit && s.water <= 0 && !s.isRefueling;
-        if (isDistress && s.frame % 180 === 0) { setHud(h => ({...h, alert: "CRITICAL FUEL - ABORT IMMEDIATELY", alertType: 'alert'})); audioService.playAlertSiren(); }
+        
+        if (isDistress) {
+            s.distressTimer++;
+            
+            // Alert logic
+            if (s.frame % 60 === 0) {
+                const secondsLeft = 20 - Math.floor(s.distressTimer / 60);
+                setHud(h => ({...h, alert: `CRITICAL RESOURCES - AUTO-ABORT IN ${secondsLeft}s`, alertType: 'alert'})); 
+                audioService.playAlertSiren();
+            }
+            
+            // Trigger Abort (20 seconds * 60 frames = 1200)
+            if (s.distressTimer > 1200) { 
+                s.active = false;
+                // Abort logic: Success = false, Aborted = true. State passed back preserves ships.
+                onGameOver(false, s.score, true, { 
+                    health: s.hp, 
+                    fuel: s.fuel, 
+                    water: s.water, 
+                    rockets: s.missiles, 
+                    mines: s.mines, 
+                    redMineCount: s.redMines, 
+                    cargo: s.cargo, 
+                    ammo: s.ammo, 
+                    magazineCurrent: Object.values(s.gunStates)[0]?.mag || s.magazineCurrent, 
+                    reloadTimer: s.reloadTimer,
+                    weapons: activeShip.fitting.weapons,
+                    shieldId: activeShip.fitting.shieldId,
+                    secondShieldId: activeShip.fitting.secondShieldId
+                });
+                return;
+            }
+        } else {
+            s.distressTimer = 0;
+        }
 
         let targetThrottle = 0; let left = false; let right = false;
         
@@ -664,7 +699,12 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (Math.abs(s.currentThrottle) < 0.01) s.currentThrottle = 0;
         const verticalSpeed = -s.currentThrottle * 8; 
         if (!targetRef.current) s.py += verticalSpeed;
-        s.py = Math.max(50, Math.min(height - 150, s.py));
+        
+        // FORBIDDEN ZONE: Player cannot enter top 1/3 of screen
+        const topForbiddenLimit = height * 0.33;
+        const bottomLimit = height - 100;
+        s.py = Math.max(topForbiddenLimit, Math.min(bottomLimit, s.py));
+
         if (canMove) {
             if (left && !targetRef.current) s.px -= speed;
             if (right && !targetRef.current) s.px += speed;
@@ -688,7 +728,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (s.rescueMode) {
             const driftSpeed = 3;
             if (s.currentThrottle > 0) s.py -= driftSpeed; if (s.currentThrottle < 0) s.py += driftSpeed;
-            s.px = Math.max(30, Math.min(width-30, s.px)); s.py = Math.max(50, Math.min(height-150, s.py));
+            s.px = Math.max(30, Math.min(width-30, s.px)); 
+            s.py = Math.max(topForbiddenLimit, Math.min(height-150, s.py));
             if (s.frame % 8 === 0) { 
                  s.particles.push({ x: s.px, y: s.py + 60, vx: (Math.random()-0.5)*1, vy: 2 + Math.random(), life: 1.2, color: '#9ca3af', size: 5 + Math.random()*5 });
             }
@@ -1441,11 +1482,21 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         }); 
         s.bullets = s.bullets.filter(b => {
             if (b.life <= 0) {
-                if (b.type.includes('mine')) {
-                    createAreaDamage(s, b.x, b.y, 150, b.damage, shield, secondShield, setHud); 
-                    createExplosion(s, b.x, b.y, b.color, 5);
-                    if (b.type.includes('emp') || b.type.includes('red')) { audioService.playExplosion(0, 1.2, 'emp'); } 
-                    else { audioService.playExplosion(0, 1.2, 'mine'); }
+                // If projectile died (life 0) and was explosive type, explode now
+                if (b.type.includes('missile') || b.type.includes('mine')) {
+                    // Create explosion effect for expired missiles/mines
+                    // Missiles that missed target still explode visually
+                    if (b.type.includes('missile')) {
+                        createExplosion(s, b.x, b.y, b.color, 10, 'fireworks');
+                        audioService.playExplosion(0, 0.5, 'normal');
+                    }
+                    
+                    if (b.type.includes('mine')) {
+                        createAreaDamage(s, b.x, b.y, 150, b.damage, shield, secondShield, setHud); 
+                        createExplosion(s, b.x, b.y, b.color, 5);
+                        if (b.type.includes('emp') || b.type.includes('red')) { audioService.playExplosion(0, 1.2, 'emp'); } 
+                        else { audioService.playExplosion(0, 1.2, 'mine'); }
+                    }
                 }
                 return false;
             }

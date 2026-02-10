@@ -112,4 +112,5 @@ export interface GameEngineState {
     // Shield Regen State Flags
     sh1RegenActive: boolean;
     sh2RegenActive: boolean;
+    distressTimer: number;
 }

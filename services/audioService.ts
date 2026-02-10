@@ -1,12 +1,28 @@
 
 import { QuadrantType } from '../types';
 
-const TRACK_URLS = {
-    combat: 'https://audio.jukehost.co.uk/BCVuKwzsaGrIAxF0f9qWSsn12cZRvXAa',
-    command: 'https://audio.jukehost.co.uk/4qDUYKMPFFJBHGOoSZCplXiTOCxc0MqG',
-    intro: 'https://audio.jukehost.co.uk/nG2IbB7rvgudhgBpEFQpbVmJuB63oHKk',
-    map: 'https://audio.jukehost.co.uk/vol5UySmAxBIacpCD1YNAJZW0JRSeIvA',
-    victory: 'https://audio.jukehost.co.uk/85T6AXXtiiJ4p4tvwfDj1sEDeOrJaJd4'
+const THEME_TRACKS = {
+    active: {
+        combat: 'https://audio.jukehost.co.uk/BCVuKwzsaGrIAxF0f9qWSsn12cZRvXAa',
+        command: 'https://audio.jukehost.co.uk/4qDUYKMPFFJBHGOoSZCplXiTOCxc0MqG',
+        intro: 'https://audio.jukehost.co.uk/nG2IbB7rvgudhgBpEFQpbVmJuB63oHKk',
+        map: 'https://audio.jukehost.co.uk/vol5UySmAxBIacpCD1YNAJZW0JRSeIvA',
+        victory: 'https://audio.jukehost.co.uk/85T6AXXtiiJ4p4tvwfDj1sEDeOrJaJd4'
+    },
+    serene: {
+        combat: 'https://audio.jukehost.co.uk/NoGgEM2cQJuXjzMJdnI8oYUmltNOLbQ9',
+        command: 'https://audio.jukehost.co.uk/3ZZqwmK9g6scMKkC5JIplNdkKh7Ikpw7',
+        intro: 'https://audio.jukehost.co.uk/ZbdDlfYKm0RdJBOcpHVOmUxpiqUH1shZ',
+        map: 'https://audio.jukehost.co.uk/EjdyyAlswTSkbuvGUoYJ1yveztHJbkhe',
+        victory: 'https://audio.jukehost.co.uk/lD2vEr4u5Dh7mNMvRREOGSoDg02OZqai'
+    },
+    heroic: {
+        combat: 'https://audio.jukehost.co.uk/qS0yc9NdOoENDLS7nvQnj64jQYOKO6Y5',
+        command: 'https://audio.jukehost.co.uk/cdC0OXuBSnoNBj27KiS3Hqmx9lHOzLPp',
+        intro: 'https://audio.jukehost.co.uk/FUtiaNWv0HP4mkYD16g14AtpcOmvGGwA',
+        map: 'https://audio.jukehost.co.uk/BWMGHCLEPlh2DUHTUerwIy73EMc3g0vo',
+        victory: 'https://audio.jukehost.co.uk/F37VhVCJmIMudh3fqhExbuLDrekGXRRU'
+    }
 };
 
 // --- MAIN SERVICE ---
@@ -18,7 +34,8 @@ class AudioService {
   
   // Music State
   private currentAudio: HTMLAudioElement | null = null;
-  private currentTrackId: string | null = null;
+  private currentTrackId: string | null = null; // Stores the logical scene name (e.g., 'command', 'combat')
+  private currentTheme: 'active' | 'serene' | 'heroic' = 'active';
   private musicVolume = 0.3;
   private sfxVolume = 0.5;
   private musicEnabled = true;
@@ -91,7 +108,19 @@ class AudioService {
       return buffer;
   }
 
-  setTheme(t: 'active' | 'serene' | 'heroic') { }
+  setTheme(t: 'active' | 'serene' | 'heroic') { 
+      if (this.currentTheme === t) return;
+      this.currentTheme = t;
+      
+      // If music is playing, switch track immediately
+      if (this.currentTrackId && this.currentAudio && !this.currentAudio.paused) {
+          const trackId = this.currentTrackId; // Preserve current logical track
+          // Temporarily nullify currentTrackId to force playTrack to re-evaluate
+          this.currentTrackId = null; 
+          this.playTrack(trackId);
+      }
+  }
+
   setQuadrant(q: QuadrantType) { }
 
   setMusicVolume(v: number) { 
@@ -134,13 +163,16 @@ class AudioService {
       if (scene === 'hangar') trackKey = 'command';
       if (scene === 'game') trackKey = 'combat';
       
-      if (!TRACK_URLS[trackKey as keyof typeof TRACK_URLS]) return;
-      if (this.currentTrackId === trackKey && this.currentAudio && !this.currentAudio.paused) return;
+      const themeData = THEME_TRACKS[this.currentTheme];
+      if (!themeData || !themeData[trackKey as keyof typeof themeData]) return;
+
+      const url = themeData[trackKey as keyof typeof themeData];
+
+      if (this.currentTrackId === trackKey && this.currentAudio && !this.currentAudio.paused && this.currentAudio.src === url) return;
 
       this.stopMusic();
 
       this.currentTrackId = trackKey;
-      const url = TRACK_URLS[trackKey as keyof typeof TRACK_URLS];
 
       if (!this.trackCache[url]) {
           this.trackCache[url] = new Audio(url);
@@ -151,7 +183,15 @@ class AudioService {
       const audio = this.trackCache[url];
       this.currentAudio = audio;
       
-      if (audio.paused) audio.currentTime = 0;
+      // If we are switching tracks, reset time. 
+      // If we are just resuming the same track/url, we might want to keep time? 
+      // For now, always reset to 0 for simplicity on theme switch or track switch.
+      if (audio.paused || audio.currentTime > 0) {
+           // We generally want to restart tracks on scene change
+           // On theme change, restart is acceptable for now
+           audio.currentTime = 0; 
+      }
+      
       audio.volume = this.musicEnabled ? this.musicVolume : 0;
       
       if (this.musicEnabled) {
