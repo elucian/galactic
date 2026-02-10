@@ -21,7 +21,7 @@ import GameEngine from './GameEngine.tsx';
 import { LandingScene } from './LandingScene.tsx';
 import { VictoryScene } from './VictoryScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_37'; 
+const SAVE_KEY = 'galactic_defender_beta_39'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -108,7 +108,8 @@ export default function App() {
     
     PLANETS.forEach((p, i) => {
       initialOffsets[p.id] = Math.random() * Math.PI * 2;
-      initialRegistry[p.id] = { id: p.id, status: i === 0 ? 'friendly' : p.status, wins: 0, losses: 0 };
+      // Set Terra Nova (i===0) to siege initially instead of friendly
+      initialRegistry[p.id] = { id: p.id, status: i === 0 ? 'siege' : p.status, wins: 0, losses: 0 };
     });
 
     const initialMessage: GameMessage = { 
@@ -117,7 +118,7 @@ export default function App() {
         category: 'system', 
         pilotName: 'COMMAND', 
         pilotAvatar: '🛰️', 
-        text: 'Welcome. Systems online.', 
+        text: 'Terra Nova is under siege. Scramble all fighters.', 
         timestamp: Date.now() 
     };
 
@@ -163,7 +164,7 @@ export default function App() {
         
         if (!parsed.planetRegistry) {
             const reg: Record<string, PlanetStatusData> = {};
-            PLANETS.forEach((p, i) => { reg[p.id] = { id: p.id, status: i === 0 ? 'friendly' : p.status, wins: 0, losses: 0 }; });
+            PLANETS.forEach((p, i) => { reg[p.id] = { id: p.id, status: i === 0 ? 'siege' : p.status, wins: 0, losses: 0 }; });
             parsed.planetRegistry = reg;
         }
         if (!parsed.planetOrbitOffsets) {
@@ -425,6 +426,23 @@ export default function App() {
               });
           }
       });
+
+      // Special Request: Ensure shields available on Terra Nova
+      if (planetId === 'p1') {
+          const basicShield = SHIELDS.find(s => s.id === 'sh_alpha');
+          if (basicShield) {
+             newListings.push({
+                  instanceId: `market_${planetId}_${basicShield.id}_forced_${Date.now()}`,
+                  id: basicShield.id,
+                  type: 'shield',
+                  name: basicShield.name,
+                  quantity: 10,
+                  weight: 1,
+                  price: basicShield.price,
+                  description: 'Standard Defense System'
+              });
+          }
+      }
 
       const exoticPool = [...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS];
       exoticPool.forEach(e => {
@@ -1045,7 +1063,7 @@ export default function App() {
                 </div>
 
                 <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em] pointer-events-auto`}>
-                  Beta 37 - February <span 
+                  Beta 39 - February <span 
                       onClick={() => { 
                           if(gameState.settings.testMode) { 
                               setVictoryMode('cinematic'); // ALWAYS FORCE CINEMATIC FOR TESTING

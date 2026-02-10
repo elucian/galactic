@@ -93,15 +93,23 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                                 e.stopPropagation();
                                 e.currentTarget.blur();
                                 onPauseToggle();
-                            }} className="flex-1 py-2 sm:px-4 bg-zinc-800 border border-zinc-600 text-white text-[10px] font-bold hover:bg-zinc-700 hover:border-white transition-colors uppercase">
-                                {hud.isPaused ? "RESUME" : "PAUSE"}
+                            }} className={`flex-1 py-2 sm:px-4 border text-[10px] font-bold transition-colors uppercase ${
+                                hud.bossDead 
+                                    ? 'bg-emerald-600 border-emerald-400 text-white hover:bg-emerald-500 animate-pulse' 
+                                    : 'bg-zinc-800 border-zinc-600 text-white hover:bg-zinc-700 hover:border-white'
+                            }`}>
+                                {hud.bossDead ? "LAND" : (hud.isPaused ? "RESUME" : "PAUSE")}
                             </button>
                             <button onClick={(e) => {
                                 e.stopPropagation();
                                 e.currentTarget.blur();
                                 onAbort();
-                            }} className="flex-1 py-2 sm:px-4 bg-red-900/50 border border-red-600 text-red-200 text-[10px] font-bold hover:bg-red-800 transition-colors uppercase">
-                                ABORT
+                            }} className={`flex-1 py-2 sm:px-4 border text-[10px] font-bold transition-colors uppercase ${
+                                hud.bossDead
+                                    ? 'bg-blue-600 border-blue-400 text-white hover:bg-blue-500'
+                                    : 'bg-red-900/50 border-red-600 text-red-200 hover:bg-red-800'
+                            }`}>
+                                {hud.bossDead ? "RETURN" : "ABORT"}
                             </button>
                         </div>
                     </div>

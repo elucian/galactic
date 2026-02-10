@@ -1,6 +1,6 @@
 
 import { Enemy } from './Enemy'; 
-import { CargoItem, AmmoType } from '../../types';
+import { CargoItem, AmmoType, EquippedWeapon } from '../../types';
 import { Asteroid } from './Asteroid';
 
 export interface Projectile {
@@ -11,6 +11,7 @@ export interface Projectile {
   weaponId?: string; isOvercharge?: boolean; isTracer?: boolean; traceColor?: string;
   homingState?: 'searching' | 'tracking' | 'returning' | 'engaging' | 'launching';
   target?: Enemy | null;
+  targetProjectile?: Projectile | null; // New field for intercepting ordnance
   targetLostCounter?: number;
   launchTime?: number; headColor?: string; finsColor?: string; turnRate?: number; maxSpeed?: number;
   accel?: number; z?: number; vz?: number;
@@ -35,6 +36,7 @@ export interface Loot {
   x: number; y: number; z: number;
   type: string; id?: string; name?: string; quantity?: number;
   isPulled: boolean; isBeingPulled?: boolean; vx: number; vy: number;
+  isGarbage?: boolean; // New flag for jettisoned items
 }
 
 export interface ShieldLayer {
@@ -109,8 +111,12 @@ export interface GameEngineState {
     shieldsEnabled: boolean;
     wasShieldHit: boolean;
     isShooting: boolean;
-    // Shield Regen State Flags
     sh1RegenActive: boolean;
     sh2RegenActive: boolean;
     distressTimer: number;
+    
+    // Dynamic Equipment State for In-Game Swapping
+    weapons: (EquippedWeapon | null)[];
+    shieldId: string | null;
+    secondShieldId: string | null;
 }
