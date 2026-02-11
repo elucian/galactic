@@ -21,7 +21,13 @@ export interface Projectile {
   initialWidth?: number; 
   initialHeight?: number; 
   opacity?: number; 
-  isMulticolor?: boolean; 
+  isMulticolor?: boolean;
+  isDefective?: boolean; // New: For mines that lose targeting
+  
+  // Ordnance Safety Logic
+  isActivated?: boolean;
+  safeDistance?: number;
+  hasExpired?: boolean;
 }
 
 export interface Particle {

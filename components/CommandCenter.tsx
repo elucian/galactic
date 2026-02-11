@@ -57,8 +57,8 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
   const btnSize = fs === 'small' ? 'text-[10px]' : (fs === 'large' ? 'text-[14px]' : (fs === 'extra-large' ? 'text-[16px]' : 'text-[12px]'));
   const lblSize = fs === 'small' ? 'text-[8px]' : (fs === 'large' ? 'text-[12px]' : (fs === 'extra-large' ? 'text-[14px]' : 'text-[10px]'));
   
-  // Fleet Card Specific Sizes
-  const cardTitleSize = fs === 'small' ? 'text-[9px]' : (fs === 'large' ? 'text-[13px]' : (fs === 'extra-large' ? 'text-[15px]' : 'text-[11px]'));
+  // Fleet Card Specific Sizes - REDUCED FONT SIZES
+  const cardTitleSize = fs === 'small' ? 'text-[8px]' : (fs === 'large' ? 'text-[11px]' : (fs === 'extra-large' ? 'text-[13px]' : 'text-[9px]'));
   const cardStatLabel = fs === 'small' ? 'text-[6px]' : (fs === 'large' ? 'text-[9px]' : (fs === 'extra-large' ? 'text-[10px]' : 'text-[7px]'));
   const cardBtnText = fs === 'small' ? 'text-[7px]' : (fs === 'large' ? 'text-[10px]' : (fs === 'extra-large' ? 'text-[12px]' : 'text-[8px]'));
 
@@ -294,13 +294,7 @@ export const CommandCenter: React.FC<CommandCenterProps> = ({
                                  </div>
                             </div>
                         )}
-
-                        {/* OVERLAY UNIT NUMBER - Positioned over bottom of ship/shield area */}
-                        <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 pointer-events-none">
-                            <span className={`text-[10px] sm:text-xs font-black uppercase tracking-[0.2em] whitespace-nowrap bg-black/40 backdrop-blur-sm px-2 py-0.5 rounded border ${isDestroyed ? 'text-red-500 border-red-500/30' : 'text-zinc-500 border-zinc-800/30'}`}>
-                                {isDestroyed ? "STATUS: KIA" : `UNIT 0${trueIdx + 1}`}
-                            </span>
-                        </div>
+                        
                     </div>
                   </div>
 

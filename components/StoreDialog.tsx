@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { SHIPS, WEAPONS, EXOTIC_WEAPONS } from '../constants.ts';
 import { ShipIcon } from './ShipIcon.tsx';
 import { ExtendedShipConfig } from '../constants.ts';
+import { mixColor } from '../utils/drawingUtils.ts';
 
 interface StoreDialogProps {
   isOpen: boolean;
@@ -10,7 +11,7 @@ interface StoreDialogProps {
   inspectedShipId: string;
   setInspectedShipId: (id: string) => void;
   credits: number;
-  replaceShip: (shipTypeId: string) => void;
+  replaceShip: (shipTypeId: string, colors?: { hull?: string, wing?: string }) => void;
   fontSize: 'small' | 'medium' | 'large' | 'extra-large';
   testMode?: boolean; 
 }
@@ -83,6 +84,11 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
       }
   };
 
+  // Calculate colors for selected ship
+  const baseColor = ship.defaultColor || '#94a3b8';
+  const previewHullColor = mixColor(baseColor, '#000000', 0.4); 
+  const previewWingColor = mixColor(baseColor, '#ffffff', 0.2);
+
   return (
     <div className="fixed inset-0 z-[9900] bg-black/95 flex items-center justify-center p-4 backdrop-blur-2xl">
         <div className="w-full max-w-5xl bg-zinc-950 border-2 border-zinc-800 rounded-xl overflow-hidden flex flex-col h-[90vh] shadow-2xl relative">
@@ -121,6 +127,8 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                                     showJets={false} 
                                     equippedWeapons={previewEquipped as any} 
                                     gunColor={currentWeaponColor} 
+                                    hullColor={previewHullColor}
+                                    wingColor={previewWingColor}
                                 />
                              </div>
 
@@ -152,7 +160,7 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                                 <span className={`text-xl font-black tabular-nums tracking-tight ${canAfford ? 'text-emerald-400' : 'text-red-500'}`}>${ship.price.toLocaleString()}</span>
                             </div>
                             <button 
-                                onClick={() => { replaceShip(ship.id); setShowDetailPanel(false); }}
+                                onClick={() => { replaceShip(ship.id, { hull: previewHullColor, wing: previewWingColor }); setShowDetailPanel(false); }}
                                 disabled={!canAfford}
                                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:bg-zinc-800 text-white font-black uppercase tracking-[0.15em] rounded-lg shadow-lg text-xs transition-all active:scale-95 flex items-center justify-center gap-2"
                             >
@@ -168,6 +176,10 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                         const defaultWep = getDefaultWeaponId(s);
                         const wepColor = getWeaponColor(defaultWep);
                         
+                        const sBaseColor = s.defaultColor || '#94a3b8';
+                        const sHullColor = mixColor(sBaseColor, '#000000', 0.4);
+                        const sWingColor = mixColor(sBaseColor, '#ffffff', 0.2);
+
                         // Mini preview logic
                         let miniEquipped = [{id: defaultWep, count:1}, null, null];
                         if (s.isAlien && s.defaultGuns === 2) miniEquipped = [null, {id: defaultWep, count:1}, {id: defaultWep, count:1}];
@@ -178,7 +190,9 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                                     config={s} 
                                     className="w-10 h-10" 
                                     equippedWeapons={miniEquipped as any} 
-                                    gunColor={wepColor} // Pass weapon color to override ship default gun color
+                                    gunColor={wepColor} 
+                                    hullColor={sHullColor}
+                                    wingColor={sWingColor}
                                 />
                                 <div className="flex flex-col items-start">
                                     <span className={`${largeTextClass} font-black uppercase ${s.isAlien ? 'text-orange-400' : 'text-white'} truncate`}>{s.name}</span>
@@ -200,6 +214,8 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                                 showJets={false} 
                                 equippedWeapons={previewEquipped as any} 
                                 gunColor={currentWeaponColor}
+                                hullColor={previewHullColor}
+                                wingColor={previewWingColor}
                             />
                             
                             {/* COMPACT STATS ROW */}
@@ -240,7 +256,7 @@ export const StoreDialog: React.FC<StoreDialogProps> = ({
                                 <span className={`text-4xl font-black tabular-nums tracking-tight ${canAfford ? 'text-emerald-400' : 'text-red-500'}`}>${ship.price.toLocaleString()}</span>
                             </div>
                             <button 
-                                onClick={() => replaceShip(ship.id)} 
+                                onClick={() => replaceShip(ship.id, { hull: previewHullColor, wing: previewWingColor })} 
                                 disabled={!canAfford} 
                                 className={`${btnPadding} bg-emerald-600 text-white font-black uppercase ${btnSize} rounded-lg disabled:opacity-30 disabled:cursor-not-allowed hover:bg-emerald-500 hover:scale-105 active:scale-95 transition-all shadow-lg flex items-center gap-2`}
                             >

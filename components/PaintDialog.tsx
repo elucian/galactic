@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ShipIcon } from './ShipIcon.tsx';
 import { ShipPart, GameState } from '../types.ts';
 
@@ -23,6 +23,7 @@ const STANDARD_COLORS = [
     '#3b82f6', '#1e40af', '#8b5cf6', '#d946ef'
 ];
 
+// Removed 'nozzles' and 'bars' from list
 const PARTS_LIST: { id: ShipPart, label: string }[] = [
     { id: 'hull', label: 'Fuselage' },
     { id: 'wings', label: 'Wings' },
@@ -31,9 +32,7 @@ const PARTS_LIST: { id: ShipPart, label: string }[] = [
     { id: 'guns', label: 'Main Weapons' },
     { id: 'secondary_guns', label: 'Wing Weapons' },
     { id: 'gun_body', label: 'Weapon Mounts' },
-    { id: 'engines', label: 'Engine Body' },
-    { id: 'nozzles', label: 'Thruster Nozzles' },
-    { id: 'bars', label: 'Detail Bars' }
+    { id: 'engines', label: 'Engine Body' }
 ];
 
 const hexToRgb = (hex: string) => {
@@ -65,14 +64,24 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
       if (activePart === 'secondary_guns') return gameState.shipSecondaryGunColors[selectedShipInstanceId];
       if (activePart === 'gun_body') return gameState.shipGunBodyColors[selectedShipInstanceId];
       if (activePart === 'engines') return gameState.shipEngineColors[selectedShipInstanceId];
-      if (activePart === 'nozzles') return gameState.shipNozzleColors[selectedShipInstanceId];
-      if (activePart === 'bars') return gameState.shipBarColors[selectedShipInstanceId];
+      // Nozzles and Bars removed from selection logic
       return '#fff';
   })();
 
+  // Sync selected custom index when part changes
+  useEffect(() => {
+      if (currentColor) {
+          const customIdx = gameState.customColors.indexOf(currentColor);
+          if (customIdx !== -1) {
+              setSelectedCustomIndex(customIdx);
+          } else {
+              setSelectedCustomIndex(null);
+          }
+      }
+  }, [activePart, currentColor, gameState.customColors]);
+
   const handleColorPick = (color: string) => {
       setPartColor(color);
-      setSelectedCustomIndex(null); 
   };
 
   const currentFitting = gameState.shipFittings[selectedShipInstanceId];
@@ -87,6 +96,7 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
   const handleSliderChange = (channel: 'r' | 'g' | 'b', value: number) => {
       const newRgb = { ...rgb, [channel]: value };
       const hex = rgbToHex(newRgb.r, newRgb.g, newRgb.b);
+      
       if (selectedCustomIndex !== null) {
           updateCustomColor(selectedCustomIndex, hex);
           handleColorPick(hex);
@@ -128,6 +138,9 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                             equippedWeapons={showWeapons ? currentFitting?.weapons : [null, null, null]}
                         />
                     </div>
+                    <div className="absolute bottom-4 left-0 right-0 text-center pointer-events-none">
+                        <span className="text-[10px] font-mono text-zinc-500 bg-black/50 px-3 py-1 rounded border border-zinc-800">CLICK SHIP TO SELECT PARTS</span>
+                    </div>
                 </div>
                 
                 <div className="w-full sm:w-[360px] p-4 flex flex-col gap-3 bg-zinc-900/20 overflow-y-auto custom-scrollbar shrink-0">
@@ -140,7 +153,7 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                                 <button
                                     key={part.id}
                                     onClick={() => setActivePart(part.id)}
-                                    className={`px-2 py-2 text-[9px] font-black uppercase rounded border transition-all ${activePart === part.id ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
+                                    className={`px-2 py-2 text-[9px] font-black uppercase rounded border transition-all ${activePart === part.id ? 'bg-emerald-600 border-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300'}`}
                                 >
                                     {part.label}
                                 </button>
@@ -154,8 +167,8 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                             {STANDARD_COLORS.map(c => ( 
                                 <button 
                                     key={c} 
-                                    onClick={() => handleColorPick(c)} 
-                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 ${currentColor === c && selectedCustomIndex === null ? 'border-white scale-110 shadow-lg z-10' : 'border-black/20 hover:border-zinc-500'}`} 
+                                    onClick={() => { setSelectedCustomIndex(null); handleColorPick(c); }} 
+                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 ${currentColor === c && selectedCustomIndex === null ? 'border-white scale-110 shadow-lg z-10 ring-1 ring-white' : 'border-black/20 hover:border-zinc-500'}`} 
                                     style={{ backgroundColor: c }} 
                                 /> 
                             ))}
@@ -169,7 +182,7 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
                                 <button 
                                     key={i} 
                                     onClick={() => { setSelectedCustomIndex(i); handleColorPick(c); }} 
-                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 relative overflow-hidden ${selectedCustomIndex === i ? 'border-emerald-500 scale-110 shadow-[0_0_10px_#10b981]' : (currentColor === c ? 'border-white' : 'border-black/20 hover:border-zinc-500')}`}
+                                    className={`w-full aspect-square rounded-sm border transition-transform hover:scale-105 relative overflow-hidden ${selectedCustomIndex === i ? 'border-emerald-500 scale-110 shadow-[0_0_10px_#10b981] z-10' : (currentColor === c ? 'border-white' : 'border-black/20 hover:border-zinc-500')}`}
                                 >
                                     <div className="absolute inset-0" style={{ backgroundColor: c.startsWith('pat|') ? '#444' : c }} />
                                     {c.startsWith('pat|') && <div className="absolute inset-0 flex items-center justify-center text-[6px] text-white">PAT</div>}
@@ -180,7 +193,7 @@ export const PaintDialog: React.FC<PaintDialogProps> = ({
 
                     <div className="space-y-2 pt-2 border-t border-zinc-800 bg-zinc-900/50 p-3 rounded mt-auto shrink-0">
                         <div className="flex justify-between items-center mb-1">
-                            <span className="text-[9px] font-black text-emerald-500 uppercase">{selectedCustomIndex !== null ? `Editing Custom Slot ${selectedCustomIndex + 1}` : 'Quick Mix'}</span>
+                            <span className="text-[9px] font-black text-emerald-500 uppercase">{selectedCustomIndex !== null ? `Editing Custom Slot ${selectedCustomIndex + 1}` : 'Quick Mix (Not Saved)'}</span>
                             <div className="flex items-center gap-2">
                                 <div className="w-4 h-4 rounded-full shadow-sm border border-white/20" style={{ backgroundColor: `rgb(${rgb.r},${rgb.g},${rgb.b})` }} />
                                 <span className="text-[9px] font-mono text-zinc-400">{rgbToHex(rgb.r, rgb.g, rgb.b)}</span>

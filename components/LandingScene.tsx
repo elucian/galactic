@@ -12,6 +12,18 @@ interface LandingSceneProps {
   planet: Planet;
   shipShape: string;
   shipConfig?: ExtendedShipConfig;
+  shipColors: {
+      hull?: string;
+      wings?: string;
+      cockpit?: string;
+      cockpit_highlight?: string;
+      guns?: string;
+      secondary_guns?: string;
+      gun_body?: string;
+      engines?: string;
+      nozzles?: string;
+      bars?: string;
+  };
   onComplete: () => void;
   weaponId?: string;
   equippedWeapons?: (EquippedWeapon | null)[];
@@ -34,7 +46,7 @@ const mixColor = (c1: string, c2: string, weight: number) => {
     return `rgb(${r},${g},${b})`;
 };
 
-export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, shipConfig: propShipConfig, onComplete, weaponId, equippedWeapons, currentFuel, maxFuel }) => {
+export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, shipConfig: propShipConfig, shipColors, onComplete, weaponId, equippedWeapons, currentFuel, maxFuel }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fgCanvasRef = useRef<HTMLCanvasElement>(null); 
   const shipDOMRef = useRef<HTMLDivElement>(null);
@@ -817,7 +829,25 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
                 <g transform={`translate(50, 50)`}> {['left', 'right'].map((side) => ( <LandingGear key={side} type={shipConfig.landingGearType} extension={legExtension} compression={suspension} side={side as any} /> ))} </g>
              </svg>
         </div>
-        <ShipIcon config={shipConfig} className="w-full h-full drop-shadow-2xl relative z-10" showJets={thrustActive} jetType="combustion" showGear={false} hullColor={shipConfig.defaultColor} weaponId={weaponId} equippedWeapons={equippedWeapons} />
+        <ShipIcon 
+            config={shipConfig} 
+            className="w-full h-full drop-shadow-2xl relative z-10" 
+            showJets={thrustActive} 
+            jetType="combustion" 
+            showGear={false} 
+            hullColor={shipColors.hull}
+            wingColor={shipColors.wings}
+            cockpitColor={shipColors.cockpit}
+            cockpitHighlightColor={shipColors.cockpit_highlight}
+            gunColor={shipColors.guns}
+            secondaryGunColor={shipColors.secondary_guns}
+            gunBodyColor={shipColors.gun_body}
+            engineColor={shipColors.engines}
+            nozzleColor={shipColors.nozzles}
+            barColor={shipColors.bars}
+            weaponId={weaponId} 
+            equippedWeapons={equippedWeapons} 
+        />
       </div>
     </div>
   );

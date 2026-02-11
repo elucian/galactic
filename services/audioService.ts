@@ -108,6 +108,46 @@ class AudioService {
       return buffer;
   }
 
+  // --- REUSABLE TURBINE GENERATOR ---
+  private createTurbineSound() {
+      if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return null;
+      const t = this.ctx.currentTime;
+      
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(50, t);
+      
+      let noise = null;
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.value = 0.3; // Mix level for noise
+
+      if (this.whiteNoise) {
+          noise = this.ctx.createBufferSource();
+          noise.buffer = this.whiteNoise;
+          noise.loop = true;
+          noise.connect(noiseGain);
+          noise.start(t);
+      }
+
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 6; // High Q creates the "whistle"
+      filter.frequency.setValueAtTime(200, t);
+
+      const masterGain = this.ctx.createGain();
+      masterGain.gain.setValueAtTime(0, t);
+
+      osc.connect(filter);
+      noiseGain.connect(filter);
+      
+      filter.connect(masterGain);
+      masterGain.connect(this.sfxGain);
+      
+      osc.start(t);
+      
+      return { osc, noise, filter, masterGain };
+  }
+
   setTheme(t: 'active' | 'serene' | 'heroic') { 
       if (this.currentTheme === t) return;
       this.currentTheme = t;
@@ -183,12 +223,7 @@ class AudioService {
       const audio = this.trackCache[url];
       this.currentAudio = audio;
       
-      // If we are switching tracks, reset time. 
-      // If we are just resuming the same track/url, we might want to keep time? 
-      // For now, always reset to 0 for simplicity on theme switch or track switch.
       if (audio.paused || audio.currentTime > 0) {
-           // We generally want to restart tracks on scene change
-           // On theme change, restart is acceptable for now
            audio.currentTime = 0; 
       }
       
@@ -250,7 +285,7 @@ class AudioService {
       }
   }
   
-  playWeaponFire(type: string, pan = 0, shipId?: string) {
+  playWeaponFire(type: string, pan = 0, variantId?: string) {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled) return;
       const t = this.ctx.currentTime;
       
@@ -259,7 +294,6 @@ class AudioService {
       panner.pan.value = Math.max(-1, Math.min(1, pan));
       masterG.connect(panner); panner.connect(this.sfxGain);
 
-      // Random pitch variation for realism
       const detune = (Math.random() - 0.5) * 100; 
 
       if (type.includes('laser') || type.includes('mega')) {
@@ -271,14 +305,12 @@ class AudioService {
            osc.detune.value = detune;
            
            if (type === 'mega') {
-               // Deep powerful laser
                osc.frequency.setValueAtTime(300, t); 
                osc.frequency.exponentialRampToValueAtTime(50, t + 0.3);
                g.gain.setValueAtTime(0.2, t); 
                g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
                osc.start(t); osc.stop(t + 0.3);
            } else {
-               // Standard Pew
                osc.frequency.setValueAtTime(880, t); 
                osc.frequency.exponentialRampToValueAtTime(110, t + 0.15);
                g.gain.setValueAtTime(0.08, t); 
@@ -286,8 +318,119 @@ class AudioService {
                osc.start(t); osc.stop(t + 0.15);
            }
       } 
+      else if (type === 'cannon') {
+          // MECHANICAL WEAPON DISCRIMINATION
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.connect(g); g.connect(masterG);
+          
+          let noise = null;
+          let noiseG = null;
+
+          if (variantId === 'gun_vulcan' || variantId === 'gun_shredder') {
+              // VULCAN: Trr Trr (Fast Sawtooth)
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(150, t);
+              osc.frequency.linearRampToValueAtTime(100, t + 0.08);
+              g.gain.setValueAtTime(0.12, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+              osc.start(t); osc.stop(t + 0.08);
+          } 
+          else if (variantId === 'gun_repeater') {
+              // REPEATER: Raka (Square)
+              osc.type = 'square';
+              osc.frequency.setValueAtTime(180, t);
+              osc.frequency.linearRampToValueAtTime(80, t + 0.12);
+              g.gain.setValueAtTime(0.1, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+              osc.start(t); osc.stop(t + 0.12);
+          }
+          else if (variantId === 'gun_heavy') {
+              // HEAVY: Dum Dum (Low Square + Noise)
+              osc.type = 'square';
+              osc.frequency.setValueAtTime(100, t);
+              osc.frequency.linearRampToValueAtTime(40, t + 0.2);
+              g.gain.setValueAtTime(0.15, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+              osc.start(t); osc.stop(t + 0.2);
+              
+              if (this.brownNoise) {
+                  noise = this.ctx.createBufferSource();
+                  noise.buffer = this.brownNoise;
+                  noiseG = this.ctx.createGain();
+                  noise.connect(noiseG); noiseG.connect(masterG);
+                  noiseG.gain.setValueAtTime(0.1, t);
+                  noiseG.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+                  noise.start(t); noise.stop(t + 0.1);
+              }
+          }
+          else if (variantId === 'gun_plasma') {
+              // DRIVER: Pac Pac (Metallic Triangle)
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(600, t);
+              osc.frequency.exponentialRampToValueAtTime(300, t + 0.05);
+              g.gain.setValueAtTime(0.15, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+              osc.start(t); osc.stop(t + 0.05);
+          }
+          else if (variantId === 'gun_hyper') {
+              // HYPER: Brrt (Short High Sawtooth)
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(200, t);
+              osc.frequency.linearRampToValueAtTime(50, t + 0.05);
+              g.gain.setValueAtTime(0.1, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+              osc.start(t); osc.stop(t + 0.05);
+          }
+          else if (variantId === 'gun_rail_titan') {
+              // RAILGUN: Zap (High Sweep + Crack)
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(1200, t);
+              osc.frequency.exponentialRampToValueAtTime(100, t + 0.25);
+              g.gain.setValueAtTime(0.15, t);
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.25);
+              osc.start(t); osc.stop(t + 0.25);
+              
+              if (this.whiteNoise) {
+                  noise = this.ctx.createBufferSource();
+                  noise.buffer = this.whiteNoise;
+                  noiseG = this.ctx.createGain();
+                  noise.connect(noiseG); noiseG.connect(masterG);
+                  noiseG.gain.setValueAtTime(0.1, t);
+                  noiseG.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+                  noise.start(t); noise.stop(t + 0.1);
+              }
+          }
+          else if (variantId === 'gun_doomsday') {
+              // DOOMSDAY: Thud (Deep Brown Noise)
+              if (this.brownNoise) {
+                  noise = this.ctx.createBufferSource();
+                  noise.buffer = this.brownNoise;
+                  noiseG = this.ctx.createGain();
+                  
+                  const filter = this.ctx.createBiquadFilter();
+                  filter.type = 'lowpass';
+                  filter.frequency.setValueAtTime(200, t);
+                  filter.frequency.linearRampToValueAtTime(50, t + 0.4);
+                  
+                  noise.connect(filter); filter.connect(noiseG); noiseG.connect(masterG);
+                  
+                  noiseG.gain.setValueAtTime(0.3, t);
+                  noiseG.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+                  noise.start(t); noise.stop(t + 0.4);
+              }
+          }
+          else {
+              // Default Cannon
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(200, t); 
+              osc.frequency.exponentialRampToValueAtTime(50, t + 0.1);
+              g.gain.setValueAtTime(0.1, t); 
+              g.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+              osc.start(t); osc.stop(t + 0.1);
+          }
+      }
       else if (type.includes('missile') || type.includes('mine')) {
-           // White noise burst for launch woosh
            if (this.whiteNoise) {
                const src = this.ctx.createBufferSource();
                src.buffer = this.whiteNoise;
@@ -305,7 +448,7 @@ class AudioService {
            }
       } 
       else { 
-           // Cannon / Projectile (Tight punchy sound)
+           // Catch all / exotic defaults
            const osc = this.ctx.createOscillator();
            const g = this.ctx.createGain();
            osc.connect(g); g.connect(masterG);
@@ -328,7 +471,6 @@ class AudioService {
        const masterG = this.ctx.createGain();
        masterG.connect(this.sfxGain);
        
-       // 1. Rumble Layer (Brown Noise) - The Body
        if (this.brownNoise) {
            const src = this.ctx.createBufferSource();
            src.buffer = this.brownNoise;
@@ -346,7 +488,6 @@ class AudioService {
            src.start(t); src.stop(t + 0.9);
        }
 
-       // 2. Crackle Layer (White Noise) - The Initial Impact
        if (this.whiteNoise) {
            const src = this.ctx.createBufferSource();
            src.buffer = this.whiteNoise;
@@ -364,7 +505,6 @@ class AudioService {
            src.start(t); src.stop(t + 0.2);
        }
 
-       // 3. Sub-Bass Thump (Sine Drop) - The Shockwave
        const osc = this.ctx.createOscillator();
        const oscG = this.ctx.createGain();
        osc.connect(oscG); oscG.connect(masterG);
@@ -387,14 +527,12 @@ class AudioService {
       osc.connect(g); g.connect(this.sfxGain);
       
       if (mat === 'shield') {
-           // High glass ping
            osc.type = 'sine'; 
            osc.frequency.setValueAtTime(2000, t); 
            osc.frequency.exponentialRampToValueAtTime(500, t + 0.1);
            g.gain.setValueAtTime(0.1 * intensity, t); 
            g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
       } else {
-           // Dull metal thud
            osc.type = 'square'; 
            osc.frequency.setValueAtTime(150, t);
            osc.frequency.exponentialRampToValueAtTime(50, t + 0.05);
@@ -447,7 +585,6 @@ class AudioService {
   updateReEntryWind(intensity: number) {
       if (this.reEntryNodes && this.ctx) {
           const t = this.ctx.currentTime;
-          // Wind gets higher pitched and louder
           this.reEntryNodes.filter.frequency.setTargetAtTime(200 + (intensity * 1200), t, 0.1);
           this.reEntryNodes.gain.gain.setTargetAtTime(intensity * 0.15, t, 0.1);
       }
@@ -466,42 +603,64 @@ class AudioService {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.brownNoise || this.landingNodes) return;
       const t = this.ctx.currentTime;
       
-      // Use Brown Noise for powerful engine rumble
+      // Rumble
       const src = this.ctx.createBufferSource();
       src.buffer = this.brownNoise;
       src.loop = true;
-      
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass'; 
       filter.frequency.value = 100;
-      
       const gain = this.ctx.createGain();
       gain.gain.value = 0;
-      
       src.connect(filter); filter.connect(gain); gain.connect(this.sfxGain);
       src.start(t);
-      this.landingNodes = { src, filter, gain };
+      
+      // Turbine
+      const turbine = this.createTurbineSound();
+      
+      this.landingNodes = { src, filter, gain, turbine };
   }
 
   updateLandingThruster(intensity: number) {
       if (this.landingNodes && this.ctx) {
           const t = this.ctx.currentTime;
-          // Engine rumble opens up filter
+          // Rumble Update
           this.landingNodes.filter.frequency.setTargetAtTime(100 + (intensity * 400), t, 0.1);
           this.landingNodes.gain.gain.setTargetAtTime(intensity * 0.4, t, 0.1);
+          
+          // Turbine Update
+          if (this.landingNodes.turbine) {
+              const turb = this.landingNodes.turbine;
+              const freq = 200 + (intensity * 2800); // 200Hz to 3000Hz sweep
+              turb.filter.frequency.setTargetAtTime(freq, t, 0.15); 
+              turb.masterGain.gain.setTargetAtTime(intensity * 0.15, t, 0.1);
+          }
       }
   }
 
   stopLandingThruster() {
       if (this.landingNodes && this.ctx) {
-          this.landingNodes.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
+          const t = this.ctx.currentTime;
+          this.landingNodes.gain.gain.setTargetAtTime(0, t, 0.2);
+          
+          if (this.landingNodes.turbine) {
+              this.landingNodes.turbine.masterGain.gain.setTargetAtTime(0, t, 0.2);
+          }
+          
           const n = this.landingNodes;
-          setTimeout(() => { try { n.src.stop(); } catch(e){} }, 300);
+          setTimeout(() => { 
+              try { n.src.stop(); } catch(e){} 
+              if (n.turbine) {
+                  try { 
+                      n.turbine.osc.stop(); 
+                      if(n.turbine.noise) n.turbine.noise.stop();
+                  } catch(e){}
+              }
+          }, 300);
           this.landingNodes = null;
       }
   }
 
-  // Improved Warp Sound: Dual Oscillators + Noise + Filter Sweep
   playWarpHum() {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || this.warpNodes) return;
       const t = this.ctx.currentTime;
@@ -509,22 +668,19 @@ class AudioService {
       const masterG = this.ctx.createGain();
       masterG.connect(this.sfxGain);
       masterG.gain.value = 0;
-      masterG.gain.linearRampToValueAtTime(0.3, t + 2.0); // Slow fade in
+      masterG.gain.linearRampToValueAtTime(0.3, t + 2.0); 
 
-      // Osc 1: Deep Drone
       const osc1 = this.ctx.createOscillator();
       osc1.type = 'sawtooth';
       osc1.frequency.setValueAtTime(50, t);
-      osc1.frequency.linearRampToValueAtTime(120, t + 4.0); // Pitch up
+      osc1.frequency.linearRampToValueAtTime(120, t + 4.0); 
       
-      // Osc 2: Detuned Drone (Interference)
       const osc2 = this.ctx.createOscillator();
       osc2.type = 'sawtooth';
-      osc2.detune.value = 15; // Cents
+      osc2.detune.value = 15; 
       osc2.frequency.setValueAtTime(52, t);
       osc2.frequency.linearRampToValueAtTime(124, t + 4.0);
 
-      // Rumble Noise
       let rumbleNode = null;
       if (this.brownNoise) {
           rumbleNode = this.ctx.createBufferSource();
@@ -533,12 +689,11 @@ class AudioService {
           rumbleNode.start(t);
       }
 
-      // Filter: Starts closed, opens up like a turbine
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(200, t);
       filter.frequency.exponentialRampToValueAtTime(2000, t + 4.0);
-      filter.Q.value = 2; // Resonance for turbine whine
+      filter.Q.value = 2; 
 
       osc1.connect(filter);
       osc2.connect(filter);
@@ -557,7 +712,6 @@ class AudioService {
           const t = this.ctx.currentTime;
           const decay = tail ? 2.0 : 0.2;
           
-          // Filter closes down
           this.warpNodes.filter.frequency.cancelScheduledValues(t);
           this.warpNodes.filter.frequency.setTargetAtTime(50, t, decay * 0.5);
           
@@ -581,47 +735,64 @@ class AudioService {
       if (!this.ctx || !this.sfxGain || !this.sfxEnabled || !this.brownNoise) return;
       const t = this.ctx.currentTime;
       
+      // Rumble
       const src = this.ctx.createBufferSource();
       src.buffer = this.brownNoise;
-      src.loop = true; // Loop for duration
+      src.loop = true; 
       
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(100, t);
-      filter.frequency.linearRampToValueAtTime(800, t + 5.0); // Engine building power
+      filter.frequency.linearRampToValueAtTime(800, t + 5.0); 
       
       const gain = this.ctx.createGain();
       gain.gain.setValueAtTime(0, t);
       gain.gain.linearRampToValueAtTime(0.4, t + 2.0);
-      gain.gain.linearRampToValueAtTime(0, t + 6.0); // Fade out
+      gain.gain.linearRampToValueAtTime(0, t + 6.0); 
       
       src.connect(filter); filter.connect(gain); gain.connect(this.sfxGain);
       src.start(t); src.stop(t + 6.0);
       
-      this.launchNodes = { src, gain };
+      // Turbine Spool Up
+      const turbine = this.createTurbineSound();
+      if (turbine) {
+          turbine.filter.frequency.setValueAtTime(200, t);
+          turbine.filter.frequency.exponentialRampToValueAtTime(4000, t + 5.5); // Spool up
+          
+          turbine.masterGain.gain.setValueAtTime(0, t);
+          turbine.masterGain.gain.linearRampToValueAtTime(0.2, t + 1.5); // Fade in
+          turbine.masterGain.gain.linearRampToValueAtTime(0, t + 6.0); // Fade out
+          
+          turbine.osc.stop(t + 6.0);
+          if (turbine.noise) turbine.noise.stop(t + 6.0);
+      }
+      
+      this.launchNodes = { src, gain, turbine };
   }
 
   stopLaunchSequence() {
       if (this.launchNodes && this.ctx) {
           try { this.launchNodes.src.stop(); } catch(e){}
+          if (this.launchNodes.turbine) {
+              try { 
+                  this.launchNodes.turbine.osc.stop();
+                  if (this.launchNodes.turbine.noise) this.launchNodes.turbine.noise.stop();
+              } catch(e){}
+          }
           this.launchNodes = null;
       }
   }
 
   playLaunchBang() { 
-      // Heavy initial explosion for ignition
       this.playExplosion(0, 1.5, 'standard'); 
   }
   
   playLandingIgnition() { 
-      // Quick blast
       this.playExplosion(0, 0.8, 'standard'); 
   }
   
   playLandThud() { 
-      // Deep metal thud
       this.playImpact('metal', 1.5); 
-      // Add a bass thump
       if (this.ctx && this.sfxGain) {
           const t = this.ctx.currentTime;
           const osc = this.ctx.createOscillator();

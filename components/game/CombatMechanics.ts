@@ -157,7 +157,17 @@ export const fireMissile = (state: GameEngineState) => {
         const isEmp = state.missiles % 2 !== 0; 
         state.missiles--; 
         state.lastMissileFire = Date.now(); 
-        state.bullets.push({ x: state.px, y: state.py, vx: 0, vy: -3, vz: 0, damage: 600, color: isEmp ? '#22d3ee' : '#ef4444', type: isEmp ? 'missile_emp' : 'missile', life: 600, isEnemy: false, width: 12, height: 28, homingState: 'launching', launchTime: state.frame, headColor: isEmp ? '#22d3ee' : '#ef4444', finsColor: isEmp ? '#0ea5e9' : '#ef4444', turnRate: 0.05, maxSpeed: 14, z: 0 }); 
+        state.bullets.push({ 
+            x: state.px, y: state.py, vx: 0, vy: -3, vz: 0, 
+            damage: 600, color: isEmp ? '#22d3ee' : '#ef4444', 
+            type: isEmp ? 'missile_emp' : 'missile', life: 600, 
+            isEnemy: false, width: 12, height: 28, 
+            homingState: 'launching', launchTime: state.frame, 
+            headColor: isEmp ? '#22d3ee' : '#ef4444', 
+            finsColor: isEmp ? '#0ea5e9' : '#ef4444', 
+            turnRate: 0.05, maxSpeed: 14, z: 0,
+            isActivated: false, safeDistance: 180 
+        }); 
         audioService.playWeaponFire(isEmp ? 'emp' : 'missile'); 
     } 
 };
@@ -171,7 +181,15 @@ export const fireMine = (state: GameEngineState, side: 'left' | 'right' | 'toggl
         
         const speed = 5; 
         const launch = (dir: number) => {
-            state.bullets.push({ x: state.px, y: state.py + 20, vx: dir * speed, vy: 0, vz: 0, damage: 750, color: isEmp ? '#22d3ee' : '#fbbf24', type: isEmp ? 'mine_emp' : 'mine', life: 600, isEnemy: false, width: 14, height: 14, homingState: 'launching', launchTime: state.frame, turnRate: 0.08, maxSpeed: 10, z: 0 }); 
+            state.bullets.push({ 
+                x: state.px, y: state.py + 20, vx: dir * speed, vy: 0, vz: 0, 
+                damage: 750, color: isEmp ? '#22d3ee' : '#fbbf24', 
+                type: isEmp ? 'mine_emp' : 'mine', life: 600, 
+                isEnemy: false, width: 14, height: 14, 
+                homingState: 'launching', launchTime: state.frame, 
+                turnRate: 0.08, maxSpeed: 10, z: 0,
+                isActivated: false, safeDistance: 180 
+            }); 
         };
 
         if (side === 'both') {
@@ -201,7 +219,15 @@ export const fireRedMine = (state: GameEngineState, setHud: any) => {
         state.omegaSide = !state.omegaSide; 
         const speed = 4; 
         const vx = state.omegaSide ? -speed : speed; 
-        state.bullets.push({ x: state.px, y: state.py + 30, vx: vx, vy: 0, vz: 0, damage: 1800, color: '#ef4444', type: 'mine_red', life: 600, isEnemy: false, width: 20, height: 20, homingState: 'launching', launchTime: state.frame, turnRate: 0.05, maxSpeed: 8, z: 0, glow: true, glowIntensity: 30 }); 
+        state.bullets.push({ 
+            x: state.px, y: state.py + 30, vx: vx, vy: 0, vz: 0, 
+            damage: 1800, color: '#ef4444', type: 'mine_red', 
+            life: 600, isEnemy: false, width: 20, height: 20, 
+            homingState: 'launching', launchTime: state.frame, 
+            turnRate: 0.05, maxSpeed: 8, z: 0, 
+            glow: true, glowIntensity: 30,
+            isActivated: false, safeDistance: 180 
+        }); 
         audioService.playWeaponFire('mine'); 
         setHud((h: any) => ({...h, alert: 'OMEGA MINE DEPLOYED', alertType: 'warning'})); 
     } 
@@ -429,7 +455,9 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
 
         let damage = mainDef ? mainDef.damage : 45; 
         let weaponId = mainDef ? mainDef.id : 'gun_pulse'; 
-        let crystalColor = (mainDef?.beamColor) || (activeShip.gunColor || activeShip.config.noseGunColor || '#f87171'); 
+        
+        // Prioritize Custom Paint Color > Weapon Beam Color > Ship Config Default > Fallback
+        let crystalColor = activeShip.gunColor || (mainDef?.beamColor) || activeShip.config.noseGunColor || '#f87171'; 
         
         let shotAngle = 0;
         if (isImprecise) {
@@ -449,6 +477,7 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
         if (mainDef?.id.includes('exotic')) {
             let speed = 20;
             
+            // Override colors for specific exotic effects that shouldn't be painted
             if (mainDef.id === 'exotic_flamer') {
                 crystalColor = '#3b82f6'; 
             } else if (mainDef.id === 'exotic_octo_burst') {
@@ -536,7 +565,7 @@ export const fireNormalShot = (state: GameEngineState, activeShip: { config: Ext
             const vx = Math.sin(rad) * speed;
             const vy = -Math.cos(rad) * speed;
             state.bullets.push({ x: state.px, y: state.py - 24 * globalScale, vx, vy, damage, color: crystalColor, type: 'laser', life: 50, isEnemy: false, width: 4 * projScale, height: 25 * projScale, glow: true, glowIntensity: 5, isMain: true, weaponId }); 
-            audioService.playWeaponFire(mainDef?.type === WeaponType.LASER ? 'laser' : 'cannon', 0, activeShip.config.id); 
+            audioService.playWeaponFire(mainDef?.type === WeaponType.LASER ? 'laser' : 'cannon', 0, weaponId); 
         } 
         
         state.weaponFireTimes[0] = Date.now(); 
@@ -555,7 +584,7 @@ export const fireAlienWeapons = (state: GameEngineState, activeShip: { config: E
     }
 };
 
-export const fireWingWeapon = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any }, slotIndex: number, globalScale: number = 1.0) => {
+export const fireWingWeapon = (state: GameEngineState, activeShip: { config: ExtendedShipConfig, fitting: any, secondaryGunColor?: string }, slotIndex: number, globalScale: number = 1.0) => {
     const weapon = activeShip.fitting.weapons[slotIndex];
     if (!weapon) return;
     
@@ -606,7 +635,9 @@ export const fireWingWeapon = (state: GameEngineState, activeShip: { config: Ext
     const spawnY = state.py + (offsetY * shipScale);
 
     let type = 'projectile';
-    let color = wDef.beamColor || '#fff';
+    // Prioritize Custom Paint Color > Weapon Beam Color > Fallback
+    let color = activeShip.secondaryGunColor || wDef.beamColor || '#fff';
+    
     // Scale projectile size slightly to match larger ships
     const projScale = Math.max(1, globalScale * 0.8);
     let w = 4 * projScale;
@@ -644,7 +675,7 @@ export const fireWingWeapon = (state: GameEngineState, activeShip: { config: Ext
     } else if (wDef.type === WeaponType.LASER) {
         audioService.playWeaponFire('laser', 0);
     } else {
-        audioService.playWeaponFire('cannon', 0);
+        audioService.playWeaponFire('cannon', 0, wDef.id);
     }
 
     state.weaponFireTimes[slotIndex] = now;

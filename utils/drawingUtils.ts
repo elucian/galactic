@@ -11,12 +11,12 @@ const createSeededRandom = (seedStr: string) => {
     };
 };
 
-const hexToRgb = (hex: string) => {
+export const hexToRgb = (hex: string) => {
     const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
     return result ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) } : { r: 0, g: 0, b: 0 };
 };
 
-const mixColor = (c1: string, c2: string, weight: number) => {
+export const mixColor = (c1: string, c2: string, weight: number) => {
     const rgb1 = hexToRgb(c1);
     const rgb2 = hexToRgb(c2);
     const w = Math.min(1, Math.max(0, weight));
@@ -133,21 +133,24 @@ export const getEngineCoordinates = (config: ExtendedShipConfig) => {
 
 export const getWingMounts = (config: ExtendedShipConfig) => {
     if (config.isAlien) {
-        // Updated to place weapons at the front tips of the wings
         if (config.wingStyle === 'alien-w') return [{x: 10, y: 20}, {x: 90, y: 20}];
         if (config.wingStyle === 'alien-h') return [{x: 25, y: 20}, {x: 75, y: 20}];
         if (config.wingStyle === 'alien-m') return [{x: 20, y: 25}, {x: 80, y: 25}];
-        // Fallback for others
         return [{x: 30, y: 50}, {x: 70, y: 50}];
     }
     
-    if (config.wingStyle === 'x-wing') return [{x: 15, y: 40}, {x: 85, y: 40}];
+    // Patrol Corvette (Ranger) - Moved up over wings
+    if (config.wingStyle === 'x-wing') return [{x: 15, y: 25}, {x: 85, y: 25}];
+    
+    // Stealth Infiltrator (Eclipse) - Moved outward for spacing
+    if (config.wingStyle === 'pincer') return [{x: 15, y: 55}, {x: 85, y: 55}];
+
     if (config.wingStyle === 'delta') return [{x: 20, y: 60}, {x: 80, y: 60}];
     
+    // Default fallback (Striker, etc)
     return [{x: 25, y: 50}, {x: 75, y: 50}];
 };
 
-// ... (Rest of file unchanged)
 export const drawPlatform = (ctx: CanvasRenderingContext2D, x: number, y: number, isOcean: boolean) => {
     ctx.save();
     ctx.translate(x, y);
