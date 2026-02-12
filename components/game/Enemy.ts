@@ -48,6 +48,8 @@ export class Enemy {
   globalWeaponCooldown: number = 0;
   
   isOrdnanceShip: boolean = false; 
+  hasFiredInitialSalvo: boolean = false;
+  hasFiredBottomMines: boolean = false;
 
   // Resource System for Boss
   fuel: number = 0;
@@ -467,20 +469,77 @@ export class Enemy {
             const isSafeRange = distToPlayer > safetyRadius;
 
             if (this.isOrdnanceShip) {
-                if (this.mineAmmo > 0 && this.tick % 150 === 0 && this.globalWeaponCooldown <= 0) {
-                    const isDefective = Math.random() < 0.2;
-                    const dir = Math.random() > 0.5 ? 1 : -1;
-                    bulletsRef.push({ x: this.x + (dir * 20), y: this.y + 20, vx: dir * 4, vy: 0, damage: 150, color: '#fbbf24', type: 'mine_enemy', life: 400, isEnemy: true, width: 20, height: 20, homingState: 'searching', launchTime: globalFrame, turnRate: 0.02, maxSpeed: 6, z: 0, isDefective });
-                    this.mineAmmo--;
-                    this.globalWeaponCooldown = 120; 
-                    audioService.playWeaponFire('mine', 0);
-                }
+                const screenPct = this.y / h;
                 
-                if (inFiringZone && this.missileAmmo > 0 && this.tick % 200 === 0 && this.globalWeaponCooldown <= 0) {
-                    bulletsRef.push({ x: this.x, y: this.y + 20, vx: 0, vy: 5, damage: 100, color: '#ef4444', type: 'missile_enemy', life: 300, isEnemy: true, width: 10, height: 20, homingState: 'searching', launchTime: globalFrame, turnRate: 0.03, maxSpeed: 8, z: 0 });
-                    this.missileAmmo--;
-                    this.globalWeaponCooldown = 120; 
-                    audioService.playWeaponFire('missile', 0);
+                // 1. Top Screen Missile - Only in top 25% (STRICT)
+                // Ensures fair play: Missile must be launched visibly from top.
+                if (this.y > 0 && screenPct < 0.25 && !this.hasFiredInitialSalvo && this.globalWeaponCooldown <= 0) {
+                    this.hasFiredInitialSalvo = true;
+                    if (this.missileAmmo > 0) {
+                        // Chance for double launch on high difficulty
+                        const count = difficulty >= 8 && Math.random() > 0.5 ? 2 : 1;
+                        for(let i=0; i<count; i++) {
+                            const offset = count === 1 ? 0 : (i === 0 ? -15 : 15);
+                            bulletsRef.push({ 
+                                x: this.x + offset, 
+                                y: this.y + 40, 
+                                vx: 0, 
+                                vy: 5, 
+                                damage: 150, 
+                                color: '#ef4444', 
+                                type: 'missile_enemy', 
+                                life: 900, // 15s lifespan to allow for 10s tracking + 5s drift
+                                isEnemy: true, 
+                                width: 12, 
+                                height: 24, 
+                                homingState: 'searching', 
+                                launchTime: globalFrame, 
+                                headColor: '#ef4444', 
+                                finsColor: '#7f1d1d', 
+                                turnRate: 0.04, 
+                                maxSpeed: 10, // Slightly faster to compensate for limited turn
+                                z: 0 
+                            });
+                        }
+                        this.missileAmmo -= count;
+                        audioService.playWeaponFire('missile', 0);
+                        this.globalWeaponCooldown = 120;
+                    }
+                }
+
+                // 2. Bottom 1/3 Mines - Only in bottom 33% (STRICT)
+                if (screenPct > 0.66 && !this.hasFiredBottomMines && this.globalWeaponCooldown <= 0) {
+                    this.hasFiredBottomMines = true;
+                    const mineCount = (difficulty >= 5 || Math.random() > 0.5) ? 2 : 1;
+                    
+                    for(let i=0; i<mineCount; i++) {
+                        // Direction: if 1 mine, random side. If 2, spread both ways.
+                        const dir = mineCount === 1 ? (Math.random() > 0.5 ? 1 : -1) : (i===0 ? -1 : 1);
+                        
+                        // Increase life to 1200 (20s) to allow for 10s tracking timeout + subsequent drift
+                        bulletsRef.push({ 
+                            x: this.x + (dir * 40), 
+                            y: this.y + 20, 
+                            vx: dir * 6, 
+                            vy: 2,       
+                            damage: 200, 
+                            color: '#fbbf24', 
+                            type: 'mine_enemy', 
+                            life: 1200, 
+                            isEnemy: true, 
+                            width: 24, 
+                            height: 24, 
+                            z: 0, 
+                            homingState: 'searching', 
+                            turnRate: 0.02, 
+                            maxSpeed: 7, 
+                            launchTime: globalFrame,
+                            isDefective: false
+                        });
+                    }
+                    this.mineAmmo -= mineCount;
+                    audioService.playWeaponFire('mine', 0);
+                    this.globalWeaponCooldown = 60;
                 }
             } 
             else {
@@ -559,7 +618,7 @@ export class Enemy {
                                 x: this.x, y: this.y + 20, vx: 0, vy: 6, 
                                 damage: 120 * (1 + difficulty * 0.1), 
                                 color: '#ef4444', type: 'missile_enemy', 
-                                life: 300, isEnemy: true, width: 12, height: 24, 
+                                life: 600, isEnemy: true, width: 12, height: 24, 
                                 homingState: 'searching', launchTime: globalFrame, 
                                 headColor: '#ef4444', finsColor: '#7f1d1d',
                                 turnRate: 0.035, maxSpeed: 9, z: 0

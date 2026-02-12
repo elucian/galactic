@@ -738,6 +738,20 @@ const LaunchSequence: React.FC<LaunchSequenceProps> = ({ planet, shipConfig, shi
   return (
     <div className="fixed inset-0 z-[5000] bg-black overflow-hidden font-mono select-none absolute w-full h-full">
       <canvas ref={canvasRef} className="absolute inset-0 w-full h-full block z-0" />
+      
+      {/* Title Overlay */}
+      <div className="absolute top-6 right-6 z-40 text-right pointer-events-none flex flex-col items-end">
+          <h1 className="retro-font text-lg md:text-xl text-emerald-500 uppercase tracking-widest drop-shadow-md leading-none">
+              {planet.name}
+          </h1>
+          <div className="flex items-center gap-2 mt-1">
+              <div className="h-[1px] w-8 bg-zinc-700"></div>
+              <span className="text-[10px] md:text-xs text-zinc-500 font-mono tracking-[0.2em] uppercase">
+                  LAUNCH SEQUENCE
+              </span>
+          </div>
+      </div>
+
       <SequenceStatusBar altitude={altitude} velocity={velocity} fuel={visualFuel} maxFuel={maxFuel} status={statusText} onSkip={() => { audioService.stopLaunchSequence(); audioService.stop(); onCompleteRef.current(); }} phase={phase} />
       {countdown !== null && countdown > 0 && ( <div className="absolute top-[25%] left-0 right-0 flex flex-col items-center justify-center z-40 pointer-events-none"> <div className="text-sm md:text-xl text-emerald-500 font-black tracking-[0.5em] mb-1 drop-shadow-[0_2px_2px_rgba(0,0,0,1)]">T-MINUS</div> <div className="text-8xl md:text-[10rem] font-black text-white drop-shadow-[0_0_20px_rgba(0,0,0,1)] animate-pulse">{countdown}</div> </div> )}
       <div ref={shipDOMRef} className="absolute left-0 top-0 w-32 h-32 will-change-transform z-20">
