@@ -147,6 +147,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     sh1RegenActive: false,
     sh2RegenActive: false,
     distressTimer: 0,
+    waveCounter: 0,
     weapons: [...activeShip.fitting.weapons],
     shieldId: activeShip.fitting.shieldId,
     secondShieldId: activeShip.fitting.secondShieldId
@@ -271,7 +272,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 
   const spawnLoot = (x: number, y: number, z: number, type: string, id?: string, name?: string, quantity: number = 1) => { state.current.loot.push({ x, y, z, type, id, name, quantity, isPulled: false, vx: (Math.random()-0.5), vy: (Math.random()-0.5) }); };
   
-  // Helper to spawn garbage (jettisoned items)
   const spawnGarbage = (x: number, y: number, type: string, id: string, name: string) => {
       const s = state.current;
       const angle = Math.random() * Math.PI * 2;
@@ -657,8 +657,8 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         if (s.shakeX > 0) s.shakeX *= s.shakeDecay; if (s.shakeY > 0) s.shakeY *= s.shakeDecay;
         if (s.shakeX < 0.5) s.shakeX = 0; if (s.shakeY < 0.5) s.shakeY = 0;
 
-        // DELEGATE SPAWNING LOGIC
-        SpawnController.update(s, width, height, difficulty, quadrant, setHud);
+        // DELEGATE SPAWNING LOGIC - Pass currentPlanet.id and speedMult
+        SpawnController.update(s, width, height, difficulty, quadrant, setHud, currentPlanet.id, speedMult);
 
         s.asteroids.forEach(a => { 
             a.x += a.vx * speedMult; 
@@ -696,7 +696,11 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
         
         for (let i = s.enemies.length - 1; i >= 0; i--) {
             const e = s.enemies[i];
-            if (e.hp <= 0 || e.y > height + 200) {
+            
+            // REMOVAL LOGIC: Dead OR Off-screen (Bottom OR Sides)
+            const offScreen = e.y > height + 200 || e.x < -200 || e.x > width + 200;
+            
+            if (e.hp <= 0 || offScreen) {
                 if (e.hp <= 0 && !s.rescueMode) {
                     createAreaDamage(s, e.x, e.y, 150, 50, currentShieldDef, currentSecondShieldDef, setHud);
                     if (e.type === 'boss') {
@@ -718,11 +722,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         audioService.playExplosion(e.x, 1.0, 'normal');
                         s.score += 100 * difficulty;
                         
-                        if (e.isOrdnanceShip) {
-                            spawnLoot(e.x - 15, e.y, 0, 'missile', 'ord_missile_light', 'Missile Stash', 5);
-                            spawnLoot(e.x + 15, e.y, 0, 'mine', 'ord_mine_plasma', 'Mine Stash', 5);
-                        }
-
+                        // STANDARD LOOT DROPS
                         let equipChance = 0.05;
                         if (quadrant === QuadrantType.ALFA) equipChance = 0.30;
                         else if (quadrant === QuadrantType.BETA) equipChance = 0.20;
@@ -779,7 +779,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 const distFromShip = Math.hypot(b.x - s.px, b.y - s.py);
                 if (distFromShip > b.safeDistance) {
                     b.isActivated = true;
-                    // Optional: Play a tiny activation beep or visual flare?
                 }
             }
             
@@ -821,114 +820,150 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
             }
             
-            // FRIENDLY FIRE CHECK (Enemies hitting Enemies)
+            // ENEMY BULLET LOGIC
             const bulletAge = s.frame - (b.launchTime || 0);
-            
-            // Allow friendly fire after 30 frames (0.5s) to clear shields
-            if (b.isEnemy && !b.isDefective && bulletAge > 30) { 
-                s.enemies.forEach(e => {
-                    if (b.life <= 0) return;
-                    // Simple distance check + Z-level check
-                    if (Math.abs(e.z - (b.z || 0)) < 40) {
-                        const dist = Math.hypot(b.x - e.x, b.y - e.y);
-                        // Shield radius approx
-                        const hitRadius = (e.shieldLayers.length > 0 ? 50 : 35) * sizeScale;
-                        
-                        if (dist < hitRadius) {
-                            // Calculate Damage
-                            let effectiveDamage = b.damage;
-                            
-                            // Apply Damage
-                            const shieldHitIdx = e.getHitShieldIndex(0); // Simplified angle 0 for FF
-                            if (shieldHitIdx !== -1) {
-                                e.damageShield(shieldHitIdx, effectiveDamage, b.type, false, false, false);
-                                createExplosion(s, b.x, b.y, b.color, 2, 'shield_effect');
-                            } else {
-                                e.damageHull(effectiveDamage, b.type, false, false);
+
+            if (b.isEnemy && !b.isDefective) {
+                // BOSS SELF-DAMAGE CHECK
+                // Only if bullet has existed for > 60 frames (grace period)
+                if (bulletAge > 60 && b.type === 'mine_enemy') {
+                    const boss = s.enemies.find(e => e.type === 'boss');
+                    if (boss && boss.hp > 0) {
+                         const dist = Math.hypot(b.x - boss.x, b.y - boss.y);
+                         const hitRadius = 80 * sizeScale; // Boss size approx
+                         
+                         if (dist < hitRadius) {
+                             // Hit Boss
+                             boss.hp -= b.damage;
+                             b.life = 0;
+                             createExplosion(s, b.x, b.y, b.color, 20, 'mine');
+                             createAreaDamage(s, b.x, b.y, 150, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
+                             audioService.playExplosion(0, 1.2, 'mine');
+                         }
+                    }
+                }
+
+                // FRIENDLY FIRE CHECK (Other Enemies)
+                if (bulletAge > 30) {
+                    s.enemies.forEach(e => {
+                        if (b.life <= 0 || e.type === 'boss') return; // Skip Boss (handled above)
+                        if (Math.abs(e.z - (b.z || 0)) < 40) {
+                            const dist = Math.hypot(b.x - e.x, b.y - e.y);
+                            const hitRadius = (e.shieldLayers.length > 0 ? 50 : 35) * sizeScale;
+                            if (dist < hitRadius) {
+                                e.damageHull(b.damage, b.type, false, false);
                                 createExplosion(s, b.x, b.y, '#f97316', 3, 'smoke');
-                            }
-                            
-                            // Destroy bullet if not piercing
-                            if (b.type !== 'octo_shell') {
-                                b.life = 0;
+                                if (b.type !== 'octo_shell') b.life = 0;
                             }
                         }
-                    }
-                });
+                    });
+                }
             }
 
             if (b.life <= 0) {
                 // Ordnance Explosion Logic
                 const isOrdnance = ['missile', 'missile_emp', 'mine', 'mine_emp', 'mine_red', 'missile_enemy', 'mine_enemy', 'octo_shell'].includes(b.type);
                 
-                // --- TIMEOUT PROBABILITY LOGIC ---
-                // Only for expired ordnance that hasn't hit anything yet
                 if (isOrdnance && !b.isDefective && !b.hasExpired) {
-                    if (Math.random() < 0.5) {
-                         // 50% Chance: EXPLODE
-                         if (b.type === 'octo_shell') {
-                             createExplosion(s, b.x, b.y, b.color, 15, 'fireworks');
-                             createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
-                             audioService.playExplosion(0, 1.0, 'emp');
-                         } else {
-                             const isMine = b.type.includes('mine');
-                             createExplosion(s, b.x, b.y, b.color, 20, isMine ? 'mine' : 'standard');
-                             createAreaDamage(s, b.x, b.y, 150, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
-                             audioService.playExplosion(0, isMine ? 1.2 : 0.8, isMine ? 'mine' : 'normal');
-                         }
+                    // FORCE EXPLOSION for timeout
+                    if (b.type === 'octo_shell') {
+                        createExplosion(s, b.x, b.y, b.color, 15, 'fireworks');
+                        createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
+                        audioService.playExplosion(0, 1.0, 'emp');
                     } else {
-                         // 50% Chance: LOST FOCUS / DRIFT
-                         b.life = 120; // Extend life for fade out
-                         b.isDefective = true;
-                         b.hasExpired = true; // Mark as processed
-                         // Reduce size visually
-                         b.width *= 0.7;
-                         b.height *= 0.7;
+                        const isMine = b.type.includes('mine');
+                        createExplosion(s, b.x, b.y, b.color, 20, isMine ? 'mine' : 'standard');
+                        createAreaDamage(s, b.x, b.y, 150, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
+                        audioService.playExplosion(0, isMine ? 1.2 : 0.8, isMine ? 'mine' : 'normal');
                     }
                 }
-                // If not ordnance or was defective/exploded, just let it die (removed by filter below)
             }
             if (['missile', 'missile_emp', 'mine', 'mine_emp', 'mine_red', 'missile_enemy', 'mine_enemy'].includes(b.type)) {
-                if (b.isDefective) return; // Skip logic for defective mines
+                if (b.isDefective) return; 
 
                 const isMissile = b.type.includes('missile');
                 const age = s.frame - (b.launchTime || 0);
-                if (age < 20) { if (isMissile) { b.vy -= (b.isEnemy ? -0.4 : 0.6); b.vx *= 0.95; } else { b.vx *= 0.99; } } 
+                
+                if (age < 20 && !b.isEnemy) { 
+                    if (isMissile) { b.vy -= 0.6; b.vx *= 0.95; } else { b.vx *= 0.99; } 
+                } 
                 else {
                     if (b.isEnemy) {
-                        // 1-second Free Flight Check (60 frames)
-                        if (age < 60) {
-                             // Free flight phase: Maintain straight trajectory
-                             // Minor drag/acceleration can apply here if desired, but mostly just move
-                        } else {
-                            if (!s.rescueMode) {
-                                let targetX = s.px;
-                                let targetY = s.py;
-                                const mineMagnet = s.bullets.find(t => !t.isEnemy && t.type.includes('mine') && t.life > 0);
-                                
-                                if (mineMagnet) {
-                                    targetX = mineMagnet.x;
-                                    targetY = mineMagnet.y;
-                                    if (Math.hypot(b.x - targetX, b.y - targetY) < 30) {
-                                        b.life = 0; 
-                                        mineMagnet.life = 0; 
-                                        createExplosion(s, b.x, b.y, '#facc15', 20, 'mine');
-                                        createAreaDamage(s, b.x, b.y, 150, mineMagnet.damage, shield, secondShield, setHud); 
-                                        audioService.playExplosion(0, 1.2, 'mine');
+                        if (!s.rescueMode) {
+                            if (b.type === 'mine_enemy') {
+                                // MINE PHYSICS UPDATE: GRAVITY SPIRAL
+                                // 0-60 frames: Initial Drift (established by launch velocity)
+                                // 60+ frames: Gravity Engagement
+                                if (age > 60) {
+                                    // Calculate Vector to Player
+                                    const dx = s.px - b.x;
+                                    const dy = s.py - b.y;
+                                    const distSq = dx*dx + dy*dy;
+                                    const dist = Math.sqrt(distSq);
+                                    
+                                    // GRAVITY FORCE: Pulls mine towards player
+                                    // Force weakens with distance (Inverse Square Law approximation)
+                                    // We clamp distance to avoid infinite force at collision
+                                    const gravityStrength = 800; 
+                                    const force = gravityStrength / Math.max(2500, distSq);
+                                    
+                                    const ax = (dx / dist) * force;
+                                    const ay = (dy / dist) * force;
+                                    
+                                    // Apply Gravity Acceleration
+                                    b.vx += ax;
+                                    b.vy += ay;
+                                    
+                                    // DRAG FORCE: Simulates atmosphere/friction
+                                    // This causes the orbit to decay into a spiral
+                                    b.vx *= 0.99; 
+                                    b.vy *= 0.99;
+                                    
+                                    // Visual Rotation (Spin)
+                                    b.angleOffset = (b.angleOffset || 0) + 0.1;
+                                }
+                            } else if (b.type === 'missile_enemy') {
+                                // MISSILE PHYSICS:
+                                // 0-10s (600 frames): Powered Flight (Accelerates & Turns)
+                                // >10s: Engine Burnout (Inertial drift until offscreen/hit)
+                                if (age < 600) {
+                                    const targetX = s.px;
+                                    const targetY = s.py;
+                                    const dx = targetX - b.x;
+                                    const dy = targetY - b.y;
+                                    const dist = Math.hypot(dx, dy);
+                                    
+                                    const turnRate = 0.06; 
+                                    const desiredSpeed = 14; 
+                                    
+                                    if (dist > 0) {
+                                        const tx = (dx / dist) * desiredSpeed;
+                                        const ty = (dy / dist) * desiredSpeed;
+                                        b.vx += (tx - b.vx) * turnRate;
+                                        b.vy += (ty - b.vy) * turnRate;
+                                    }
+                                    
+                                    // Engine active: Thrust Trail (Fire)
+                                    if (s.frame % 3 === 0) {
+                                        s.particles.push({ 
+                                            x: b.x, y: b.y, vx: -b.vx*0.2, vy: -b.vy*0.2, 
+                                            life: 0.4, size: 3, color: '#fb923c', type: 'fire' 
+                                        });
+                                    }
+                                } else {
+                                    // Engine Burnout: Inertia Only (No steering, no acceleration)
+                                    // Visual: Smoke Trail instead of Fire
+                                    if (s.frame % 5 === 0) {
+                                        s.particles.push({ 
+                                            x: b.x, y: b.y, vx: 0, vy: 0, 
+                                            life: 0.8, size: 2, color: '#52525b', type: 'smoke' 
+                                        });
                                     }
                                 }
-    
-                                const dx = targetX - b.x; const dy = targetY - b.y; const dist = Math.hypot(dx, dy);
-                                const isEnemyMine = b.type === 'mine_enemy';
-                                const turnRate = b.turnRate || (isEnemyMine ? 0.03 : 0.05); 
-                                const desiredSpeed = b.maxSpeed || (isEnemyMine ? 7 : 10);
-                                const tx = (dx / dist) * desiredSpeed; const ty = (dy / dist) * desiredSpeed;
-                                b.vx += (tx - b.vx) * turnRate; b.vy += (ty - b.vy) * turnRate;
                             }
                         }
                     } else {
-                        // --- PLAYER HOMING LOGIC ---
-                        // Only home if ACTIVATED
+                        // PLAYER ORDNANCE HOMING LOGIC
                         if (b.isActivated) {
                             if (b.targetProjectile && b.targetProjectile.life <= 0) b.targetProjectile = null;
                             if (b.target && b.target.hp <= 0) b.target = null;
@@ -985,14 +1020,25 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             }
                         } else {
                             // If NOT activated, just drift or maintain course
-                            // Maybe slow down slightly if it's a mine waiting to arm
-                            if (!isMissile) { // Mine
+                            if (!isMissile) { 
                                 b.vx *= 0.98;
                                 b.vy *= 0.98;
                             }
                         }
                     }
-                    if (isMissile || b.type === 'mine_enemy') { const speed = Math.hypot(b.vx, b.vy); if (speed < (b.maxSpeed || 16)) { b.vx *= 1.05; b.vy *= 1.05; } }
+                    
+                    // Velocity Clamping & Speed Limits
+                    if (isMissile || b.type === 'mine_enemy') { 
+                        const currentSpeed = Math.hypot(b.vx, b.vy); 
+                        // Missiles accelerate if engine on
+                        if (isMissile && age < 600 && currentSpeed < (b.maxSpeed || 16)) { 
+                            b.vx *= 1.05; b.vy *= 1.05; 
+                        }
+                        // Mines accelerate if homing (spiral)
+                        if (b.type === 'mine_enemy' && age > 60 && age < 600 && currentSpeed < (b.maxSpeed || 12)) {
+                            // Drag handles speed cap naturally, but ensure we don't exceed max physics limits
+                        }
+                    }
                 }
             }
             if (b.isEnemy && !s.rescueMode && !b.isDefective) { 
@@ -1142,47 +1188,30 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
             const maxCap = activeShip.config.maxCargo;
             const currentLoad = s.cargo.reduce((a,c) => a + c.quantity, 0);
             
-            // Only optimize if critical
             if (currentLoad < maxCap * 0.9) return;
-            
-            // Priority:
-            // 1. Keep Fuel, Water, Energy, Ammo (High Value)
-            // 2. Keep High Value Gear (> 50k)
-            // 3. Jettison Cheap Gear (< 5k), Cheap Resources, Goods
             
             const protectedTypes = ['fuel', 'water', 'energy', 'ammo'];
             
-            // Find candidates to remove, sorted by least value first
             const candidates = s.cargo
                 .map((item, idx) => ({ item, idx }))
                 .filter(entry => !protectedTypes.includes(entry.item.type))
                 .sort((a, b) => {
-                     // Sort by approximate value (Low to High)
-                     // Simple heuristic for now: Weapons < Resources < High Tech
                      const valA = (a.item.type === 'weapon' || a.item.type === 'shield') ? 5000 : 100;
                      const valB = (b.item.type === 'weapon' || b.item.type === 'shield') ? 5000 : 100;
                      return valA - valB;
                 });
 
-            // Remove items until we are below 85% capacity
             const targetCap = maxCap * 0.85;
             let current = currentLoad;
             
-            // We iterate candidates and remove them
-            // Note: modifying array while iterating indexes is tricky, so we mark for deletion or work backwards
-            // Easier approach: Rebuild s.cargo
-            
             const toKeep: CargoItem[] = [];
             
-            // First pass: add all protected items
             s.cargo.forEach(c => {
                 if (protectedTypes.includes(c.type)) toKeep.push(c);
             });
             
-            // Second pass: add candidates only if space allows
             let capacityUsed = toKeep.reduce((a,c) => a+c.quantity, 0);
             
-            // Sort remaining items by value High->Low so we keep best
             const remaining = s.cargo.filter(c => !protectedTypes.includes(c.type));
             remaining.sort((a, b) => {
                  const defA = [...WEAPONS, ...SHIELDS, ...EXOTIC_WEAPONS, ...EXOTIC_SHIELDS].find(x => x.id === a.id);
@@ -1197,9 +1226,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     toKeep.push(item);
                     capacityUsed += item.quantity;
                 } else {
-                    // Jettison this item
                     spawnGarbage(s.px, s.py, item.type, item.id || 'unknown', item.name);
-                    // Partial stacks not handled for simplicity, full stack dump
                 }
             });
             
@@ -1213,7 +1240,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
              
              if (currentLoad + item.quantity > maxCap * 0.9) {
                  optimizeCargo();
-                 currentLoad = s.cargo.reduce((a,c) => a + c.quantity, 0); // Recalculate
+                 currentLoad = s.cargo.reduce((a,c) => a + c.quantity, 0); 
              }
              
              if (currentLoad + item.quantity <= maxCap) {
@@ -1264,7 +1291,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         }
 
                         let equipped = false;
-                        // First pass: try empty slots
                         for (const slotIdx of allowedSlots) {
                             if (!s.weapons[slotIdx]) {
                                 s.weapons[slotIdx] = { id: l.id, count: 1 };
@@ -1279,7 +1305,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             }
                         }
 
-                        // Second pass: try upgrading existing slots
                         if (!equipped && allowedSlots.length > 0) {
                             let worstSlot = -1;
                             let minDPS = Infinity;
@@ -1301,7 +1326,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                 const oldWep = s.weapons[worstSlot]!;
                                 const oldDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === oldWep.id);
                                 
-                                // Move old weapon to Cargo
                                 const oldItem: CargoItem = { 
                                     instanceId: `loot_swap_${Date.now()}`, 
                                     type: 'weapon', 
@@ -1327,7 +1351,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                         if (equipped) {
                             processed = true;
                         } else {
-                            // Can't equip? Add new weapon to cargo
                              const newItem: CargoItem = { instanceId: `loot_${Date.now()}`, type: 'weapon', id: l.id, name: l.name || 'Unknown', quantity: 1, weight: 1 };
                              tryAddToCargo(newItem, `LOOT STORED: ${l.name}`);
                              processed = true;
@@ -1337,7 +1360,6 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 else if (l.type === 'shield' && l.id) {
                     const newShieldDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === l.id);
                     if (newShieldDef) {
-                        // CHECK FOR SAME SHIELD RECHARGE
                         if (s.shieldId === l.id && s.sh1 < newShieldDef.capacity) {
                             s.sh1 = newShieldDef.capacity;
                             audioService.playSfx('buy');
@@ -1484,3 +1506,4 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
 };
 
 export default GameEngine;
+    

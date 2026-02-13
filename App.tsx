@@ -798,25 +798,73 @@ export default function App() {
   const handleWarpComplete = () => { if (warpDestination === 'hangar') { const homePlanet = PLANETS.find(p => p.id === (gameState.dockedPlanetId || 'p1')); const homeQuad = homePlanet ? homePlanet.quadrant : QuadrantType.ALFA; setGameState(prev => ({ ...prev, currentQuadrant: homeQuad })); setScreen('hangar'); audioService.playTrack('command'); } else if (warpDestination === 'landing') { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('landing'); } else { setGameState(prev => ({ ...prev, currentQuadrant: prev.currentPlanet!.quadrant })); setScreen('game'); if (gameMode === 'combat') { audioService.playTrack('combat'); } else { audioService.playTrack('map'); } } };
   const getActiveShieldColor = () => { if (!selectedFitting) return '#3b82f6'; const sId = selectedFitting.shieldId || selectedFitting.secondShieldId; if (!sId) return '#3b82f6'; if (sId === 'dev_god_mode') return '#ffffff'; const sDef = [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === sId); return sDef ? sDef.color : '#3b82f6'; };
   
-  const replaceShip = (shipTypeId: string) => {
+  const replaceShip = (shipTypeId: string, colors?: { hull?: string, wing?: string }) => {
     const shipConfig = SHIPS.find(s => s.id === shipTypeId); 
     if (!shipConfig || !gameState.selectedShipInstanceId) return; 
     if (gameState.credits < shipConfig.price) { audioService.playSfx('denied'); return; }
+    
     setGameState(prev => {
       const sId = prev.selectedShipInstanceId!; 
       const oldFitting = prev.shipFittings[sId]; 
+      
       const reserve = [...(prev.reserveByPlanet[dockedId] || [])];
       const addToReserve = (id: string, type: any, count: number, name?: string) => { const idx = reserve.findIndex(r => r.id === id); if (idx >= 0) { reserve[idx] = { ...reserve[idx], quantity: reserve[idx].quantity + count }; } else { reserve.push({ instanceId: `res_${Date.now()}_${Math.random()}`, id, type, name: name || id, quantity: count, weight: 1 }); } };
       oldFitting.weapons.forEach((w, i) => { if (i > 0 && w) { const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(d => d.id === w.id); addToReserve(w.id, 'weapon', 1, def?.name); } });
       if (oldFitting.shieldId && oldFitting.shieldId !== 'dev_god_mode') { const def = [...SHIELDS, ...EXOTIC_SHIELDS].find(d => d.id === oldFitting.shieldId); addToReserve(oldFitting.shieldId, 'shield', 1, def?.name); }
       if (oldFitting.secondShieldId && oldFitting.secondShieldId !== 'dev_god_mode') { const def = [...SHIELDS, ...EXOTIC_SHIELDS].find(d => d.id === oldFitting.secondShieldId); addToReserve(oldFitting.secondShieldId, 'shield', 1, def?.name); }
       oldFitting.cargo.forEach(c => { addToReserve(c.id || 'unknown', c.type, c.quantity, c.name); });
+      
       const newOwned = prev.ownedShips.map(os => os.instanceId === sId ? { ...os, shipTypeId } : os); 
       const newFittings = { ...prev.shipFittings };
+      
       const newWeapons = Array(3).fill(null);
       if (shipConfig.isAlien) { const wId = shipConfig.weaponId || 'exotic_plasma_orb'; if (shipConfig.defaultGuns === 1) { newWeapons[0] = { id: wId, count: 1 }; } else { newWeapons[1] = { id: wId, count: 1 }; newWeapons[2] = { id: wId, count: 1 }; } } else { const shipIndex = SHIPS.findIndex(s => s.id === shipTypeId); if (shipIndex >= 3 && shipIndex <= 4) { newWeapons[0] = { id: 'gun_photon', count: 1 }; } else { newWeapons[0] = { id: 'gun_pulse', count: 1 }; } }
+      
       newFittings[sId] = { ...newFittings[sId], health: 100, fuel: shipConfig.maxFuel, water: shipConfig.maxWater || 100, weapons: newWeapons, shieldId: null, secondShieldId: null, rocketCount: 10, mineCount: 20, redMineCount: 0, cargo: [], ammo: { iron: 1000, titanium: 0, cobalt: 0, iridium: 0, tungsten: 0, explosive: 0 }, magazineCurrent: 200, reloadTimer: 0, selectedAmmo: 'iron' };
-      return { ...prev, credits: prev.credits - shipConfig.price, ownedShips: newOwned, shipFittings: newFittings, reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: reserve }, shipColors: { ...prev.shipColors, [sId]: shipConfig.defaultColor || '#94a3b8' } };
+      
+      // Update colors
+      const newColors = { ...prev.shipColors };
+      const newWingColors = { ...prev.shipWingColors };
+      const newCockpitColors = { ...prev.shipCockpitColors };
+      const newCockpitHighlightColors = { ...prev.shipCockpitHighlightColors };
+      const newGunColors = { ...prev.shipGunColors };
+      const newSecGunColors = { ...prev.shipSecondaryGunColors };
+      const newGunBodyColors = { ...prev.shipGunBodyColors };
+      const newEngineColors = { ...prev.shipEngineColors };
+      const newNozzleColors = { ...prev.shipNozzleColors };
+      const newBarColors = { ...prev.shipBarColors };
+
+      // Set new values
+      newColors[sId] = colors?.hull || shipConfig.defaultColor || '#94a3b8';
+      if (colors?.wing) newWingColors[sId] = colors.wing; else delete newWingColors[sId];
+
+      // Clear others to ensure fresh look
+      delete newCockpitColors[sId];
+      delete newCockpitHighlightColors[sId];
+      delete newGunColors[sId];
+      delete newSecGunColors[sId];
+      delete newGunBodyColors[sId];
+      delete newEngineColors[sId];
+      delete newNozzleColors[sId];
+      delete newBarColors[sId];
+
+      return { 
+          ...prev, 
+          credits: prev.credits - shipConfig.price, 
+          ownedShips: newOwned, 
+          shipFittings: newFittings, 
+          reserveByPlanet: { ...prev.reserveByPlanet, [dockedId]: reserve }, 
+          shipColors: newColors,
+          shipWingColors: newWingColors,
+          shipCockpitColors: newCockpitColors,
+          shipCockpitHighlightColors: newCockpitHighlightColors,
+          shipGunColors: newGunColors,
+          shipSecondaryGunColors: newSecGunColors,
+          shipGunBodyColors: newGunBodyColors,
+          shipEngineColors: newEngineColors,
+          shipNozzleColors: newNozzleColors,
+          shipBarColors: newBarColors
+      };
     });
     setIsStoreOpen(false); 
     audioService.playSfx('buy');
@@ -1278,7 +1326,7 @@ export default function App() {
           shipConfig={selectedShipConfig} 
           shipColors={{ 
               hull: gameState.shipColors[activeShipId], 
-              wings: gameState.shipWingColors[activeShipId], 
+              wings: gameState.shipWingColors[activeShipId],
               cockpit: gameState.shipCockpitColors[activeShipId],
               cockpit_highlight: gameState.shipCockpitHighlightColors[activeShipId] || 'rgba(255,255,255,0.7)',
               guns: gameState.shipGunColors[activeShipId],
@@ -1286,7 +1334,7 @@ export default function App() {
               gun_body: gameState.shipGunBodyColors[activeShipId],
               engines: gameState.shipEngineColors[activeShipId],
               nozzles: gameState.shipNozzleColors[activeShipId],
-              bars: gameState.shipBarColors[activeShipId]
+              bars: gameState.shipBarColors[activeShipId] // Added barColor
           }} 
           onComplete={handleLaunchSequenceComplete} 
           weaponId={activeWeaponId}
@@ -1309,7 +1357,7 @@ export default function App() {
               gun_body: gameState.shipGunBodyColors[activeShipId],
               engines: gameState.shipEngineColors[activeShipId],
               nozzles: gameState.shipNozzleColors[activeShipId],
-              bars: gameState.shipBarColors[activeShipId]
+              bars: gameState.shipBarColors[activeShipId] // Added barColor
             }}
             shieldColor={getActiveShieldColor()} 
             onComplete={handleWarpComplete} 
@@ -1340,13 +1388,13 @@ export default function App() {
                   color: gameState.shipColors[s.instanceId], 
                   wingColor: gameState.shipWingColors[s.instanceId],
                   cockpitColor: gameState.shipCockpitColors[s.instanceId],
-                  cockpitHighlightColor: gameState.shipCockpitHighlightColors[s.instanceId] || 'rgba(255,255,255,0.7)', 
+                  cockpitHighlightColor: gameState.shipCockpitHighlightColors[s.instanceId] || 'rgba(255,255,255,0.7)', // Passed Highlight
                   gunColor: gameState.shipGunColors[s.instanceId],
                   secondaryGunColor: gameState.shipSecondaryGunColors[s.instanceId],
                   gunBodyColor: gameState.shipGunBodyColors[s.instanceId],
                   engineColor: gameState.shipEngineColors[s.instanceId],
                   nozzleColor: gameState.shipNozzleColors[s.instanceId],
-                  barColor: gameState.shipBarColors[s.instanceId]
+                  barColor: gameState.shipBarColors[s.instanceId] // Added Bars
               };
           })} 
           shield={selectedFitting?.shieldId === 'dev_god_mode' ? { id: 'dev', capacity: 9999, color: '#fff', name: 'DEV', regenRate: 100, energyCost: 0, visualType: 'full', price: 0 } : (selectedFitting?.shieldId ? [...SHIELDS, ...EXOTIC_SHIELDS].find(s => s.id === selectedFitting.shieldId) || null : null)} 
@@ -1367,7 +1415,7 @@ export default function App() {
               planet={gameState.currentPlanet} 
               shipShape={selectedShipConfig.shape} 
               shipConfig={selectedShipConfig}
-              shipColors={{ 
+              shipColors={{ // Passed Colors to Landing
                   hull: gameState.shipColors[activeShipId], 
                   wings: gameState.shipWingColors[activeShipId],
                   cockpit: gameState.shipCockpitColors[activeShipId],
@@ -1541,7 +1589,6 @@ export default function App() {
           fontSize={gameState.settings.fontSize || 'medium'} 
       />
 
-      {/* RE-ADDED CARGO AND PAINT DIALOGS WHICH WERE MISSING */}
       {selectedFitting && (
           <CargoDialog 
               isOpen={isCargoOpen}
@@ -1590,8 +1637,7 @@ export default function App() {
                   else if (activePart === 'secondary_guns') secGunColors[sId] = color;
                   else if (activePart === 'gun_body') gunBodyColors[sId] = color;
                   else if (activePart === 'engines') engineColors[sId] = color;
-                  else if (activePart === 'nozzles') nozzleColors[sId] = color;
-                  else if (activePart === 'bars') barColors[sId] = color;
+                  // Nozzles and Bars removed from selector, but logic kept intact
                   
                   return { ...prev, shipColors: colors, shipWingColors: wingColors, shipCockpitColors: cockpitColors, shipCockpitHighlightColors: cockpitHighlightColors, shipGunColors: gunColors, shipSecondaryGunColors: secGunColors, shipGunBodyColors: gunBodyColors, shipEngineColors: engineColors, shipNozzleColors: nozzleColors, shipBarColors: barColors };
               });
@@ -1605,6 +1651,14 @@ export default function App() {
               });
           }}
           fontSize={gameState.settings.fontSize || 'medium'}
+      />
+
+      <MessagesDialog 
+          isOpen={isMessagesOpen} 
+          onClose={() => setIsMessagesOpen(false)} 
+          messages={gameState.messages} 
+          leaderboard={gameState.leaderboard} 
+          fontSize={gameState.settings.fontSize || 'medium'} 
       />
 
     </>

@@ -121,6 +121,9 @@ export interface GameEngineState {
     sh2RegenActive: boolean;
     distressTimer: number;
     
+    // Wave Tracking for Patterns
+    waveCounter: number;
+
     // Dynamic Equipment State for In-Game Swapping
     weapons: (EquippedWeapon | null)[];
     shieldId: string | null;

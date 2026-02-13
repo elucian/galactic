@@ -110,6 +110,13 @@ export const renderGame = (
             // Visual flair for strafing (Inverted for rotation)
             if (e.vx < -0.5) enemyMovement.right = true; 
             if (e.vx > 0.5) enemyMovement.left = true;
+            
+            // Visual flair for backward movement (Flying UP screen = Backwards for Enemy)
+            if (e.vy < -0.5) {
+                enemyMovement.down = true; // Maps to Retro Jets (Front Thrusters)
+                enemyMovement.up = false; // Disable main jets if reversing hard
+                forceEnemyJetsOff = false;
+            }
 
             drawShip(ctx, { 
                 config: e.config, 
