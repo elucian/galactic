@@ -825,7 +825,7 @@ export const LandingScene: React.FC<LandingSceneProps> = ({ planet, shipShape, s
       
       {/* Title Overlay */}
       <div className="absolute top-6 right-6 z-40 text-right pointer-events-none flex flex-col items-end">
-          <h1 className="retro-font text-lg md:text-xl text-emerald-500 uppercase tracking-widest drop-shadow-md leading-none">
+          <h1 className="retro-font text-lg md:text-xl text-white uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-none">
               {planet.name}
           </h1>
           <div className="flex items-center gap-2 mt-1">
