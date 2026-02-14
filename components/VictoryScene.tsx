@@ -1,7 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { ShipIcon } from './ShipIcon';
-import { SHIPS } from '../constants';
+import { SHIPS, ExtendedShipConfig } from '../constants';
 import { audioService } from '../services/audioService';
 
 interface VictorySceneProps {
@@ -10,9 +10,32 @@ interface VictorySceneProps {
     onRestart: () => void;
     title?: string;
     subtitle?: string;
+    message?: string;
+    shipConfig?: ExtendedShipConfig;
+    shipColors?: {
+        hull?: string;
+        wings?: string;
+        cockpit?: string;
+        cockpit_highlight?: string;
+        guns?: string;
+        secondary_guns?: string;
+        gun_body?: string;
+        engines?: string;
+        nozzles?: string;
+        bars?: string;
+    };
 }
 
-export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRestart, title = "VICTORY ACHIEVED", subtitle = "SECTOR LIBERATED" }) => {
+export const VictoryScene: React.FC<VictorySceneProps> = ({ 
+    mode, 
+    onExit, 
+    onRestart, 
+    title = "VICTORY", 
+    subtitle = "SECTOR LIBERATED", 
+    message = "PEOPLE THANK YOU",
+    shipConfig = SHIPS[0],
+    shipColors = {}
+}) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
     // UI Visibility: Immediate for simple, delayed for cinematic
@@ -28,7 +51,6 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
     useEffect(() => { onRestartRef.current = onRestart; }, [onRestart]);
 
     const shipRefs = useRef<(HTMLDivElement | null)[]>([]);
-    const shipConfig = SHIPS[0]; 
     
     const particles = useRef<{x: number, y: number, vx: number, vy: number, life: number, color: string, size: number}[]>([]);
     const stars = useRef<{x: number, y: number, size: number, alpha: number}[]>([]);
@@ -325,7 +347,23 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
                             className="absolute w-32 h-32 will-change-transform"
                             style={{ left: '0', top: '0', transform: 'translate(-1000px, -1000px)', opacity: 0, display: 'none' }}
                         >
-                            <ShipIcon config={shipConfig} showJets={true} jetType="combustion" forceShieldScale={true} className="w-full h-full drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]" />
+                            <ShipIcon 
+                                config={shipConfig} 
+                                showJets={true} 
+                                jetType="combustion" 
+                                forceShieldScale={true} 
+                                hullColor={shipColors.hull}
+                                wingColor={shipColors.wings}
+                                cockpitColor={shipColors.cockpit}
+                                cockpitHighlightColor={shipColors.cockpit_highlight}
+                                gunColor={shipColors.guns}
+                                secondaryGunColor={shipColors.secondary_guns}
+                                gunBodyColor={shipColors.gun_body}
+                                engineColor={shipColors.engines}
+                                nozzleColor={shipColors.nozzles}
+                                barColor={shipColors.bars}
+                                className="w-full h-full drop-shadow-[0_0_15px_rgba(255,255,255,0.8)]" 
+                            />
                         </div>
                     ))}
                 </div>
@@ -334,13 +372,20 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
             {/* UI LAYER - High Z-Index */}
             <div className={`absolute inset-0 z-[100] transition-opacity duration-1000 flex flex-col items-center justify-center pointer-events-none ${uiVisible ? 'opacity-100 bg-black/40' : 'opacity-0'}`}>
                 
+                {/* 1. Large Title */}
                 <h1 className="retro-font text-5xl md:text-8xl text-yellow-500 font-black uppercase tracking-tighter drop-shadow-[0_0_25px_rgba(251,191,36,0.8)] animate-pulse mb-8 text-center px-4" style={{ background: 'linear-gradient(to bottom, #fde047, #d97706)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', color: 'transparent' }}>
                     {title}
                 </h1>
 
-                <h2 className="retro-font text-2xl md:text-4xl text-white/70 font-black uppercase tracking-[0.2em] drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] mb-12 text-center w-full px-4">
+                {/* 2. Subtitle (Smaller) */}
+                <h2 className="retro-font text-xl md:text-3xl text-emerald-400 font-black uppercase tracking-[0.2em] drop-shadow-[0_0_10px_rgba(16,185,129,0.3)] mb-4 text-center w-full px-4">
                     {subtitle}
                 </h2>
+
+                {/* 3. Message (Regular Text) */}
+                <p className="text-white/80 font-mono text-lg md:text-xl uppercase tracking-widest drop-shadow-md mb-12 text-center w-full px-4">
+                    {message}
+                </p>
 
                 <div className={`flex gap-6 transition-opacity duration-500 pointer-events-auto ${showButton ? 'opacity-100' : 'opacity-0'}`}>
                     <button 

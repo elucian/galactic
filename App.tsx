@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from './types.ts';
-import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from './constants.ts';
-import { audioService } from './services/audioService.ts';
-import { backendService } from './services/backendService.ts';
+import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from '../types.ts';
+import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from '../constants.ts';
+import { audioService } from '../services/audioService.ts';
+import { backendService } from '../services/backendService.ts';
 import { StoryScene } from './components/StoryScene.tsx';
 import { CommandCenter } from './components/CommandCenter.tsx';
 import { CargoDialog } from './components/CargoDialog.tsx';
@@ -199,38 +199,60 @@ export default function App() {
 
         const now = Date.now();
         const lastSave = parsed.lastSaveTime || now;
-        const elapsedHours = (now - lastSave) / (1000 * 60 * 60);
         
-        if (elapsedHours >= 8) {
-            const invasionSteps = Math.floor(elapsedHours - 8) + 1; 
-            let lostCount = 0;
+        // PLANETARY DECAY LOGIC
+        // Loose 1 planet per 24 hours elapsed. 
+        // Protected: First 3 planets (P1, P2, P3).
+        const daysElapsed = Math.floor((now - lastSave) / (1000 * 60 * 60 * 24));
+        
+        if (daysElapsed > 0) {
             const updatedRegistry = { ...parsed.planetRegistry };
             
-            for (let i = PLANETS.length - 1; i >= 2; i--) {
-                if (lostCount >= invasionSteps) break;
-                
-                const p = PLANETS[i];
-                const status = updatedRegistry[p.id]?.status || p.status;
-                
-                if (status === 'friendly' || status === 'siege') {
-                    updatedRegistry[p.id] = { 
-                        ...updatedRegistry[p.id], 
-                        status: 'occupied', 
-                        wins: 0, 
-                        losses: 0 
-                    };
-                    lostCount++;
-                }
+            // Get all planets currently owned (friendly) or under siege
+            // Sort by ID descending (High End -> Low End) i.e. p12, p11... p1
+            const ownedPlanets = PLANETS
+                .filter(p => {
+                    const status = updatedRegistry[p.id]?.status || p.status;
+                    return status === 'friendly' || status === 'siege';
+                })
+                .sort((a, b) => {
+                     // Extract number from id 'p12' -> 12
+                     const numA = parseInt(a.id.substring(1));
+                     const numB = parseInt(b.id.substring(1));
+                     return numB - numA; // Descending
+                });
+            
+            // Filter out protected planets (P1, P2, P3)
+            // They cannot be lost via time decay, only via mission failure
+            const vulnerablePlanets = ownedPlanets.filter(p => {
+                 const num = parseInt(p.id.substring(1));
+                 return num > 3; 
+            });
+
+            // Determine how many to lose
+            // 1 planet per day, up to the max available vulnerable planets
+            const planetsToLoseCount = Math.min(daysElapsed, vulnerablePlanets.length);
+            const lostPlanets: string[] = [];
+
+            for (let i = 0; i < planetsToLoseCount; i++) {
+                const p = vulnerablePlanets[i];
+                updatedRegistry[p.id] = { 
+                    ...updatedRegistry[p.id], 
+                    status: 'occupied', 
+                    wins: 0, 
+                    losses: 0 
+                };
+                lostPlanets.push(p.name);
             }
 
-            if (lostCount > 0) {
+            if (lostPlanets.length > 0) {
                 parsed.planetRegistry = updatedRegistry;
-                let msgText = `TIME LAPSE DETECTED: ${lostCount} SECTORS OVERRUN BY XENOS FORCES.`;
-                if (lostCount >= 4) msgText = "CRITICAL ALERT: OUTER RIM DEFENSES COLLAPSED DURING HYPER-SLEEP.";
-                if (updatedRegistry['p12'].status === 'occupied') msgText = "DELTA QUADRANT LOST. RECLAMATION REQUIRED.";
+                
+                let msgText = `TIME LAPSE: ${daysElapsed} DAYS. LOST SECTORS: ${lostPlanets.join(', ')}.`;
+                if (lostPlanets.length >= 4) msgText = `CRITICAL DECAY: ${daysElapsed} DAYS INACTIVITY. MASSIVE TERRITORY LOSS.`;
                 
                 const msg: GameMessage = {
-                    id: `invasion_${now}`,
+                    id: `decay_${now}`,
                     type: 'activity',
                     category: 'combat',
                     pilotName: 'COMMAND',
@@ -256,7 +278,7 @@ export default function App() {
   const [gameMode, setGameMode] = useState<'combat' | 'drift'>('combat');
   const [warpDestination, setWarpDestination] = useState<'game' | 'hangar' | 'landing'>('game'); 
   const [victoryMode, setVictoryMode] = useState<'cinematic' | 'simple'>('simple');
-  const [victoryData, setVictoryData] = useState({ title: "VICTORY ACHIEVED", subtitle: "SECTOR LIBERATED" });
+  const [victoryData, setVictoryData] = useState({ title: "VICTORY", subtitle: "SECTOR LIBERATED", message: "PEOPLE THANK YOU" });
 
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
@@ -694,8 +716,9 @@ export default function App() {
     
     // Determine Victory Condition & Text
     let nextScreen = 'hangar';
-    let victoryTitle = "VICTORY ACHIEVED";
+    let victoryTitle = "VICTORY";
     let victorySubtitle = "SECTOR LIBERATED";
+    let victoryMessage = "PEOPLE THANK YOU";
     let showVictoryScene = false;
 
     setGameState(prev => {
@@ -744,12 +767,13 @@ export default function App() {
 
            if (allFriendly) {
                showVictoryScene = true;
-               victoryTitle = `VICTORY QUADRANT ${prev.currentQuadrant} IS LIBERATED`;
-               victorySubtitle = "PEOPLE THANK YOU!";
+               victoryTitle = "VICTORY";
+               victorySubtitle = `SECTOR ${prev.currentQuadrant} LIBERATED`;
+               victoryMessage = "PEOPLE THANK YOU";
                
                if (prev.currentQuadrant === QuadrantType.DELTA) {
-                   victoryTitle = "GALAXY LIBERATED";
-                   victorySubtitle = "Learn and prosper 🖖";
+                   victorySubtitle = "GALAXY LIBERATED";
+                   victoryMessage = "Learn and prosper 🖖";
                }
            }
 
@@ -824,7 +848,7 @@ export default function App() {
             // Victory on Quadrant Clear
             const useCinematic = gameState.settings.showTransitions;
             setVictoryMode(useCinematic ? 'cinematic' : 'simple');
-            setVictoryData({ title: victoryTitle, subtitle: victorySubtitle });
+            setVictoryData({ title: victoryTitle, subtitle: victorySubtitle, message: victoryMessage });
             setScreen('victory');
         }
         else if (payload?.health > 0 && gameState.settings.showTransitions && success) { 
@@ -1481,11 +1505,25 @@ export default function App() {
           />
       )}
 
-      {screen === 'victory' && (
+      {screen === 'victory' && selectedShipConfig && (
           <VictoryScene 
               mode={victoryMode}
               title={victoryData.title}
               subtitle={victoryData.subtitle}
+              message={victoryData.message}
+              shipConfig={selectedShipConfig}
+              shipColors={{
+                  hull: gameState.shipColors[activeShipId], 
+                  wings: gameState.shipWingColors[activeShipId],
+                  cockpit: gameState.shipCockpitColors[activeShipId],
+                  cockpit_highlight: gameState.shipCockpitHighlightColors[activeShipId] || 'rgba(255,255,255,0.7)',
+                  guns: gameState.shipGunColors[activeShipId],
+                  secondary_guns: gameState.shipSecondaryGunColors[activeShipId],
+                  gun_body: gameState.shipGunBodyColors[activeShipId],
+                  engines: gameState.shipEngineColors[activeShipId],
+                  nozzles: gameState.shipNozzleColors[activeShipId],
+                  bars: gameState.shipBarColors[activeShipId]
+              }}
               onExit={() => { 
                   try {
                       if (window.history.length > 1) {
