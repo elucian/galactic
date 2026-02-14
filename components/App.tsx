@@ -21,7 +21,7 @@ import { GameEngine } from './GameEngine.tsx';
 import { LandingScene } from './LandingScene.tsx';
 import { VictoryScene } from './VictoryScene.tsx';
 
-const SAVE_KEY = 'galactic_defender_beta_41'; 
+const SAVE_KEY = 'galactic_defender_beta_42'; 
 const REPAIR_COST_PER_PERCENT = 150;
 const REFUEL_COST_PER_UNIT = 5000;
 const DEFAULT_SHIP_ID = 'vanguard';
@@ -1277,7 +1277,7 @@ export default function App() {
                 </div>
 
                 <div className={`mt-12 ${uiStyles.beta} text-zinc-500 font-mono uppercase tracking-[0.4em] pointer-events-auto`}>
-                  Beta 41 - February <span 
+                  Beta 42 - February <span 
                       onClick={() => { 
                           if(gameState.settings.testMode) { 
                               setVictoryMode('cinematic'); // ALWAYS FORCE CINEMATIC FOR TESTING

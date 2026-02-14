@@ -675,7 +675,7 @@ export class Enemy {
 
                 // Beta: Thruster Avoidance (Side to Side)
                 // Avoidance radius same as generic check
-                const avoidRad = (this.type === 'boss' ? 120 : 60) + 100;
+                const avoidRad = 160; // Fixed radius for non-bosses (60 + 100)
                 
                 if (this.quadrant === QuadrantType.BETA && distToPlayer < avoidRad) {
                     // Thrust away from player on X axis

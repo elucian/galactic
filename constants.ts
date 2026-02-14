@@ -1,6 +1,6 @@
 
-// CHECKPOINT: Beta 37
-// VERSION: Beta 37 - February 2026
+// CHECKPOINT: Beta 42
+// VERSION: Beta 42 - February 2026
 import { ShipConfig, Weapon, Shield, WeaponType, Planet, QuadrantType, AmmoType } from './types';
 
 export const INITIAL_CREDITS = 250000;
