@@ -266,9 +266,16 @@ export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShi
       const target = e.target as HTMLElement;
       if (target.closest('button') || target.tagName === 'BUTTON') return;
       if (state.current.paused) return;
-      const rect = canvasRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      targetRef.current = { x: e.clientX, y: e.clientY };
+      
+      const height = window.innerHeight;
+      const topLimit = height * 0.33;
+      const bottomLimit = height - 100;
+      
+      let targetY = e.clientY;
+      if (targetY < topLimit) targetY = topLimit;
+      if (targetY > bottomLimit) targetY = bottomLimit;
+
+      targetRef.current = { x: e.clientX, y: targetY };
   };
 
   const spawnLoot = (x: number, y: number, z: number, type: string, id?: string, name?: string, quantity: number = 1) => { state.current.loot.push({ x, y, z, type, id, name, quantity, isPulled: false, vx: (Math.random()-0.5), vy: (Math.random()-0.5) }); };
@@ -354,8 +361,13 @@ export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShi
             }
         }
 
-        const currentShieldDef = s.shieldId === 'dev_god_mode' ? { id: 'dev', capacity: 9999, color: '#fff', name: 'DEV', regenRate: 100, energyCost: 0, visualType: 'full' } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(def => def.id === s.shieldId) || null;
-        const currentSecondShieldDef = s.secondShieldId === 'dev_god_mode' ? { id: 'dev', capacity: 9999, color: '#fff', name: 'DEV', regenRate: 100, energyCost: 0, visualType: 'full' } as Shield : [...SHIELDS, ...EXOTIC_SHIELDS].find(def => def.id === s.secondShieldId) || null;
+        const currentShieldDef: Shield | null = s.shieldId === 'dev_god_mode' 
+            ? { id: 'dev', capacity: 9999, color: '#fff', name: 'DEV', regenRate: 100, energyCost: 0, visualType: 'full' as const, price: 0 } 
+            : (s.shieldId ? [...SHIELDS, ...EXOTIC_SHIELDS].find(def => def.id === s.shieldId) || null : null);
+            
+        const currentSecondShieldDef: Shield | null = s.secondShieldId === 'dev_god_mode' 
+            ? { id: 'dev', capacity: 9999, color: '#fff', name: 'DEV', regenRate: 100, energyCost: 0, visualType: 'full' as const, price: 0 } 
+            : (s.secondShieldId ? [...SHIELDS, ...EXOTIC_SHIELDS].find(def => def.id === s.secondShieldId) || null : null);
 
         const s1Max = currentShieldDef ? currentShieldDef.capacity : 1;
         const s2Max = currentSecondShieldDef ? currentSecondShieldDef.capacity : 1;
@@ -704,51 +716,77 @@ export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShi
             if (e.hp <= 0 || offScreen) {
                 if (e.hp <= 0 && !s.rescueMode) {
                     createAreaDamage(s, e.x, e.y, 150, 50, currentShieldDef, currentSecondShieldDef, setHud);
+                    
                     if (e.type === 'boss') {
                         s.bossDead = true; s.score += 10000 * difficulty;
                         audioService.playExplosion(e.x, 3.0, 'boss');
                         createExplosion(s, e.x, e.y, '#a855f7', 30, 'boss');
                         setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
-                        for (let k=0; k<2; k++) {
-                            const rand = Math.random();
-                            let lootType = ''; let lootId = ''; let quantity = 1; let name = '';
-                            if (rand < 0.25) { const w = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)]; lootType = 'weapon'; lootId = w.id; name = w.name; } 
-                            else if (rand < 0.5) { const sh = EXOTIC_SHIELDS[Math.floor(Math.random() * EXOTIC_SHIELDS.length)]; lootType = 'shield'; lootId = sh.id; name = sh.name; } 
-                            else if (rand < 0.75) { lootType = 'missile'; quantity = 50; name = 'Missile Pack'; } 
-                            else { lootType = 'mine'; quantity = 50; name = 'Mine Pack'; }
-                            if (k === 0) spawnLoot(e.x - 20, e.y, 0, 'energy', 'batt_cell', 'Energy Pack', 5);
-                            else spawnLoot(e.x + (k*40)-20, e.y, 0, lootType, lootId, name, quantity);
-                        }
+                        
+                        // BOSS LOOT: 1 Exotic Weapon + 1 Shield (High Tier)
+                        // Exotic Weapons Pool
+                        const wDef = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
+                        spawnLoot(e.x - 30, e.y, 0, 'weapon', wDef.id, wDef.name, 1);
+                        
+                        // Shield Pool: Exotics + Top 2 Standard
+                        const shieldPool = [...EXOTIC_SHIELDS, ...SHIELDS.slice(-2)];
+                        const sDef = shieldPool[Math.floor(Math.random() * shieldPool.length)];
+                        spawnLoot(e.x + 30, e.y, 0, 'shield', sDef.id, sDef.name, 1);
+                        
                     } else {
                         audioService.playExplosion(e.x, 1.0, 'normal');
                         s.score += 100 * difficulty;
                         
-                        // STANDARD LOOT DROPS
-                        let equipChance = 0.05;
-                        if (quadrant === QuadrantType.ALFA) equipChance = 0.30;
-                        else if (quadrant === QuadrantType.BETA) equipChance = 0.20;
-                        else if (quadrant === QuadrantType.GAMA) equipChance = 0.10;
-
-                        if (Math.random() < equipChance) {
-                            if (Math.random() < 0.5) {
-                                let dropSlot = 0;
-                                if (quadrant === QuadrantType.ALFA && difficulty === 1) {
-                                    if (Math.random() < 0.1) dropSlot = 1;
-                                }
-                                let wId = e.equippedWeapons[dropSlot]?.id || e.equippedWeapons[0]?.id; 
-                                if (!wId) wId = e.equippedWeapons[0]?.id;
-                                let wDef = WEAPONS.find(w => w.id === wId);
-                                if (!wDef) {
-                                    wDef = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
-                                }
-                                spawnLoot(e.x, e.y, 0, 'weapon', wDef.id, wDef.name, 1);
-                            } else {
-                                const sDef = SHIELDS[Math.floor(Math.random() * SHIELDS.length)];
-                                spawnLoot(e.x, e.y, 0, 'shield', sDef.id, sDef.name, 1);
+                        const isBomber = e.config.defaultGuns === 0;
+                        const isExoticShip = e.config.isAlien || (e.equippedWeapons[0]?.id && e.equippedWeapons[0].id.includes('exotic'));
+                        
+                        if (isBomber) {
+                            // Bombers drop Mines and Missiles (High Chance)
+                            if (Math.random() < 0.7) {
+                                const dropType = Math.random() > 0.5 ? 'missile' : 'mine';
+                                const qty = 3 + Math.floor(Math.random() * 3); // 3-5
+                                spawnLoot(e.x, e.y, 0, dropType, undefined, undefined, qty);
                             }
-                        } else if (Math.random() < 0.4) {
-                            if (Math.random() < 0.5) spawnLoot(e.x, e.y, 0, 'energy', 'batt_cell', 'Energy Pack', 1);
-                            else { const ammos = ['iron', 'titanium', 'cobalt', 'iridium', 'tungsten', 'explosive']; const selected = ammos[Math.floor(Math.random() * ammos.length)]; spawnLoot(e.x, e.y, 0, 'ammo', selected, 'Ammo Box', 100); }
+                        } else if (isExoticShip) {
+                            // Exotic Ships drop the gun they use (Exotic or Regular Energy) - 25% Chance
+                            if (Math.random() < 0.25) {
+                                 const wId = e.equippedWeapons[0]?.id;
+                                 const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === wId);
+                                 if (def) spawnLoot(e.x, e.y, 0, 'weapon', def.id, def.name, 1);
+                            } else {
+                                // Drop Energy if not gun (50% of remaining)
+                                 if (Math.random() < 0.5) spawnLoot(e.x, e.y, 0, 'energy', 'batt_cell', 'Energy Pack', 1);
+                            }
+                        } else {
+                            // Standard Aliens
+                            // Some drop mechanical guns, some drop energy guns, most drop ammo
+                            const equippedId = e.equippedWeapons[0]?.id;
+                            const wDef = WEAPONS.find(w => w.id === equippedId);
+                            
+                            const roll = Math.random();
+                            
+                            if (roll < 0.08) { 
+                                // 8% Chance: Drop the Gun (Mechanical or Energy based on what they have)
+                                if (wDef) spawnLoot(e.x, e.y, 0, 'weapon', wDef.id, wDef.name, 1);
+                                else {
+                                     // Fallback
+                                     const fallback = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
+                                     spawnLoot(e.x, e.y, 0, 'weapon', fallback.id, fallback.name, 1);
+                                }
+                            } else if (roll < 0.12) {
+                                 // 4% Chance: Drop Shield (Flavor)
+                                 const sDef = SHIELDS[Math.floor(Math.random() * SHIELDS.length)];
+                                 spawnLoot(e.x, e.y, 0, 'shield', sDef.id, sDef.name, 1);
+                            } else if (roll < 0.80) {
+                                // 68% Chance: Ammo/Energy (Most of the time)
+                                if (wDef && wDef.type === 'LASER') {
+                                     spawnLoot(e.x, e.y, 0, 'energy', 'batt_cell', 'Energy Pack', 1);
+                                } else {
+                                     // Mechanical Gun -> Drop Ammo
+                                     let ammoType = wDef?.defaultAmmo || 'iron';
+                                     spawnLoot(e.x, e.y, 0, 'ammo', ammoType, 'Ammo Box', 50 + Math.floor(Math.random() * 100));
+                                }
+                            }
                         }
                     }
                 } else if (e.hp <= 0 && s.rescueMode) {
@@ -872,9 +910,11 @@ export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShi
                 if (isOrdnance && !b.isDefective && !b.hasExpired) {
                     // FORCE EXPLOSION for timeout
                     if (b.type === 'octo_shell') {
-                        createExplosion(s, b.x, b.y, b.color, 15, 'fireworks');
-                        createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
-                        audioService.playExplosion(0, 1.0, 'emp');
+                        if (b.isOvercharge) {
+                             createExplosion(s, b.x, b.y, b.color, 15, 'fireworks');
+                             createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
+                             audioService.playExplosion(0, 1.0, 'emp');
+                        }
                     } else {
                         const isMine = b.type.includes('mine');
                         createExplosion(s, b.x, b.y, b.color, 20, isMine ? 'mine' : 'standard');
@@ -1046,7 +1086,7 @@ export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShi
                                 createAreaDamage(s, b.x, b.y, 150, b.damage, currentShieldDef, currentSecondShieldDef, setHud); 
                             } else if (b.type === 'bomb') {
                                 audioService.playExplosion(0, 1.2, 'mine'); 
-                                createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
+                                createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud); 
                             } else if (b.isEmp || b.type.includes('emp')) {
                                 audioService.playExplosion(0, 1.2, 'emp'); 
                             } else {

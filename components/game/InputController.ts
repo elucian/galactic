@@ -68,20 +68,28 @@ export const InputController = {
             if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') { state.mineBurstCount = 0; }
         };
 
-        const handleBlur = () => {
+        const clearInputs = () => {
             state.keys.clear();
             inputRef.current.main = false;
             inputRef.current.secondary = false;
         };
 
+        const handleVisibilityChange = () => {
+            if (document.hidden) {
+                clearInputs();
+            }
+        };
+
         window.addEventListener('keydown', kd); 
         window.addEventListener('keyup', ku);
-        window.addEventListener('blur', handleBlur);
+        window.addEventListener('blur', clearInputs);
+        document.addEventListener('visibilitychange', handleVisibilityChange);
         
         return () => { 
             window.removeEventListener('keydown', kd); 
             window.removeEventListener('keyup', ku); 
-            window.removeEventListener('blur', handleBlur);
+            window.removeEventListener('blur', clearInputs);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
     }
 };

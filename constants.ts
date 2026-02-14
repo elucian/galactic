@@ -363,6 +363,27 @@ export const SHIELDS: Shield[] = [
   { 
       id: 'sh_gamma', name: 'Omni-Sphere Crystal', price: 75000, capacity: 1200, regenRate: 25, energyCost: 80, visualType: 'inner-full', color: '#38bdf8',
       description: 'Class 3 Omni-Shield. Capacity: 1200MJ. 360-degree coverage. Fortress-level protection effective against all incoming fire.'
+  },
+  // NEW SHIELDS
+  {
+      id: 'sh_kinetic_1', name: 'Reactive Barrier', price: 150000, capacity: 1800, regenRate: 10, energyCost: 60, visualType: 'inner-full', color: '#ef4444',
+      description: 'Class 4 Kinetic Shield. Reactive mesh hardens on impact. 60% Kinetic Resistance, but vulnerable to Energy weapons.'
+  },
+  {
+      id: 'sh_energy_1', name: 'Phase Deflector', price: 150000, capacity: 1600, regenRate: 30, energyCost: 70, visualType: 'inner-full', color: '#06b6d4',
+      description: 'Class 4 Energy Shield. Disperses laser coherency. 60% Energy Resistance, but permeable to solid projectiles.'
+  },
+  {
+      id: 'sh_kinetic_2', name: 'Bulwark Plating', price: 380000, capacity: 3000, regenRate: 15, energyCost: 90, visualType: 'inner-full', color: '#fbbf24',
+      description: 'Class 6 Heavy Kinetic Shield. Golden lattice structure. Extreme protection against missiles and collisions.'
+  },
+  {
+      id: 'sh_energy_2', name: 'Vortex Field', price: 380000, capacity: 2800, regenRate: 60, energyCost: 100, visualType: 'inner-full', color: '#10b981',
+      description: 'Class 6 High-Regen Energy Field. Absorbs plasma instantly. Very weak against ballistic fire.'
+  },
+  {
+      id: 'sh_omni_supreme', name: 'Aegis Omni-Core', price: 1000000, capacity: 5000, regenRate: 50, energyCost: 150, visualType: 'inner-full', color: '#ffffff',
+      description: 'Class X Prototype. Dual-phase generator providing supreme resistance to ALL damage types.'
   }
 ];
 

@@ -13,7 +13,11 @@ export const ASTEROID_VARIANTS = [
 
 export const OCTO_COLORS = ['#22c55e', '#3b82f6', '#f97316', '#ef4444', '#a855f7'];
 
-export const getShieldType = (color: string): 'kinetic' | 'energy' => {
+export const getShieldType = (color: string): 'kinetic' | 'energy' | 'omni' => {
+    // SUPREME/OMNI SHIELDS (White)
+    if (color === '#ffffff') {
+        return 'omni';
+    }
     // KINETIC SHIELDS (Red, Purple, Gold)
     // Strong vs Bullets, Weak vs Energy, Stops Ordnance
     if (color === '#ef4444' || color === '#a855f7' || color === '#fbbf24') {
@@ -58,7 +62,11 @@ export const calculateDamage = (baseDamage: number, type: string, targetType: 'h
         let pRes = 1.0;
         let dRes = 1.0;
 
-        if (shieldType === 'kinetic') { 
+        if (shieldType === 'omni') {
+            // Supreme Shield: Strong resistance to EVERYTHING
+            pRes = 0.5;
+            dRes = 0.5;
+        } else if (shieldType === 'kinetic') { 
             // Kinetic Shield (Red/Purple): Resists Kinetic (power), Weak to Energy (disruption)
             pRes = 0.4;  // Resists Bullets
             dRes = 2.0;  // Weak to Lasers

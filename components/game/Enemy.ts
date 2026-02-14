@@ -154,7 +154,10 @@ export class Enemy {
         }
 
         let addShields = true;
-        if (quadrant === QuadrantType.ALFA && diff <= 1) addShields = false;
+        if (quadrant === QuadrantType.ALFA) {
+            // Only add shields if diff > 1
+            if (diff <= 1) addShields = false;
+        }
 
         if (addShields) {
             let s1Type: 'full'|'front'|'tri'|'hex' = 'full';
@@ -750,7 +753,7 @@ export class Enemy {
         }
 
         // Standard Firing Logic for all Non-Boss Ships (including Pattern ships)
-        if (this.type === 'scout' || this.type === 'fighter' || this.type === 'heavy') {
+        if (this.type !== 'boss') {
             
             // --- PATTERN SPECIFIC FIRING OVERRIDE ---
             // Only applies to ships WITH GUNS. Bombers fall through to standard logic to drop ordnance.
@@ -972,7 +975,7 @@ export class Enemy {
         this.y += this.vy; 
     }
 
-    if (this.type === 'boss') { this.y += this.vy * speedMult; } 
+    if ((this.type as string) === 'boss') { this.y += this.vy * speedMult; } 
 
     this.shieldLayers.forEach((l, i) => { l.rotation += l.rotSpeed; if (l.wobble > 0) l.wobble = Math.max(0, l.wobble - 0.1); });
   }
