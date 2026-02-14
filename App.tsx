@@ -17,7 +17,7 @@ import { ManualDialog } from './components/ManualDialog.tsx';
 import SectorMap from './components/SectorMap.tsx';
 import LaunchSequence from './components/LaunchSequence.tsx';
 import WarpSequence from './components/WarpSequence.tsx';
-import GameEngine from './components/GameEngine.tsx';
+import { GameEngine } from './components/GameEngine.tsx';
 import { LandingScene } from './components/LandingScene.tsx';
 import { VictoryScene } from './components/VictoryScene.tsx';
 
@@ -299,7 +299,13 @@ export default function App() {
 
   const handleProfileReset = (pilotName: string, pilotAvatar: string) => {
       const newState = createInitialState();
-      newState.settings = { ...gameState.settings };
+      
+      // Preserve User Settings but allow random Theme to update
+      newState.settings = { 
+          ...gameState.settings,
+          audioTheme: newState.settings.audioTheme // Use the new random theme
+      };
+      
       newState.leaderboard = [...gameState.leaderboard];
       newState.pilotName = pilotName;
       newState.pilotAvatar = pilotAvatar;
@@ -482,7 +488,13 @@ export default function App() {
 
   const startNewGame = () => {
       const newState = createInitialState();
-      newState.settings = { ...gameState.settings };
+      
+      // Preserve User Settings but allow random Theme to update
+      newState.settings = { 
+          ...gameState.settings,
+          audioTheme: newState.settings.audioTheme // Use the new random theme
+      };
+      
       newState.leaderboard = [...gameState.leaderboard];
       newState.pilotName = gameState.pilotName;
       newState.pilotAvatar = gameState.pilotAvatar;
@@ -570,6 +582,9 @@ export default function App() {
     audioService.setSfxVolume(gameState.settings.sfxVolume);
     audioService.setMusicEnabled(gameState.settings.musicEnabled);
     audioService.setSfxEnabled(gameState.settings.sfxEnabled);
+    
+    // Setting the theme here handles the "pre-download" and preparation implicitly
+    // by triggering the service to load and play the new track URL.
     audioService.setTheme(gameState.settings.audioTheme || 'active');
   }, [gameState]);
 

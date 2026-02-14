@@ -11,7 +11,7 @@ export const renderGame = (
     state: GameEngineState, 
     width: number, 
     height: number, 
-    activeShip: any,
+    activeShip: any, 
     quadrant: QuadrantType,
     globalScale: number = 1.0
 ) => {
@@ -129,7 +129,7 @@ export const renderGame = (
                 weaponHeat: e.weaponHeat            // Tracking for barrel heat
             }, false, enemyMovement, false, false, forceEnemyJetsOff, globalScale);
 
-            if (e.shieldLayers.length > 0) { 
+            if (e.shieldLayers.length > 0 && e.shieldDisabledUntil <= 0) { 
                 const shieldScale = globalScale;
                 e.shieldLayers.forEach((layer, idx) => { 
                     if (layer.current <= 0) return; 
@@ -148,6 +148,70 @@ export const renderGame = (
         const scale = 1 + (b.z || 0) / 1000; ctx.save(); ctx.translate(b.x, b.y); ctx.scale(scale, scale);
         if (b.type === 'missile' || b.type === 'missile_emp' || b.type === 'missile_enemy') { ctx.scale(1.2, 1.2); const angle = Math.atan2(b.vy, b.vx) + Math.PI/2; ctx.rotate(angle); ctx.fillStyle = b.finsColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-6, 8); ctx.lineTo(-6, 2); ctx.lineTo(-3, 0); ctx.lineTo(-3, 8); ctx.fill(); ctx.beginPath(); ctx.moveTo(6, 8); ctx.lineTo(6, 2); ctx.lineTo(3, 0); ctx.lineTo(3, 8); ctx.fill(); ctx.fillStyle = '#94a3b8'; ctx.fillRect(-3, -6, 6, 14); ctx.fillStyle = b.headColor || '#ef4444'; ctx.beginPath(); ctx.moveTo(-3, -6); ctx.lineTo(0, -10); ctx.lineTo(3, -6); ctx.fill(); ctx.fillStyle = '#facc15'; ctx.beginPath(); ctx.moveTo(-2, 8); ctx.lineTo(0, 12 + Math.random()*4); ctx.lineTo(2, 8); ctx.fill(); } 
         else if (b.type === 'mine' || b.type === 'mine_emp' || b.type === 'mine_red' || b.type === 'mine_enemy') { const radius = b.width / 2; ctx.fillStyle = b.color; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.globalAlpha = 0.5 + Math.sin(s.frame * 0.5) * 0.5; ctx.beginPath(); ctx.arc(0, 0, radius * 0.4, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = b.color; ctx.lineWidth = 2; const spikeCount = 8; const spikeLen = radius + 4; for (let i = 0; i < spikeCount; i++) { const a = (Math.PI * 2 / spikeCount) * i + (s.frame * 0.05); const sx = Math.cos(a) * radius; const sy = Math.sin(a) * radius; const ex = Math.cos(a) * spikeLen; const ey = Math.sin(a) * spikeLen; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke(); } }
+        else if (b.type === 'bomb') {
+            const w = b.width;
+            const h = b.height;
+            const angle = Math.atan2(b.vy, b.vx) - Math.PI/2;
+            ctx.rotate(angle);
+
+            // Shadow
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
+            ctx.shadowBlur = 4;
+
+            // Main Body (Cylinder with Rounded Head)
+            // Head is at positive Y (downwards), Tail at negative Y (upwards) in rotated space
+            
+            ctx.fillStyle = '#374151'; // Dark Grey Hull
+            ctx.beginPath();
+            
+            const headH = h * 0.3;
+            const bodyH = h * 0.4;
+            const tailH = h * 0.3;
+            const halfW = w / 2;
+            
+            // Draw Body
+            ctx.moveTo(-halfW, -bodyH); 
+            ctx.lineTo(halfW, -bodyH);
+            ctx.lineTo(halfW, 0); // Middle
+            
+            // Rounded Head
+            ctx.bezierCurveTo(halfW, headH, -halfW, headH, -halfW, 0);
+            ctx.lineTo(-halfW, -bodyH);
+            ctx.fill();
+
+            // Narrow Tail Section
+            ctx.fillStyle = '#1f2937'; 
+            ctx.beginPath();
+            ctx.moveTo(-halfW * 0.7, -bodyH);
+            ctx.lineTo(halfW * 0.7, -bodyH);
+            ctx.lineTo(halfW * 0.5, -bodyH - tailH);
+            ctx.lineTo(-halfW * 0.5, -bodyH - tailH);
+            ctx.fill();
+
+            // Semicircle Fins at Tail Base
+            ctx.fillStyle = '#9ca3af'; // Lighter Grey fins
+            const finRadius = w * 0.4;
+            
+            // Left Fin
+            ctx.beginPath();
+            ctx.arc(-halfW * 0.5, -bodyH - (tailH * 0.5), finRadius, 0.5 * Math.PI, 1.5 * Math.PI);
+            ctx.fill();
+            
+            // Right Fin
+            ctx.beginPath();
+            ctx.arc(halfW * 0.5, -bodyH - (tailH * 0.5), finRadius, 1.5 * Math.PI, 0.5 * Math.PI);
+            ctx.fill();
+
+            // Blinking LED
+            const blink = Math.floor(Date.now() / 150) % 2 === 0;
+            ctx.fillStyle = blink ? '#ef4444' : '#450a0a';
+            ctx.shadowColor = '#ef4444';
+            ctx.shadowBlur = blink ? 8 : 0;
+            ctx.beginPath();
+            ctx.arc(0, -bodyH * 0.5, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
         else if (b.type === 'octo_shell') { ctx.save(); ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.glowIntensity || 20; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); if (!b.isOvercharge) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.beginPath(); ctx.arc(0, 0, b.width*0.8, 0, Math.PI*2); ctx.fill(); } ctx.restore(); } 
         else if (b.weaponId === 'exotic_octo_burst') { ctx.save(); ctx.fillStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = b.glowIntensity || 20; ctx.beginPath(); ctx.arc(0, 0, b.width/2, 0, Math.PI*2); ctx.fill(); ctx.fillStyle = '#fff'; ctx.shadowBlur = 0; ctx.beginPath(); ctx.arc(0, 0, b.width/4, 0, Math.PI*2); ctx.fill(); ctx.restore(); } 
         else if (b.weaponId === 'exotic_gravity_wave') { ctx.strokeStyle = b.color; ctx.shadowColor = b.color; ctx.shadowBlur = 15; ctx.lineCap = 'round'; const count = 5; const spacing = 6; for(let i=0; i<count; i++) { const arcW = b.width * (1 - i * 0.15); const yOff = i * spacing; ctx.globalAlpha = Math.max(0, 0.8 - (i * 0.15)); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, yOff, arcW/2, Math.PI * (7/6), Math.PI * (11/6)); ctx.stroke(); } ctx.globalAlpha = 1; ctx.shadowBlur = 0; } 

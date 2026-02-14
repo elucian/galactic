@@ -5,13 +5,14 @@ import { audioService } from '../services/audioService.ts';
 import { ExtendedShipConfig, SHIPS, WEAPONS, EXOTIC_WEAPONS, BOSS_SHIPS, EXOTIC_SHIELDS, SHIELDS } from '../constants.ts';
 import { Enemy } from './game/Enemy.ts';
 import { Projectile, Particle, Loot, GameEngineState } from './game/types.ts';
-import { calculateDamage } from './game/utils.ts';
+import { calculateDamage, getShieldType } from './game/utils.ts';
 import { GameHUD } from './game/GameHUD.tsx';
 import { fireMissile, fireMine, fireRedMine, firePowerShot, fireNormalShot, fireAlienWeapons, fireWingWeapon, createExplosion, createAreaDamage, takeDamage, applyShieldRamDamage, applyJetDamage, fireBlasterPistol } from './game/CombatMechanics.ts';
 import { renderGame } from './game/GameRenderer.ts';
 import { ResourceController } from './game/ResourceController.ts';
 import { SpawnController } from './game/SpawnController.ts';
 import { InputController } from './game/InputController.ts';
+import { updateEnemyOrdnance } from './game/GameEngine.tsx';
 
 interface GameEngineProps {
   ships: {
@@ -41,7 +42,7 @@ interface GameEngineProps {
   speedMode?: 'slow' | 'normal' | 'fast';
 }
 
-const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, onGameOver, difficulty, currentPlanet, quadrant, fontSize, mode = 'combat', speedMode = 'normal' }) => {
+export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, onGameOver, difficulty, currentPlanet, quadrant, fontSize, mode = 'combat', speedMode = 'normal' }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const activeShip = ships[0];
   const maxEnergy = activeShip?.config?.maxEnergy || 1000;
@@ -844,12 +845,16 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 }
 
                 // FRIENDLY FIRE CHECK (Other Enemies)
-                if (bulletAge > 30) {
+                // Updated radius check: If shieldDisabledUntil > 0, reduce hit radius to hull only (35)
+                // This prevents bombs from hitting the "phantom" shield radius of the launching bomber
+                const safeTime = (b.type === 'bomb' || b.type.includes('mine')) ? 120 : 30; // Increased safety for heavy ordnance
+                if (bulletAge > safeTime) {
                     s.enemies.forEach(e => {
                         if (b.life <= 0 || e.type === 'boss') return; // Skip Boss (handled above)
                         if (Math.abs(e.z - (b.z || 0)) < 40) {
                             const dist = Math.hypot(b.x - e.x, b.y - e.y);
-                            const hitRadius = (e.shieldLayers.length > 0 ? 50 : 35) * sizeScale;
+                            const shieldActive = e.shieldLayers.length > 0 && e.shieldDisabledUntil <= 0;
+                            const hitRadius = (shieldActive ? 50 : 35) * sizeScale;
                             if (dist < hitRadius) {
                                 e.damageHull(b.damage, b.type, false, false);
                                 createExplosion(s, b.x, b.y, '#f97316', 3, 'smoke');
@@ -888,144 +893,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                     if (isMissile) { b.vy -= 0.6; b.vx *= 0.95; } else { b.vx *= 0.99; } 
                 } 
                 else {
-                    if (b.isEnemy) {
-                        if (!s.rescueMode) {
-                            if (b.type === 'mine_enemy') {
-                                // MINE PHYSICS UPDATE: GRAVITY SPIRAL
-                                // 0-60 frames: Initial Drift (established by launch velocity)
-                                // 60+ frames: Gravity Engagement
-                                if (age > 60) {
-                                    // Calculate Vector to Player
-                                    const dx = s.px - b.x;
-                                    const dy = s.py - b.y;
-                                    const distSq = dx*dx + dy*dy;
-                                    const dist = Math.sqrt(distSq);
-                                    
-                                    // GRAVITY FORCE: Pulls mine towards player
-                                    // Force weakens with distance (Inverse Square Law approximation)
-                                    // We clamp distance to avoid infinite force at collision
-                                    const gravityStrength = 800; 
-                                    const force = gravityStrength / Math.max(2500, distSq);
-                                    
-                                    const ax = (dx / dist) * force;
-                                    const ay = (dy / dist) * force;
-                                    
-                                    // Apply Gravity Acceleration
-                                    b.vx += ax;
-                                    b.vy += ay;
-                                    
-                                    // DRAG FORCE: Simulates atmosphere/friction
-                                    // This causes the orbit to decay into a spiral
-                                    b.vx *= 0.99; 
-                                    b.vy *= 0.99;
-                                    
-                                    // Visual Rotation (Spin)
-                                    b.angleOffset = (b.angleOffset || 0) + 0.1;
-                                }
-                            } else if (b.type === 'missile_enemy') {
-                                // MISSILE PHYSICS:
-                                // 0-10s (600 frames): Powered Flight (Accelerates & Turns)
-                                // >10s: Engine Burnout (Inertial drift until offscreen/hit)
-                                if (age < 600) {
-                                    const targetX = s.px;
-                                    const targetY = s.py;
-                                    const dx = targetX - b.x;
-                                    const dy = targetY - b.y;
-                                    const dist = Math.hypot(dx, dy);
-                                    
-                                    const turnRate = 0.06; 
-                                    const desiredSpeed = 14; 
-                                    
-                                    if (dist > 0) {
-                                        const tx = (dx / dist) * desiredSpeed;
-                                        const ty = (dy / dist) * desiredSpeed;
-                                        b.vx += (tx - b.vx) * turnRate;
-                                        b.vy += (ty - b.vy) * turnRate;
-                                    }
-                                    
-                                    // Engine active: Thrust Trail (Fire)
-                                    if (s.frame % 3 === 0) {
-                                        s.particles.push({ 
-                                            x: b.x, y: b.y, vx: -b.vx*0.2, vy: -b.vy*0.2, 
-                                            life: 0.4, size: 3, color: '#fb923c', type: 'fire' 
-                                        });
-                                    }
-                                } else {
-                                    // Engine Burnout: Inertia Only (No steering, no acceleration)
-                                    // Visual: Smoke Trail instead of Fire
-                                    if (s.frame % 5 === 0) {
-                                        s.particles.push({ 
-                                            x: b.x, y: b.y, vx: 0, vy: 0, 
-                                            life: 0.8, size: 2, color: '#52525b', type: 'smoke' 
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        // PLAYER ORDNANCE HOMING LOGIC
-                        if (b.isActivated) {
-                            if (b.targetProjectile && b.targetProjectile.life <= 0) b.targetProjectile = null;
-                            if (b.target && b.target.hp <= 0) b.target = null;
-
-                            if (!b.targetProjectile && !b.target) {
-                                let bestOrd = null;
-                                let minOrdDist = 800; 
-                                for (const other of s.bullets) {
-                                    if (other.isEnemy && (other.type.includes('missile') || other.type.includes('mine')) && other.life > 0) {
-                                        const d = Math.hypot(other.x - b.x, other.y - b.y);
-                                        if (d < minOrdDist) {
-                                            minOrdDist = d;
-                                            bestOrd = other;
-                                        }
-                                    }
-                                }
-                                if (bestOrd) {
-                                    b.targetProjectile = bestOrd;
-                                } else {
-                                    let best = null; let bestScore = -Infinity; 
-                                    let searchDir = isMissile ? (Math.hypot(b.vx, b.vy) > 1 ? Math.atan2(b.vy, b.vx) : -Math.PI/2) : (b.vx > 0 ? 0 : Math.PI);
-                                    const cone = isMissile ? (Math.PI / 2.5) : (Math.PI / 1.5); 
-                                    s.enemies.forEach(e => {
-                                        if (e.hp <= 0) return;
-                                        const dx = e.x - b.x; const dy = e.y - b.y; const dz = e.z - (b.z || 0); const dist3d = Math.hypot(dx, dy, dz);
-                                        if (dist3d > 900) return;
-                                        const angleToEnemy = Math.atan2(dy, dx); let diff = angleToEnemy - searchDir;
-                                        while (diff <= -Math.PI) diff += 2*Math.PI; while (diff > Math.PI) diff -= 2*Math.PI;
-                                        if (Math.abs(diff) < cone) { const score = (5000 / (dist3d + 1)) + (20 / (Math.abs(diff) + 0.1)); if (score > bestScore) { bestScore = score; best = e; } }
-                                    });
-                                    if (best) b.target = best;
-                                }
-                            }
-                            
-                            let tx = 0, ty = 0, tz = 0;
-                            let hasTarget = false;
-                            if (b.targetProjectile) {
-                                tx = b.targetProjectile.x;
-                                ty = b.targetProjectile.y;
-                                tz = b.targetProjectile.z || 0;
-                                hasTarget = true;
-                            } else if (b.target) {
-                                tx = b.target.x;
-                                ty = b.target.y;
-                                tz = b.target.z - (b.z || 0);
-                                hasTarget = true;
-                            }
-
-                            if (hasTarget) {
-                                const dx = tx - b.x; const dy = ty - b.y; const dz = tz; const dist = Math.hypot(dx, dy, dz);
-                                const turnRate = isMissile ? 0.18 : 0.08; const desiredSpeed = isMissile ? 15 : 8;
-                                const ttx = (dx / dist) * desiredSpeed; const tty = (dy / dist) * desiredSpeed; const ttz = (dz / dist) * desiredSpeed;
-                                b.vx += (ttx - b.vx) * turnRate; b.vy += (tty - b.vy) * turnRate; b.vz = (b.vz || 0) + (ttz - (b.vz || 0)) * turnRate;
-                            }
-                        } else {
-                            // If NOT activated, just drift or maintain course
-                            if (!isMissile) { 
-                                b.vx *= 0.98;
-                                b.vy *= 0.98;
-                            }
-                        }
-                    }
+                    updateEnemyOrdnance(b, s, age);
                     
                     // Velocity Clamping & Speed Limits
                     if (isMissile || b.type === 'mine_enemy') { 
@@ -1068,13 +936,31 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                 if (b.life > 0) { 
                     s.enemies.forEach(e => { 
                         if (b.life <= 0) return; 
-                        const isOrdnance = b.type.includes('missile') || b.type.includes('mine');
+                        
+                        const isOrdnance = b.type.includes('missile') || b.type.includes('mine') || b.type === 'bomb';
+                        
+                        const shieldLayer = e.shieldLayers[0]; 
+                        const shieldActive = e.shieldLayers.length > 0 && e.shieldDisabledUntil <= 0;
+                        const shieldColor = shieldActive && shieldLayer ? shieldLayer.color : null;
+                        
+                        let bypassShield = false;
+                        
+                        // New Logic: Check Shield Type via Helper
+                        if (isOrdnance && shieldColor) {
+                            // Energy Shields allow Ordnance to Pass Through
+                            const sType = getShieldType(shieldColor);
+                            if (sType === 'energy') {
+                                bypassShield = true;
+                            }
+                        }
+
                         const hullRadius = (e.type === 'boss' ? 80 : 40) * sizeScale;
-                        const shieldRadius = e.shieldLayers.length > 0 ? (hullRadius + (20 * sizeScale)) : 0; 
+                        const shieldRadius = shieldActive ? (hullRadius + (20 * sizeScale)) : 0; 
                         const zDist = Math.abs((b.z || 0) - e.z);
                         const dist2d = Math.hypot(b.x-e.x, b.y-e.y);
                         
-                        if (dist2d < (shieldRadius || hullRadius) + 20 && (!isOrdnance || zDist < 80)) { 
+                        // Shield Hit Logic: Only if NOT bypass
+                        if (!bypassShield && shieldRadius > 0 && dist2d < shieldRadius + b.width/2 && dist2d > hullRadius - 5 && (!isOrdnance || zDist < 80)) { 
                             let effectiveDamage = b.damage;
                             if (b.weaponId === 'exotic_star_shatter') {
                                 if (b.isOvercharge) { const ratio = Math.min(1, Math.max(0, (b.width - 6) / 30)); const multiplier = 4 + (ratio * 16); effectiveDamage = b.damage * multiplier; } 
@@ -1087,6 +973,7 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                             if (normAngle < 0) normAngle += Math.PI * 2;
     
                             if (b.type === 'octo_shell') {
+                                // Octo shell logic...
                                 if (dist2d < (shieldRadius || hullRadius)) {
                                     hit = true;
                                     if (b.isOvercharge) {
@@ -1104,40 +991,68 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                     }
                                 }
                             } else {
-                                if (shieldRadius > 0 && dist2d < shieldRadius + b.width/2 && dist2d > hullRadius - 5) {
-                                    const shieldHitIdx = e.getHitShieldIndex(normAngle);
-                                    if (shieldHitIdx !== -1) {
-                                        e.damageShield(shieldHitIdx, effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge, !!b.isEmp);
-                                        hit = true;
-                                        createExplosion(s, b.x, b.y, b.color, 2, 'shield_effect'); 
-                                        audioService.playImpact('shield', 0.8);
-                                    }
-                                }
-                                if (!hit && dist2d < hullRadius) {
-                                    if (e.type !== 'boss') {
-                                        const isMine = b.type.includes('mine');
-                                        const isMissile = b.type.includes('missile');
-                                        if ((isMine && Math.random() < 0.3) || (isMissile && Math.random() < 0.2)) {
-                                            effectiveDamage = e.maxHp + 500;
-                                        }
-                                    }
-                                    e.damageHull(effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge);
+                                const shieldHitIdx = e.getHitShieldIndex(normAngle);
+                                if (shieldHitIdx !== -1) {
+                                    e.damageShield(shieldHitIdx, effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge, !!b.isEmp);
                                     hit = true;
-                                    createExplosion(s, b.x, b.y, '#f97316', 4, 'smoke'); 
-                                    if (b.type.includes('missile')) { 
-                                        audioService.playExplosion(0, 0.8, 'normal'); 
-                                        createAreaDamage(s, b.x, b.y, 100, b.damage / 2, currentShieldDef, currentSecondShieldDef, setHud);
-                                    } else if (b.type.includes('mine')) { 
-                                        audioService.playExplosion(0, 1.2, 'mine'); 
-                                        createAreaDamage(s, b.x, b.y, 150, b.damage, currentShieldDef, currentSecondShieldDef, setHud); 
-                                    } else if (b.isEmp || b.type.includes('emp')) {
-                                        audioService.playExplosion(0, 1.2, 'emp'); 
-                                    } else {
-                                        audioService.playImpact('metal', 0.7);
-                                    }
+                                    createExplosion(s, b.x, b.y, b.color, 2, 'shield_effect'); 
+                                    audioService.playImpact('shield', 0.8);
                                 }
                             }
-                        } 
+                        }
+                        
+                        // Hull Hit Logic (For Bypass or Shield Penetration)
+                        if (!hit && dist2d < hullRadius && (!isOrdnance || zDist < 80)) {
+                            let effectiveDamage = b.damage;
+                            
+                            // Re-calculate damage for bypass if not already done
+                            if (bypassShield) {
+                                // If bypassed, apply full damage directly to hull
+                            } else {
+                                if (b.weaponId === 'exotic_star_shatter') {
+                                    if (b.isOvercharge) { const ratio = Math.min(1, Math.max(0, (b.width - 6) / 30)); const multiplier = 4 + (ratio * 16); effectiveDamage = b.damage * multiplier; } 
+                                    else { const ratio = Math.min(1, b.width / 12); effectiveDamage = b.damage * ratio; }
+                                }
+                                if (b.weaponId === 'exotic_flamer' && !b.isOvercharge) effectiveDamage *= (b.life / 50); 
+                            }
+
+                            if (e.type !== 'boss') {
+                                const isMine = b.type.includes('mine');
+                                const isMissile = b.type.includes('missile');
+                                if ((isMine && Math.random() < 0.3) || (isMissile && Math.random() < 0.2)) {
+                                    effectiveDamage = e.maxHp + 500;
+                                }
+                            }
+                            
+                            // Apply Damage to Enemy
+                            // New Logic: Check if enemy dies from this hit
+                            const wasAlive = e.hp > 0;
+                            e.damageHull(effectiveDamage, b.type, !!b.isMain, !!b.isOvercharge);
+                            const isDead = e.hp <= 0;
+                            
+                            // Loot Tracking
+                            if (wasAlive && isDead) {
+                                e.lastHitType = b.type;
+                                e.lastHitByEnemy = b.isEnemy; // Usually false here since b is player bullet
+                            }
+
+                            hit = true;
+                            createExplosion(s, b.x, b.y, '#f97316', 4, 'smoke'); 
+                            if (b.type.includes('missile')) { 
+                                audioService.playExplosion(0, 0.8, 'normal'); 
+                                createAreaDamage(s, b.x, b.y, 100, b.damage / 2, currentShieldDef, currentSecondShieldDef, setHud);
+                            } else if (b.type.includes('mine')) { 
+                                audioService.playExplosion(0, 1.2, 'mine'); 
+                                createAreaDamage(s, b.x, b.y, 150, b.damage, currentShieldDef, currentSecondShieldDef, setHud); 
+                            } else if (b.type === 'bomb') {
+                                audioService.playExplosion(0, 1.2, 'mine'); 
+                                createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud);
+                            } else if (b.isEmp || b.type.includes('emp')) {
+                                audioService.playExplosion(0, 1.2, 'emp'); 
+                            } else {
+                                audioService.playImpact('metal', 0.7);
+                            }
+                        }
                     });
                 }
                 if (b.life > 0) {
@@ -1167,6 +1082,9 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
                                 } else if (b.type.includes('mine')) { 
                                     audioService.playExplosion(0, 1.2, 'mine'); 
                                     createAreaDamage(s, b.x, b.y, 150, b.damage, currentShieldDef, currentSecondShieldDef, setHud); 
+                                } else if (b.type === 'bomb') {
+                                    audioService.playExplosion(0, 1.2, 'mine'); 
+                                    createAreaDamage(s, b.x, b.y, 120, b.damage, currentShieldDef, currentSecondShieldDef, setHud); 
                                 } else {
                                     audioService.playImpact(a.material === 'ice' ? 'ice' : 'rock', 0.6);
                                 }
@@ -1504,6 +1422,3 @@ const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShield, on
     </div>
   );
 };
-
-export default GameEngine;
-    

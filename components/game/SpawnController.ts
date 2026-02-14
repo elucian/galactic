@@ -1,7 +1,7 @@
 
 import { GameEngineState } from './types';
 import { QuadrantType } from '../../types';
-import { SHIPS, BOSS_SHIPS, ExtendedShipConfig } from '../../constants';
+import { SHIPS, BOSS_SHIPS, ExtendedShipConfig, PLANETS } from '../../constants';
 import { Enemy } from './Enemy';
 import { Asteroid } from './Asteroid';
 
@@ -20,26 +20,23 @@ export const SpawnController = {
             
             if (quadrant === QuadrantType.DELTA) {
                 // Goal: Maintain ~6 enemies on screen.
-                // Dynamic flow: If enemies are low, speed up spawn, but respect minimum spacing.
-                
                 if (state.enemies.length < 3) {
-                     // Was 200ms, increased to 800ms to prevent overlap in p10/p11 patterns
                      spawnDelay = 800; 
                 } else {
-                     // Interval = (Time To Traverse Path) / 6
                      const speed = 3 * speedMult; 
                      let pathLength = height + 200; 
                      if (planetId === 'p10') pathLength = width * 1.2; 
-                     else if (planetId === 'p11') pathLength = width * 1.5; // Arc length approx
+                     else if (planetId === 'p11') pathLength = width * 1.5; 
                      else if (planetId === 'p12') pathLength = Math.hypot(width, height);
 
                      const timeOnScreenFrames = pathLength / speed;
                      const timeOnScreenMs = (timeOnScreenFrames / 60) * 1000;
                      
                      spawnDelay = timeOnScreenMs / 6;
-                     // Clamp between 800ms and 2000ms
                      spawnDelay = Math.max(800, Math.min(2000, spawnDelay)); 
                 }
+            } else if (quadrant === QuadrantType.GAMA) {
+                spawnDelay = 2000; // Slower spawn for columns to clear
             }
 
             // ENEMY SPAWNING
@@ -68,55 +65,74 @@ export const SpawnController = {
                     if (Math.random() < chanceB) spawnPool = [shipB]; else spawnPool = [shipA];
                 }
 
-                const selectedShip = spawnPool[Math.floor(Math.random() * spawnPool.length)] || SHIPS[0]; 
+                const baseConfig = spawnPool[Math.floor(Math.random() * spawnPool.length)] || SHIPS[0]; 
                 
+                // BOMBER LOGIC
+                let isBomber = false;
+                const pIndex = PLANETS.findIndex(p => p.id === planetId);
+                
+                if (pIndex >= 3) { // Start from Beta (idx 3)
+                    const range = 8; // p12(11) - p4(3) = 8
+                    const step = Math.min(range, pIndex - 3);
+                    const bomberChance = 0.05 + (step / range) * 0.25;
+                    
+                    if (Math.random() < bomberChance) {
+                        isBomber = true;
+                    }
+                }
+
+                const selectedShip = isBomber 
+                    ? { ...baseConfig, defaultGuns: 0, name: baseConfig.name + ' Bomber' } 
+                    : baseConfig;
+
                 let spawnBatch = 1;
                 let specificPattern = '';
                 let specificStartX = -999; // Sentinel
                 let specificStartY = -999;
 
-                // DELTA SECTOR SPECIFIC LOGIC
+                // SECTOR SPECIFIC FORMATION LOGIC
                 if (quadrant === QuadrantType.DELTA) {
                     spawnBatch = 1; // Always Solo in Delta for precise control
                     state.waveCounter++; 
                     
                     if (planetId === 'p10') {
-                        // Horizontal Rows: Series of 3 Left->Right, then 3 Right->Left
                         const seriesIndex = Math.floor((state.waveCounter - 1) / 3);
-                        const isRightDirection = seriesIndex % 2 === 0; // Even series go Right (spawn Left)
-                        
-                        // 3 Levels above bottom 1/2 (height * 0.5)
-                        // Area is 0 to H*0.5. Levels: 15%, 30%, 45%
+                        const isRightDirection = seriesIndex % 2 === 0;
                         const levelInSeries = (state.waveCounter - 1) % 3;
                         const levels = [height * 0.15, height * 0.28, height * 0.41];
-                        
                         specificPattern = 'delta_h_rows';
                         specificStartY = levels[levelInSeries];
                         specificStartX = isRightDirection ? -60 : width + 60;
                     } 
                     else if (planetId === 'p11') {
-                        // Circle Loop: Enter Top Left, Exit Top Right
-                        // Visual: U-Turn / Semi-Circle
                         specificPattern = 'delta_circle';
-                        specificStartX = -50; // Start Left off-screen
-                        specificStartY = 50;  // Top
+                        specificStartX = -50; 
+                        specificStartY = 50;  
                     } 
                     else if (planetId === 'p12') {
-                        // X Pattern
                         specificPattern = 'delta_x';
                         specificStartX = Math.random() > 0.5 ? 20 : width - 20;
                         specificStartY = -50;
                     }
                 } 
+                else if (quadrant === QuadrantType.GAMA) {
+                    // GAMMA: Column formation
+                    specificPattern = 'sine';
+                    if (width >= 1024) spawnBatch = 3;
+                    else if (width >= 768) spawnBatch = 2;
+                    else spawnBatch = 1;
+                }
                 else {
-                    // Standard logic for other sectors
+                    // ALFA / BETA: Random positions
                     if (isRareAlien) spawnBatch = 1; 
                     else {
-                        if (quadrant === QuadrantType.GAMA) spawnBatch = 2; 
+                        // Beta might have 2 sometimes but standard is 1 usually
+                        if (quadrant === QuadrantType.BETA && Math.random() > 0.7) spawnBatch = 2;
                     }
-                    if (state.enemies.length + spawnBatch > maxEnemies) spawnBatch = maxEnemies - state.enemies.length;
                     specificStartX = Math.random() * (width - 200) + 100;
                 }
+
+                if (state.enemies.length + spawnBatch > maxEnemies) spawnBatch = maxEnemies - state.enemies.length;
 
                 if (spawnBatch > 0) {
                     const squadId = Math.floor(Math.random() * 100000);
@@ -124,12 +140,35 @@ export const SpawnController = {
                     for(let i=0; i<spawnBatch; i++) {
                         const offset = i * 60;
                         
-                        let spawnX = specificStartX !== -999 ? specificStartX : (specificStartX + offset);
-                        let spawnY = specificStartY !== -999 ? specificStartY : (-50 - (Math.abs(offset)*0.5));
-                        
-                        // Small jitter for batch spawns if not specific pattern
-                        if (specificPattern === '' && spawnBatch > 1) {
-                             spawnX = (Math.random() * (width - 200) + 100) + offset;
+                        let spawnX = 0;
+                        let spawnY = 0;
+
+                        if (quadrant === QuadrantType.GAMA) {
+                             // Override Position for Gamma Columns
+                             let cols = 1;
+                             if (width >= 1024) cols = 3;
+                             else if (width >= 768) cols = 2;
+                             
+                             let ratio = 0.5;
+                             if (cols === 2) ratio = i === 0 ? 0.3 : 0.7;
+                             if (cols === 3) ratio = i === 0 ? 0.2 : (i === 1 ? 0.5 : 0.8);
+                             
+                             spawnX = width * ratio;
+                             spawnY = -50 - (Math.random() * 50); // Slight Y variation for stream effect
+                        } else {
+                             // Default Position Logic (Delta, Alfa, Beta)
+                             spawnX = specificStartX !== -999 ? specificStartX : (specificStartX + offset);
+                             spawnY = specificStartY !== -999 ? specificStartY : (-50 - (Math.abs(offset)*0.5));
+                             
+                             // Jitter for standard batches in Alfa/Beta
+                             if (specificPattern === '' && spawnBatch > 1) {
+                                  // Re-randomize X if multiple spawned but not specifically patterned
+                                  // Note: specificStartX is already random for Alfa/Beta, 
+                                  // but to spread them out horizontally if they clump:
+                                  if (quadrant !== QuadrantType.DELTA) {
+                                      spawnX = (Math.random() * (width - 200) + 100);
+                                  }
+                             }
                         }
 
                         state.enemies.push(new Enemy(

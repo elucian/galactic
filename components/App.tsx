@@ -17,7 +17,7 @@ import { ManualDialog } from './ManualDialog.tsx';
 import SectorMap from './SectorMap.tsx';
 import LaunchSequence from './LaunchSequence.tsx';
 import WarpSequence from './WarpSequence.tsx';
-import GameEngine from './GameEngine.tsx';
+import { GameEngine } from './GameEngine.tsx';
 import { LandingScene } from './LandingScene.tsx';
 import { VictoryScene } from './VictoryScene.tsx';
 
@@ -1373,7 +1373,7 @@ export default function App() {
               engines: gameState.shipEngineColors[activeShipId],
               nozzles: gameState.shipNozzleColors[activeShipId],
               bars: gameState.shipBarColors[activeShipId] // Added barColor
-            }}
+          }}
             shieldColor={getActiveShieldColor()} 
             onComplete={handleWarpComplete} 
             weaponId={activeWeaponId}

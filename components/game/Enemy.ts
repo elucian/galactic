@@ -1,8 +1,7 @@
-
 import { EquippedWeapon, QuadrantType, WeaponType } from '../../types';
 import { ExtendedShipConfig, EXOTIC_SHIELDS, EXOTIC_WEAPONS, WEAPONS } from '../../constants';
 import { ShieldLayer, Projectile } from './types';
-import { calculateDamage, OCTO_COLORS } from './utils';
+import { calculateDamage, getShieldType, OCTO_COLORS } from './utils';
 import { audioService } from '../../services/audioService';
 
 export class Enemy {
@@ -19,7 +18,7 @@ export class Enemy {
   squadOffset: number = 0;
   quadrant: QuadrantType;
   baseX: number = 0;
-  movementPattern: 'sine' | 'z' | 'mirror_z' | 'cross_left' | 'cross_right' | 'avoid' | 'boss_trick' | 'delta_h_rows' | 'delta_circle' | 'delta_v' | 'delta_x';
+  movementPattern: 'straight' | 'sine' | 'z' | 'mirror_z' | 'cross_left' | 'cross_right' | 'avoid' | 'boss_trick' | 'delta_h_rows' | 'delta_circle' | 'delta_v' | 'delta_x';
   
   // Visual State for Firing
   weaponFireTimes: Record<number, number> = {};
@@ -28,12 +27,14 @@ export class Enemy {
   // Boss & Enemy Specifics
   missileAmmo: number = 0;
   mineAmmo: number = 0;
+  bombAmmo: number = 0; 
+  bombHoldTimer: number = 0; 
   lastPx: number = 0;
   stationaryTimer: number = 0;
   attackMode: boolean = false;
   
   // AI Properties
-  maneuverState: 'idle' | 'charge' | 'flank' | 'retreat' | 'recover' = 'idle';
+  maneuverState: 'idle' | 'charge' | 'hold' | 'flank' | 'retreat' | 'recover' = 'idle';
   maneuverTimer: number = 0;
   targetX: number = 0;
   targetY: number = 0;
@@ -61,6 +62,13 @@ export class Enemy {
   maxEnergy: number = 0;
   water: number = 0; 
   isThrusting: boolean = false;
+  
+  // Loot Tracking
+  lastHitType: string = '';
+  lastHitByEnemy: boolean = false;
+  
+  // Config: Random Gun Color
+  noseGunColor: string = '#ef4444';
 
   constructor(x: number, y: number, type: 'scout' | 'fighter' | 'heavy' | 'boss', config: ExtendedShipConfig, diff: number, quadrant: QuadrantType, squadId: number = 0, squadOffset: number = 0, pattern?: string) {
     const hpMult = type === 'boss' ? 5000 : (type === 'heavy' ? 400 : 150);
@@ -72,16 +80,21 @@ export class Enemy {
     this.squadId = squadId;
     this.squadOffset = squadOffset;
     
-    // Assign Movement Pattern
+    // Assign Movement Pattern based on Quadrant (User Requested Trajectories)
     if (pattern) {
         this.movementPattern = pattern as any;
     } else {
         if (quadrant === QuadrantType.DELTA) {
              this.movementPattern = Math.random() > 0.5 ? 'cross_left' : 'cross_right';
         } else if (quadrant === QuadrantType.GAMA) {
-             this.movementPattern = Math.random() > 0.5 ? 'z' : 'mirror_z';
-        } else {
+             // Gamma: S pattern (Sine)
              this.movementPattern = 'sine';
+        } else if (quadrant === QuadrantType.BETA) {
+             // Beta: Straight with X-Avoidance
+             this.movementPattern = 'straight';
+        } else {
+             // Alpha: Straight with Z-Avoidance
+             this.movementPattern = 'straight';
         }
     }
     
@@ -90,10 +103,15 @@ export class Enemy {
     }
     
     this.config = { ...config };
+    
+    // Randomize Crystal Color
+    const crystalColors = ['#ef4444', '#10b981', '#f97316'];
+    this.noseGunColor = crystalColors[Math.floor(Math.random() * crystalColors.length)];
 
     // --- ORDNANCE DISTRIBUTION LOGIC ---
     this.missileAmmo = 0;
     this.mineAmmo = 0;
+    this.bombAmmo = 0;
 
     if (type === 'boss') {
         this.movementPattern = 'boss_trick';
@@ -167,73 +185,107 @@ export class Enemy {
 
     } else {
         // --- STANDARD ENEMY WEAPON SETUP ---
-        this.equippedWeapons = [null, null, null];
+        if (config.defaultGuns === 0) {
+            this.equippedWeapons = [null, null, null];
+            
+            // Bombers get a full arsenal
+            this.bombAmmo = 20;
+            this.missileAmmo = 5;
+            this.mineAmmo = 5;
+            
+            // Randomize Bomb Hold Time to desynchronize drops
+            this.bombHoldTimer = 30 + Math.floor(Math.random() * 120);
+            
+            // BOMBER SHIELDS:
+            const baseShieldCap = 100 * diff;
+            const isAdvanced = quadrant === QuadrantType.GAMA || quadrant === QuadrantType.DELTA;
+            const shieldColor = isAdvanced ? '#10b981' : '#3b82f6'; // Green (Plasma) or Blue (Standard)
+            const capMult = isAdvanced ? 2.0 : 1.0;
+            
+            // Layer 1
+            this.shieldLayers.push({ 
+                color: shieldColor, 
+                max: baseShieldCap * capMult, 
+                current: baseShieldCap * capMult, 
+                rotation: 0, 
+                wobble: 0, 
+                type: 'full', 
+                rotSpeed: 0 
+            });
+            
+            // Layer 2
+            this.shieldLayers.push({ 
+                color: shieldColor, 
+                max: baseShieldCap * 0.8 * capMult, 
+                current: baseShieldCap * 0.8 * capMult, 
+                rotation: 0, 
+                wobble: 0, 
+                type: 'full', 
+                rotSpeed: 0 
+            });
+            
+            this.shieldRegen = isAdvanced ? 3.0 : 1.5; 
 
-        // ORDNANCE PROBABILITY FOR REGULAR SHIPS
-        if (quadrant === QuadrantType.GAMA || quadrant === QuadrantType.DELTA) {
-            // 1 in 6 chance for missiles
-            if (Math.random() < (1.0/6.0)) {
-                this.missileAmmo = 3; 
-                // Delta Sector Intensity: Increase missile count for higher difficulty
-                if (quadrant === QuadrantType.DELTA) {
-                    this.missileAmmo += Math.floor(diff / 3);
+        } else {
+            // STANDARD GUN ENEMY
+            this.equippedWeapons = [null, null, null];
+
+            if (quadrant === QuadrantType.GAMA || quadrant === QuadrantType.DELTA) {
+                if (Math.random() < (1.0/6.0)) {
+                    this.missileAmmo = 3; 
+                    if (quadrant === QuadrantType.DELTA) {
+                        this.missileAmmo += Math.floor(diff / 3);
+                    }
+                }
+                if (Math.random() < (1.0/10.0)) {
+                    this.mineAmmo = 3;
                 }
             }
-            // 1 in 10 chance for mines
-            if (Math.random() < (1.0/10.0)) {
-                this.mineAmmo = 3;
+
+            let tier = 0;
+            if (diff >= 10) tier = 3;
+            else if (diff >= 7) tier = 2;
+            else if (diff >= 4) tier = 1;
+
+            const energyWeapons = ['gun_pulse', 'gun_bolt', 'gun_photon', 'gun_photon'];
+            const kineticWeapons = ['gun_vulcan', 'gun_repeater', 'gun_heavy', 'gun_plasma'];
+                
+            let mainWepId = 'gun_pulse';
+            let kineticWepId = 'gun_vulcan';
+
+            if (this.config.isAlien) {
+                let wOptions = [...EXOTIC_WEAPONS.filter(w => w.price < 500000)]; 
+                const selected = wOptions[Math.floor(Math.random() * wOptions.length)] || EXOTIC_WEAPONS[0];
+                mainWepId = selected.id;
+                kineticWepId = selected.id; 
+            } else {
+                mainWepId = energyWeapons[tier] || 'gun_pulse';
+                kineticWepId = kineticWeapons[tier] || 'gun_vulcan';
             }
-        }
 
-        // DETERMINE WEAPON TIER BASED ON DIFFICULTY
-        let tier = 0;
-        if (diff >= 10) tier = 3;
-        else if (diff >= 7) tier = 2;
-        else if (diff >= 4) tier = 1;
-
-        const energyWeapons = ['gun_pulse', 'gun_bolt', 'gun_photon', 'gun_photon'];
-        const kineticWeapons = ['gun_vulcan', 'gun_repeater', 'gun_heavy', 'gun_plasma'];
+            this.equippedWeapons[0] = { id: mainWepId, count: 1 };
             
-        // WEAPON SELECTION
-        let mainWepId = 'gun_pulse';
-        let kineticWepId = 'gun_vulcan';
-
-        if (this.config.isAlien) {
-            // Exotic/Alien Weapons
-            let wOptions = [...EXOTIC_WEAPONS.filter(w => w.price < 500000)]; 
-            const selected = wOptions[Math.floor(Math.random() * wOptions.length)] || EXOTIC_WEAPONS[0];
-            mainWepId = selected.id;
-            kineticWepId = selected.id; 
-        } else {
-            // Standard Human Weapons
-            mainWepId = energyWeapons[tier] || 'gun_pulse';
-            kineticWepId = kineticWeapons[tier] || 'gun_vulcan';
-        }
-
-        // Setup Slots
-        this.equippedWeapons[0] = { id: mainWepId, count: 1 };
+            if (this.config.defaultGuns > 1 || this.config.wingStyle !== 'alien-a') {
+                this.equippedWeapons[1] = { id: kineticWepId, count: 1 };
+                this.equippedWeapons[2] = { id: kineticWepId, count: 1 };
+            }
         
-        if (this.config.defaultGuns > 1 || this.config.wingStyle !== 'alien-a') {
-            this.equippedWeapons[1] = { id: kineticWepId, count: 1 };
-            this.equippedWeapons[2] = { id: kineticWepId, count: 1 };
-        }
-
-        // Shield Logic by Quadrant
-        const baseShieldCap = 150 * diff;
-        if (quadrant === QuadrantType.BETA) {
-            this.shieldLayers.push({ color: '#ef4444', max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'front', rotSpeed: 0 });
-        } else if (quadrant === QuadrantType.GAMA) {
-            this.shieldLayers.push({ color: '#3b82f6', max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'front', rotSpeed: 0 });
-            const secondType = Math.random() > 0.5 ? 'full' : 'tri';
-            const rot = secondType === 'tri' ? 0.03 : 0;
-            this.shieldLayers.push({ color: '#f97316', max: baseShieldCap * 0.8, current: baseShieldCap * 0.8, rotation: Math.random() * Math.PI, wobble: 0, type: secondType, rotSpeed: rot });
-        } else if (quadrant === QuadrantType.DELTA) {
-            const type1 = Math.random() > 0.5 ? 'tri' : 'hex';
-            const type2 = Math.random() > 0.5 ? 'tri' : 'hex';
-            this.shieldLayers.push({ color: '#a855f7', max: baseShieldCap * 1.5, current: baseShieldCap * 1.5, rotation: 0, wobble: 0, type: type1, rotSpeed: 0.04 });
-            this.shieldLayers.push({ color: '#ffffff', max: baseShieldCap * 1.2, current: baseShieldCap * 1.2, rotation: Math.PI/3, wobble: 0, type: type2, rotSpeed: -0.03 });
-        } else if (diff >= 4) {
-            this.shieldLayers.push({ color: '#3b82f6', max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'full', rotSpeed: 0 });
+            const baseShieldCap = 150 * diff;
+            if (quadrant === QuadrantType.BETA) {
+                this.shieldLayers.push({ color: '#ef4444', max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'front', rotSpeed: 0 });
+            } else if (quadrant === QuadrantType.GAMA) {
+                this.shieldLayers.push({ color: '#3b82f6', max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'front', rotSpeed: 0 });
+                const secondType = Math.random() > 0.5 ? 'full' : 'tri';
+                const rot = secondType === 'tri' ? 0.03 : 0;
+                this.shieldLayers.push({ color: '#f97316', max: baseShieldCap * 0.8, current: baseShieldCap * 0.8, rotation: Math.random() * Math.PI, wobble: 0, type: secondType, rotSpeed: rot });
+            } else if (quadrant === QuadrantType.DELTA) {
+                const type1 = Math.random() > 0.5 ? 'tri' : 'hex';
+                const type2 = Math.random() > 0.5 ? 'tri' : 'hex';
+                this.shieldLayers.push({ color: '#a855f7', max: baseShieldCap * 1.5, current: baseShieldCap * 1.5, rotation: 0, wobble: 0, type: type1, rotSpeed: 0.04 });
+                this.shieldLayers.push({ color: '#ffffff', max: baseShieldCap * 1.2, current: baseShieldCap * 1.2, rotation: Math.PI/3, wobble: 0, type: type2, rotSpeed: -0.03 });
+            } else if (diff >= 4) {
+                this.shieldLayers.push({ color: '#3b82f6', max: baseShieldCap, current: baseShieldCap, rotation: 0, wobble: 0, type: 'full', rotSpeed: 0 });
+            }
         }
     }
   }
@@ -261,6 +313,11 @@ export class Enemy {
           else if (def.id === 'exotic_octo_burst') { width = 10; height = 10; type = 'octo_shell'; color = OCTO_COLORS[0]; }
           else if (def.id === 'exotic_wave') { width = 12; height = 6; }
           else if (def.id === 'exotic_electric') { type = 'laser'; width = 3; height = 20; color = '#00ffff'; speed = 25; }
+      }
+      
+      // Use Random Nose Color for Energy Beams
+      if (type === 'laser' || (isExotic && def.id !== 'exotic_flamer' && def.id !== 'exotic_octo_burst')) {
+          color = this.noseGunColor;
       }
       
       // Enforce straight down firing (vy positive, vx 0)
@@ -300,6 +357,7 @@ export class Enemy {
     if (this.shieldDisabledUntil > 0) this.shieldDisabledUntil--;
     
     if (this.globalWeaponCooldown > 0) this.globalWeaponCooldown--;
+    if (this.bombHoldTimer > 0) this.bombHoldTimer--;
 
     Object.keys(this.weaponHeat).forEach(k => {
         const key = parseInt(k);
@@ -311,17 +369,31 @@ export class Enemy {
     const standardSpeed = 3 * speedMult; 
 
     const distToPlayer = Math.hypot(this.x - px, this.y - py);
-    const avoidanceRadius = (this.type === 'boss' ? 120 : 60) + 80; 
+    const avoidanceRadius = (this.type === 'boss' ? 120 : 60) + 100; 
 
-    if (distToPlayer < avoidanceRadius) {
-        if (Math.abs(this.z) < 20) {
-            this.targetZ = Math.random() > 0.5 ? 200 : -200;
+    // --- Z-LEVEL AVOIDANCE LOGIC ---
+    // Only applied to Boss, Alpha, and Gamma enemies as per request.
+    // Beta enemies use Thruster Avoidance (X-axis).
+    const canZAvoid = this.type === 'boss' || this.quadrant === QuadrantType.ALFA || this.quadrant === QuadrantType.GAMA;
+
+    if (canZAvoid) {
+        if (distToPlayer < avoidanceRadius) {
+            if (Math.abs(this.z) < 20) {
+                // Dive or Climb
+                this.targetZ = Math.random() > 0.5 ? 200 : -200;
+            }
+        } else {
+            // Return to main plane if safe or Boss
+            if (this.type !== 'boss' || distToPlayer > 450) {
+                this.targetZ = 0;
+            }
         }
     } else {
-        if (this.type !== 'boss' || distToPlayer > 450) {
-            this.targetZ = 0;
-        }
+        // Force Z=0 for others (Beta) unless Boss
+        if (this.type !== 'boss') this.targetZ = 0;
     }
+    
+    // Smooth Z transition
     this.z += (this.targetZ - this.z) * 0.05;
 
     let bypassBoundaryCheck = false; 
@@ -338,7 +410,6 @@ export class Enemy {
         if (this.movementPattern === 'delta_h_rows') {
             bypassBoundaryCheck = true;
             this.isThrusting = true;
-            
             const dir = this.baseX < 0 ? 1 : -1; 
             this.vx = dir * (standardSpeed * 1.5);
             this.vy = 0;
@@ -346,7 +417,6 @@ export class Enemy {
         else if (this.movementPattern === 'delta_circle') {
             bypassBoundaryCheck = true;
             this.isThrusting = true;
-            
             const centerX = w / 2;
             const centerY = -50; 
             const radiusX = w * 0.45;
@@ -354,7 +424,6 @@ export class Enemy {
             
             const speed = 0.008 * speedMult;
             this.patternPhase -= speed; 
-            
             const t = this.patternPhase;
             
             const targetPx = centerX + (Math.cos(t) * radiusX);
@@ -371,13 +440,10 @@ export class Enemy {
         else if (this.movementPattern === 'delta_v') {
             bypassBoundaryCheck = true;
             this.isThrusting = true;
-            
             const centerX = w / 2;
             const distFromCenter = Math.abs(this.x - centerX);
             const parallelThreshold = 70; 
-
             this.vy = standardSpeed * 1.1;
-
             if (distFromCenter < parallelThreshold) {
                 this.vx = 0;
                 if (distFromCenter < parallelThreshold - 10) {
@@ -391,7 +457,6 @@ export class Enemy {
         else if (this.movementPattern === 'delta_x') {
             bypassBoundaryCheck = true;
             this.isThrusting = true;
-            
             const targetX = this.baseX < (w/2) ? w + 100 : -100;
             const targetY = h + 100;
             const dx = targetX - this.x;
@@ -413,7 +478,7 @@ export class Enemy {
             }
 
             if (this.fuel <= 0) {
-                this.isThrusting = false; this.vx *= 0.98; this.vy = (this.vy * 0.98) + 0.05;
+                this.hp = 0; // Boss explodes when out of fuel
             } else {
                 let desiredVx = 0; let desiredVy = 0; let dodging = false;
                 
@@ -421,14 +486,24 @@ export class Enemy {
                 if (this.maneuverTimer <= 0) {
                     if (this.maneuverState === 'idle') {
                         const roll = Math.random();
-                        if (roll < 0.4) { this.maneuverState = 'charge'; this.maneuverTimer = 180; } 
-                        else if (roll < 0.7) { 
+                        if (roll < 0.5) { 
+                            this.maneuverState = 'charge'; 
+                            this.maneuverTimer = 240; 
+                        } 
+                        else if (roll < 0.8) { 
                             this.maneuverState = 'flank'; 
                             this.maneuverTimer = 120; 
                             this.targetX = this.x < w/2 ? w - 150 : 150; 
                         } 
                         else { this.maneuverState = 'idle'; this.maneuverTimer = 60; }
-                    } else if (this.maneuverState === 'charge') { this.maneuverState = 'retreat'; this.maneuverTimer = 120; }
+                    } 
+                    else if (this.maneuverState === 'charge') { 
+                        this.maneuverState = 'retreat'; this.maneuverTimer = 120; 
+                    }
+                    else if (this.maneuverState === 'hold') {
+                        this.maneuverState = 'retreat';
+                        this.maneuverTimer = 90;
+                    }
                     else if (this.maneuverState === 'flank' || this.maneuverState === 'retreat') { this.maneuverState = 'idle'; this.maneuverTimer = 60; }
                 }
 
@@ -438,9 +513,33 @@ export class Enemy {
                     desiredVx = dx * 0.02; 
                 } 
                 else if (this.maneuverState === 'charge') { 
-                    this.targetY = h * 0.5; 
+                    // Move to player X but stay ABOVE player Y
+                    const standOff = 250;
+                    let approachY = py - standOff;
+                    if (approachY > h * 0.6) approachY = h * 0.6;
+                    if (approachY < 100) approachY = 100;
+
+                    this.targetY = approachY; 
                     const dx = px - this.x; 
-                    desiredVx = dx * 0.03; 
+                    const dy = this.targetY - this.y;
+                    desiredVx = dx * 0.04; 
+                    
+                    if (Math.abs(dy) < 50 && Math.abs(dx) < 100) {
+                        this.maneuverState = 'hold';
+                        this.maneuverTimer = 100;
+                    }
+                }
+                else if (this.maneuverState === 'hold') {
+                    const standOff = 250;
+                    let holdY = py - standOff;
+                    if (holdY > h * 0.6) holdY = h * 0.6;
+                    if (holdY < 100) holdY = 100;
+                    
+                    this.targetY = holdY;
+                    const dx = px - this.x;
+                    desiredVx = dx * 0.05; 
+                    
+                    if (this.globalWeaponCooldown > 20) this.globalWeaponCooldown = 5;
                 }
                 else if (this.maneuverState === 'retreat') { 
                     this.targetY = h * 0.15; 
@@ -487,14 +586,17 @@ export class Enemy {
             if (this.y < edgeMargin) { this.y = edgeMargin; this.vy *= -0.5; }
             if (this.y > limitY) { this.y = limitY; this.vy *= -0.5; }
 
-            // Boss Firing Logic (Missiles & Mines)
+            // Boss Firing Logic
              if (this.globalWeaponCooldown <= 0) {
                 const canFireMissile = this.missileAmmo > 0 && distToPlayer > 150;
                 const canFireMine = this.mineAmmo > 0;
+                const canFireBomb = (this.quadrant === QuadrantType.DELTA || difficulty >= 10);
                 
                 const pMissile = canFireMissile ? 0.02 : 0;
                 const pMine = canFireMine ? 0.03 : 0;
-                const pGuns = 0.05; 
+                const pBomb = canFireBomb ? (0.01 + (difficulty * 0.002)) : 0; 
+                let pGuns = 0.05; 
+                if (this.maneuverState === 'hold') pGuns = 0.2; 
                 
                 const roll = Math.random();
                 
@@ -512,7 +614,22 @@ export class Enemy {
                     audioService.playWeaponFire('mine', 0);
                     this.globalWeaponCooldown = 120; 
                 }
-                else if (roll < pMissile + pMine + pGuns) {
+                else if (roll < pMissile + pMine + pBomb) {
+                    const clusterSize = Math.floor(difficulty / 4) + 1;
+                    for(let i=0; i<clusterSize; i++) {
+                        const offsetX = (Math.random() - 0.5) * 60;
+                        bulletsRef.push({ 
+                            x: this.x + offsetX, y: this.y + 60, 
+                            vx: 0, vy: 4 + (i*2),
+                            damage: 300, color: '#3b82f6', type: 'bomb_enemy', 
+                            life: 600, isEnemy: true, width: 20, height: 28, z: 0,
+                            isActivated: true, accel: 0.1 
+                        });
+                    }
+                    audioService.playWeaponFire('missile', 0);
+                    this.globalWeaponCooldown = 180;
+                }
+                else if (roll < pMissile + pMine + pBomb + pGuns) {
                     const fireWeapon = (slot: number) => {
                         const wDef = this.equippedWeapons[slot] ? [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === this.equippedWeapons[slot]!.id) : null;
                         if (!wDef) return;
@@ -537,16 +654,62 @@ export class Enemy {
         } 
         else if (!bypassBoundaryCheck) {
             // STANDARD MOVEMENT LOGIC (Non-Delta Patterns)
-            this.isThrusting = true; 
-            const standardVerticalSpeed = 2.8 * worldSpeedFactor * speedMult;
-            this.y += standardVerticalSpeed; 
+            // Updated to handle specific quadrant behaviors for Alpha, Beta, Gamma
             
-            if (this.movementPattern === 'z') { const cycle = Math.floor(this.tick / 60) % 2; this.vx = cycle === 0 ? 3 : -3; } 
-            else if (this.movementPattern === 'mirror_z') { const cycle = Math.floor(this.tick / 60) % 2; this.vx = cycle === 0 ? -3 : 3; } 
-            else if (this.movementPattern === 'cross_left') { this.vx = 2.5; } 
-            else if (this.movementPattern === 'cross_right') { this.vx = -2.5; } 
-            else if (this.movementPattern === 'avoid') { this.vx += (Math.sin(this.tick * 0.05 + this.squadId) * 0.5); const distToPlayer = this.x - px; if (Math.abs(distToPlayer) < 200 && this.y < py) { this.vx += (distToPlayer > 0 ? 0.8 : -0.8); } this.vx *= 0.92; } 
-            else { this.vx = (this.vx + (Math.random() - 0.5) * 0.5) * 0.95; }
+            // Standard Enemy Shield Regen
+            if (this.shieldLayers.length > 0 && this.shieldRegen > 0 && this.shieldDisabledUntil <= 0) {
+                 this.shieldLayers.forEach(layer => {
+                     if (layer.current < layer.max) {
+                         layer.current = Math.min(layer.max, layer.current + (this.shieldRegen * 0.1));
+                     }
+                 });
+            }
+
+            if (this.movementPattern === 'straight') {
+                // ALPHA & BETA BEHAVIOR: Straight Down + Specific Avoidance
+                this.isThrusting = true;
+                this.y += 3.5 * worldSpeedFactor * speedMult; // Faster straight dive
+
+                // Beta: Thruster Avoidance (Side to Side)
+                // Avoidance radius same as generic check
+                const avoidRad = (this.type === 'boss' ? 120 : 60) + 100;
+                
+                if (this.quadrant === QuadrantType.BETA && distToPlayer < avoidRad) {
+                    // Thrust away from player on X axis
+                    const dir = this.x < px ? -1 : 1; 
+                    this.vx = dir * 5; // Lateral thrust
+                    // NOTE: Visual renderer will pick up vx > 0.5 as "left" or "right" thrust automatically
+                } else {
+                    this.vx *= 0.9; // Damping
+                }
+
+                // Alpha: Z Avoidance is handled at top of update()
+            }
+            else if (this.movementPattern === 'sine') {
+                // GAMMA BEHAVIOR: S Pattern (Sine Wave)
+                this.isThrusting = true;
+                this.y += 3.0 * worldSpeedFactor * speedMult;
+                
+                // Sine Wave Logic
+                // Use squadOffset/squadId to phase shift columns for visual variety
+                const freq = 0.05;
+                const amp = 4;
+                const phase = (this.squadId * 0.1) + (this.squadOffset * 0.02); 
+                this.vx = Math.sin(this.tick * freq + phase) * amp;
+                
+                // Gamma: Z Avoidance is handled at top of update()
+            }
+            else if (this.movementPattern === 'z') { const cycle = Math.floor(this.tick / 60) % 2; this.vx = cycle === 0 ? 3 : -3; this.y += 2.8 * worldSpeedFactor * speedMult; this.isThrusting = true; } 
+            else if (this.movementPattern === 'mirror_z') { const cycle = Math.floor(this.tick / 60) % 2; this.vx = cycle === 0 ? -3 : 3; this.y += 2.8 * worldSpeedFactor * speedMult; this.isThrusting = true; } 
+            else if (this.movementPattern === 'cross_left') { this.vx = 2.5; this.y += 2.8 * worldSpeedFactor * speedMult; this.isThrusting = true; } 
+            else if (this.movementPattern === 'cross_right') { this.vx = -2.5; this.y += 2.8 * worldSpeedFactor * speedMult; this.isThrusting = true; } 
+            else if (this.movementPattern === 'avoid') { this.y += 2.8 * worldSpeedFactor * speedMult; this.isThrusting = true; this.vx += (Math.sin(this.tick * 0.05 + this.squadId) * 0.5); const distToPlayer = this.x - px; if (Math.abs(distToPlayer) < 200 && this.y < py) { this.vx += (distToPlayer > 0 ? 0.8 : -0.8); } this.vx *= 0.92; } 
+            else { 
+                // Default / Fallback
+                this.y += 2.8 * worldSpeedFactor * speedMult; 
+                this.isThrusting = true; 
+                this.vx = (this.vx + (Math.random() - 0.5) * 0.5) * 0.95; 
+            }
             
             const safeDistance = 130; let sepX = 0; 
             otherEnemies.forEach(other => { if (other === this) return; if (other.y < -50) return; const dist = Math.hypot(this.x - other.x, this.y - other.y); if (dist < safeDistance && dist > 0) { const angle = Math.atan2(this.y - other.y, this.x - other.x); const force = (safeDistance - dist) / safeDistance; sepX += Math.cos(angle) * force * 1.5; } }); 
@@ -563,7 +726,7 @@ export class Enemy {
         
         // --- DELTA SECTOR COLLISION AVOIDANCE ---
         // Ensure flying parallel before shield overlapping
-        if (this.quadrant === QuadrantType.DELTA && this.type !== 'boss') {
+        if (this.quadrant === QuadrantType.DELTA) {
             const shieldRadius = 55; // Approx radius of shield visual
             const safeSeparation = shieldRadius * 2 + 10; // Overlap Prevention buffer
             
@@ -587,10 +750,11 @@ export class Enemy {
         }
 
         // Standard Firing Logic for all Non-Boss Ships (including Pattern ships)
-        if (this.type !== 'boss') {
+        if (this.type === 'scout' || this.type === 'fighter' || this.type === 'heavy') {
             
             // --- PATTERN SPECIFIC FIRING OVERRIDE ---
-            if (this.movementPattern === 'delta_h_rows' || this.movementPattern === 'delta_circle') {
+            // Only applies to ships WITH GUNS. Bombers fall through to standard logic to drop ordnance.
+            if ((this.movementPattern === 'delta_h_rows' || this.movementPattern === 'delta_circle') && this.config.defaultGuns > 0) {
                 const isOnScreen = this.x > 0 && this.x < w && this.y > 0 && this.y < h;
                 // Fire every 50 frames (approx 0.8s)
                 if (isOnScreen && this.tick % 50 === 0) {
@@ -607,51 +771,149 @@ export class Enemy {
 
             // Standard Firing Logic (only if NOT one of the special patterns, or fallback)
             else {
-                const fireLimitY = h * 0.66;
-                const inFiringZone = this.y < fireLimitY;
+                // STRICT VISIBILITY CHECK FOR FIRING
+                // Enemies can only shoot if they are within visible bounds
+                const isOnScreen = this.x > 0 && this.x < w && this.y > 0 && this.y < h;
+                const gunFireLimit = h * 0.66;
+                const inFiringZone = isOnScreen && this.y < gunFireLimit;
+                
                 const isSafeRange = distToPlayer > 150;
                 
                 let firedOrdnance = false;
                 
                 // ORDNANCE FIRING (Any ship with ammo)
-                if (this.globalWeaponCooldown <= 0) {
-                    // Small chance to fire ordnance if equipped
-                     if (this.missileAmmo > 0 && Math.random() < 0.005) { // ~Every 3s chance
-                         this.missileAmmo--;
-                         bulletsRef.push({ x: this.x, y: this.y + 40, vx: 0, vy: 5, damage: 150, color: '#ef4444', type: 'missile_enemy', life: 900, isEnemy: true, width: 12, height: 24, homingState: 'searching', launchTime: globalFrame, headColor: '#ef4444', finsColor: '#7f1d1d', turnRate: 0.04, maxSpeed: 10, z: 0 });
-                         audioService.playWeaponFire('missile', 0);
-                         this.globalWeaponCooldown = 120;
-                         firedOrdnance = true;
-                     }
-                     else if (this.mineAmmo > 0 && Math.random() < 0.005) {
-                         this.mineAmmo--;
-                         bulletsRef.push({ x: this.x, y: this.y + 20, vx: 0, vy: 3, damage: 200, color: '#fbbf24', type: 'mine_enemy', life: 1200, isEnemy: true, width: 24, height: 24, z: 0, homingState: 'searching', turnRate: 0.02, maxSpeed: 7, launchTime: globalFrame, isDefective: false });
-                         audioService.playWeaponFire('mine', 0);
-                         this.globalWeaponCooldown = 60;
-                         firedOrdnance = true;
-                     }
+                // Requires strict on-screen check to prevent off-screen attacks
+                if (this.globalWeaponCooldown <= 0 && isOnScreen && this.burstRemaining <= 0) {
+                    // BOMBER LOGIC (High Frequency Ordnance)
+                    // If no guns, this is a dedicated bomber. Fire frequently.
+                    if (this.config.defaultGuns === 0) {
+                        
+                        // Priority 1: BOMBS (Top Half of Screen)
+                        // Wait for random hold time to pass to prevent synchronous dropping
+                        if (this.bombAmmo > 0 && this.y < h * 0.6 && this.bombHoldTimer <= 0) {
+                            let salvoSize = 1;
+                            if (difficulty >= 8) salvoSize = 3;
+                            else if (difficulty >= 4) salvoSize = 2;
+                            
+                            salvoSize = Math.min(salvoSize, this.bombAmmo);
+                            
+                            if (salvoSize > 0) {
+                                this.burstRemaining = salvoSize;
+                                this.burstSlot = -5; // Code for Bombs
+                                this.burstTimer = 0; // Fire immediately
+                                firedOrdnance = true;
+                            }
+                        } 
+                        
+                        // Priority 2: MINES (Bottom Half of Screen)
+                        if (!firedOrdnance && this.mineAmmo > 0 && this.y > h * 0.4) {
+                            this.mineAmmo--;
+                            const dir = this.vx > 0.5 ? -1 : (this.vx < -0.5 ? 1 : (Math.random() > 0.5 ? 1 : -1));
+                            bulletsRef.push({ 
+                                x: this.x + (dir * 20), // Spawn slightly to side
+                                y: this.y + 10, 
+                                vx: dir * 6, // Fast sideways eject
+                                vy: 1, // Slow drift down
+                                damage: 200, color: '#fbbf24', type: 'mine_enemy', life: 1200, 
+                                isEnemy: true, width: 24, height: 24, z: 0, homingState: 'searching', 
+                                turnRate: 0.02, maxSpeed: 7, launchTime: globalFrame, isDefective: false,
+                                isActivated: false, safeDistance: 120 // 2s activation check
+                            });
+                            audioService.playWeaponFire('mine', 0);
+                            this.globalWeaponCooldown = 90; // 1.5s delay
+                            firedOrdnance = true;
+                        }
+
+                        // Priority 3: MISSILES (Anywhere, Fallback)
+                        if (!firedOrdnance && this.missileAmmo > 0) {
+                            this.missileAmmo--;
+                            bulletsRef.push({ 
+                                x: this.x, y: this.y + 40, vx: 0, vy: 5, 
+                                damage: 150, color: '#ef4444', type: 'missile_enemy', life: 900, 
+                                isEnemy: true, width: 12, height: 24, homingState: 'searching', 
+                                launchTime: globalFrame, headColor: '#ef4444', finsColor: '#7f1d1d', 
+                                turnRate: 0.04, maxSpeed: 10, z: 0,
+                                isActivated: false, safeDistance: 120
+                            });
+                            audioService.playWeaponFire('missile', 0);
+                            this.globalWeaponCooldown = 120; // 2s delay
+                            firedOrdnance = true;
+                        }
+
+                    } else {
+                        // STANDARD SHIP ORDNANCE (Low Frequency)
+                        if (this.missileAmmo > 0 && Math.random() < 0.005) { 
+                             this.missileAmmo--;
+                             bulletsRef.push({ x: this.x, y: this.y + 40, vx: 0, vy: 5, damage: 150, color: '#ef4444', type: 'missile_enemy', life: 900, isEnemy: true, width: 12, height: 24, homingState: 'searching', launchTime: globalFrame, headColor: '#ef4444', finsColor: '#7f1d1d', turnRate: 0.04, maxSpeed: 10, z: 0 });
+                             audioService.playWeaponFire('missile', 0);
+                             this.globalWeaponCooldown = 120;
+                             firedOrdnance = true;
+                        }
+                        else if (this.mineAmmo > 0 && Math.random() < 0.005) {
+                             this.mineAmmo--;
+                             bulletsRef.push({ x: this.x, y: this.y + 20, vx: 0, vy: 3, damage: 200, color: '#fbbf24', type: 'mine_enemy', life: 1200, isEnemy: true, width: 24, height: 24, z: 0, homingState: 'searching', turnRate: 0.02, maxSpeed: 7, launchTime: globalFrame, isDefective: false });
+                             audioService.playWeaponFire('mine', 0);
+                             this.globalWeaponCooldown = 60;
+                             firedOrdnance = true;
+                        }
+                    }
                 }
                 
-                // Burst Logic for Gun Ships (Standard fire)
+                // Burst Logic for Gun Ships & Bombs (Standard fire)
                 if (!firedOrdnance) {
                     if (this.burstRemaining > 0 && this.globalWeaponCooldown <= 0) {
                         this.burstTimer--;
                         if (this.burstTimer <= 0) {
-                            if (this.burstSlot === 99) {
+                            if (this.burstSlot === -5) {
+                                // BOMB SALVO SHOT
+                                this.bombAmmo--;
+                                
+                                // NEW LOGIC: Only disable shields if Kinetic (stops ordnance)
+                                // Energy shields allow ordnance pass-through so don't need disabling.
+                                let hasKineticShield = false;
+                                for (const layer of this.shieldLayers) {
+                                    if (layer.current > 0 && getShieldType(layer.color) === 'kinetic') {
+                                        hasKineticShield = true;
+                                        break;
+                                    }
+                                }
+
+                                if (hasKineticShield) {
+                                    this.shieldDisabledUntil = 120; 
+                                }
+
+                                bulletsRef.push({ 
+                                    x: this.x, y: this.y + 60, // Spawn lower to clear hull
+                                    vx: 0, vy: 7, 
+                                    damage: 250, color: '#3b82f6', type: 'bomb', life: 600, 
+                                    isEnemy: true, width: 16, height: 24, z: 0,
+                                    isActivated: false, safeDistance: 120 // Safety check
+                                });
+                                audioService.playWeaponFire('missile', 0); 
+                                
+                                this.burstRemaining--;
+                                this.burstTimer = 12; // 0.2s gap between salvo shots
+                                if (this.burstRemaining <= 0) this.globalWeaponCooldown = 120; // 2s cooldown after salvo
+                            }
+                            else if (this.burstSlot === 99) {
                                 if (this.equippedWeapons[1]) this.fire(1, bulletsRef, globalFrame);
                                 if (this.equippedWeapons[2]) this.fire(2, bulletsRef, globalFrame);
+                                this.burstRemaining--;
+                                this.burstTimer = 8; 
+                                if (this.burstRemaining <= 0) this.globalWeaponCooldown = 60;
                             } else {
                                 this.fire(this.burstSlot, bulletsRef, globalFrame);
+                                this.burstRemaining--;
+                                this.burstTimer = 8; 
+                                if (this.burstRemaining <= 0) this.globalWeaponCooldown = 60;
                             }
-                            this.burstRemaining--;
-                            this.burstTimer = 8; 
-                            if (this.burstRemaining <= 0) this.globalWeaponCooldown = 60;
                         }
                     }
 
                     let fireInterval = Math.max(40, 140 - (difficulty * 6));
                     if (this.config.isAlien) fireInterval = Math.floor(fireInterval * 0.8);
 
+                    // Requires inFiringZone (which enforces isOnScreen)
                     if (this.tick % fireInterval === 0 && inFiringZone && isSafeRange && this.globalWeaponCooldown <= 0 && this.burstRemaining <= 0) {
                         if (Math.random() < 0.9) {
                             const roll = Math.random();

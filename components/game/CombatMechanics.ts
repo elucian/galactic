@@ -3,7 +3,7 @@ import { GameEngineState, Projectile } from './types';
 import { audioService } from '../../services/audioService';
 import { WEAPONS, EXOTIC_WEAPONS, ExtendedShipConfig } from '../../constants';
 import { WeaponType, Shield } from '../../types';
-import { calculateDamage, OCTO_COLORS } from './utils';
+import { calculateDamage, getShieldType, OCTO_COLORS } from './utils';
 import { getWingMounts } from '../../utils/drawingUtils';
 
 // --- DAMAGE LOGIC ---
@@ -30,8 +30,19 @@ export const takeDamage = (state: GameEngineState, amt: number, type: string, sh
     
     // CHECK SHIELD TOGGLE
     const shieldActive = state.shieldsEnabled && (state.sh1 > 0 || state.sh2 > 0);
+    
+    const isKineticOrdnance = type === 'bomb' || type.includes('mine') || type.includes('missile');
+    let bypassShield = false;
+    
+    // Check if shield type allows pass through
+    if (activeShieldColor && isKineticOrdnance) {
+        const sType = getShieldType(activeShieldColor);
+        if (sType === 'energy') {
+            bypassShield = true;
+        }
+    }
 
-    if (shieldActive) {
+    if (shieldActive && !bypassShield) {
         finalDmg = calculateDamage(amt, type, 'shield', activeShieldColor);
         if (state.sh1 > 0) { state.sh1 = Math.max(0, state.sh1 - finalDmg); } else { state.sh2 = Math.max(0, state.sh2 - finalDmg); }
         state.wasShieldHit = true; 

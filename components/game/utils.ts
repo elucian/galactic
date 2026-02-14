@@ -13,21 +13,35 @@ export const ASTEROID_VARIANTS = [
 
 export const OCTO_COLORS = ['#22c55e', '#3b82f6', '#f97316', '#ef4444', '#a855f7'];
 
+export const getShieldType = (color: string): 'kinetic' | 'energy' => {
+    // KINETIC SHIELDS (Red, Purple, Gold)
+    // Strong vs Bullets, Weak vs Energy, Stops Ordnance
+    if (color === '#ef4444' || color === '#a855f7' || color === '#fbbf24') {
+        return 'kinetic';
+    }
+    // ENERGY SHIELDS (Blue, Green, Cyan)
+    // Strong vs Energy, Weak vs Bullets, Lets Ordnance Pass
+    return 'energy';
+};
+
 export const calculateDamage = (baseDamage: number, type: string, targetType: 'hull' | 'shield', shieldColor?: string) => {
     let powerMult = 1.0;
     let disruptionMult = 1.0;
 
+    // Determine Weapon Characteristics
     if (type === 'laser' || type === 'bolt' || type === 'gun_bolt' || type === 'exotic_phaser_sweep' || type === 'exotic_electric') {
-        powerMult = 0.4;
-        disruptionMult = 1.5;
+        // ENERGY WEAPON
+        powerMult = 0.4;     // Weak vs Hull/Kinetic Shield
+        disruptionMult = 1.5; // Strong vs Energy Shield
     } else if (type === 'projectile' || type === 'cannon' || type === 'gun_vulcan' || type === 'gun_heavy' || type === 'gun_repeater' || type === 'gun_plasma' || type === 'gun_hyper') {
-        powerMult = 1.2;
-        disruptionMult = 0.4;
+        // KINETIC WEAPON
+        powerMult = 1.2;      // Strong vs Hull/Energy Shield
+        disruptionMult = 0.4; // Weak vs Kinetic Shield
     } else if (type === 'blaster') {
-        // Personal Blaster: Neutral damage profile
         powerMult = 1.0;
         disruptionMult = 1.0;
-    } else if (type.includes('missile') || type.includes('mine') || type === 'rocket' || type === 'firework_shell' || type === 'octo_shell') {
+    } else if (type.includes('missile') || type.includes('mine') || type === 'bomb' || type === 'rocket' || type === 'firework_shell' || type === 'octo_shell') {
+        // ORDNANCE
         powerMult = 1.0;
         disruptionMult = 1.0;
         if (type.includes('emp')) {
@@ -40,21 +54,27 @@ export const calculateDamage = (baseDamage: number, type: string, targetType: 'h
     }
 
     if (targetType === 'shield' && shieldColor) {
+        const shieldType = getShieldType(shieldColor);
         let pRes = 1.0;
         let dRes = 1.0;
 
-        if (shieldColor === '#ef4444') { 
-            dRes = 0.5; 
-            pRes = 1.5; 
-        } else if (shieldColor === '#3b82f6') {
-            pRes = 0.5;
-            dRes = 1.5;
-        } 
+        if (shieldType === 'kinetic') { 
+            // Kinetic Shield (Red/Purple): Resists Kinetic (power), Weak to Energy (disruption)
+            pRes = 0.4;  // Resists Bullets
+            dRes = 2.0;  // Weak to Lasers
+        } else {
+            // Energy Shield (Blue/Green): Resists Energy (disruption), Weak to Kinetic (power)
+            pRes = 2.0;  // Weak to Bullets
+            dRes = 0.4;  // Resists Lasers
+        }
         
+        // "powerMult" maps to Physical/Kinetic damage
+        // "disruptionMult" maps to Energy/Disruption damage
         const powerComponent = (baseDamage * powerMult) * pRes;
         const disruptionComponent = (baseDamage * disruptionMult) * dRes;
         return powerComponent + disruptionComponent;
     } else {
+        // Hull Damage
         return baseDamage * powerMult;
     }
 };
