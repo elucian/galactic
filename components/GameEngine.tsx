@@ -723,13 +723,30 @@ export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShi
                         createExplosion(s, e.x, e.y, '#a855f7', 30, 'boss');
                         setHud(h => ({...h, alert: "BOSS DEFEATED", alertType: 'success'}));
                         
-                        // BOSS LOOT: 1 Exotic Weapon + 1 Shield (High Tier)
-                        // Exotic Weapons Pool
-                        const wDef = EXOTIC_WEAPONS[Math.floor(Math.random() * EXOTIC_WEAPONS.length)];
-                        spawnLoot(e.x - 30, e.y, 0, 'weapon', wDef.id, wDef.name, 1);
+                        // BOSS LOOT: High Tier Specific to Quadrant
+                        // The boss instance has equippedWeapon[0] = main exotic weapon (or [1] for wing mounts)
+                        // It also has specific shields in shieldLayers which match EXOTIC_SHIELDS.
+
+                        // Drop the specific weapon the Boss was using
+                        let wId = e.config.weaponId;
+                        if (wId) {
+                            const wDef = [...WEAPONS, ...EXOTIC_WEAPONS].find(x => x.id === wId);
+                            if (wDef) spawnLoot(e.x - 30, e.y, 0, 'weapon', wDef.id, wDef.name, 1);
+                        }
+
+                        // Drop a high-tier shield appropriate for the quadrant
+                        let shieldPool = [];
+                        if (quadrant === QuadrantType.ALFA) {
+                            shieldPool = [SHIELDS[2], SHIELDS[3], EXOTIC_SHIELDS[0]];
+                        } else if (quadrant === QuadrantType.BETA) {
+                            shieldPool = [SHIELDS[3], SHIELDS[4], EXOTIC_SHIELDS[0], EXOTIC_SHIELDS[1]];
+                        } else if (quadrant === QuadrantType.GAMA) {
+                            shieldPool = [SHIELDS[4], SHIELDS[5], EXOTIC_SHIELDS[1]];
+                        } else {
+                            // Delta
+                            shieldPool = [SHIELDS[5], EXOTIC_SHIELDS[2]];
+                        }
                         
-                        // Shield Pool: Exotics + Top 2 Standard
-                        const shieldPool = [...EXOTIC_SHIELDS, ...SHIELDS.slice(-2)];
                         const sDef = shieldPool[Math.floor(Math.random() * shieldPool.length)];
                         spawnLoot(e.x + 30, e.y, 0, 'shield', sDef.id, sDef.name, 1);
                         
@@ -737,56 +754,90 @@ export const GameEngine: React.FC<GameEngineProps> = ({ ships, shield, secondShi
                         audioService.playExplosion(e.x, 1.0, 'normal');
                         s.score += 100 * difficulty;
                         
-                        const isBomber = e.config.defaultGuns === 0;
-                        const isExoticShip = e.config.isAlien || (e.equippedWeapons[0]?.id && e.equippedWeapons[0].id.includes('exotic'));
+                        // NORMAL ENEMY LOOT LOGIC
+                        // Probability: 10% base + 5% per quadrant index
+                        let qIndex = 0;
+                        if (quadrant === QuadrantType.BETA) qIndex = 1;
+                        if (quadrant === QuadrantType.GAMA) qIndex = 2;
+                        if (quadrant === QuadrantType.DELTA) qIndex = 3;
                         
-                        if (isBomber) {
-                            // Bombers drop Mines and Missiles (High Chance)
-                            if (Math.random() < 0.7) {
-                                const dropType = Math.random() > 0.5 ? 'missile' : 'mine';
-                                const qty = 3 + Math.floor(Math.random() * 3); // 3-5
-                                spawnLoot(e.x, e.y, 0, dropType, undefined, undefined, qty);
-                            }
-                        } else if (isExoticShip) {
-                            // Exotic Ships drop the gun they use (Exotic or Regular Energy) - 25% Chance
-                            if (Math.random() < 0.25) {
-                                 const wId = e.equippedWeapons[0]?.id;
-                                 const def = [...WEAPONS, ...EXOTIC_WEAPONS].find(w => w.id === wId);
-                                 if (def) spawnLoot(e.x, e.y, 0, 'weapon', def.id, def.name, 1);
-                            } else {
-                                // Drop Energy if not gun (50% of remaining)
-                                 if (Math.random() < 0.5) spawnLoot(e.x, e.y, 0, 'energy', 'batt_cell', 'Energy Pack', 1);
-                            }
+                        const dropChance = 0.10 + (qIndex * 0.05);
+
+                        if (Math.random() < dropChance) {
+                             const lootRoll = Math.random();
+                             
+                             // 80% Weapon, 20% Shield
+                             const isWeapon = lootRoll < 0.8;
+                             
+                             if (isWeapon) {
+                                 // Filter weapons by strength appropriate for Quadrant
+                                 // Tier 1: Pulse, Vulcan, Bolt
+                                 // Tier 2: Repeater, Heavy
+                                 // Tier 3: Photon, Plasma
+                                 // Tier 4: Hyper, Rail Titan
+                                 // Tier 5: Doomsday, Shredder
+                                 
+                                 let allowedIds = ['gun_pulse', 'gun_vulcan', 'gun_bolt']; // Alpha Defaults
+                                 
+                                 if (quadrant === QuadrantType.BETA) {
+                                     allowedIds = ['gun_repeater', 'gun_heavy', 'gun_photon'];
+                                 } else if (quadrant === QuadrantType.GAMA) {
+                                     allowedIds = ['gun_photon', 'gun_plasma', 'gun_hyper'];
+                                 } else if (quadrant === QuadrantType.DELTA) {
+                                     allowedIds = ['gun_rail_titan', 'gun_doomsday', 'gun_shredder'];
+                                 }
+                                 
+                                 // Add small chance for lower tier fallback or cross-pollination
+                                 if (Math.random() < 0.2 && qIndex > 0) {
+                                     // Add previous tier
+                                     if (quadrant === QuadrantType.BETA) allowedIds.push('gun_bolt', 'gun_vulcan');
+                                     if (quadrant === QuadrantType.GAMA) allowedIds.push('gun_heavy', 'gun_repeater');
+                                     if (quadrant === QuadrantType.DELTA) allowedIds.push('gun_plasma', 'gun_hyper');
+                                 }
+
+                                 const selectedId = allowedIds[Math.floor(Math.random() * allowedIds.length)];
+                                 const wDef = WEAPONS.find(w => w.id === selectedId);
+                                 
+                                 if (wDef) {
+                                     spawnLoot(e.x, e.y, 0, 'weapon', wDef.id, wDef.name, 1);
+                                 } else {
+                                     // Fallback ammo
+                                     spawnLoot(e.x, e.y, 0, 'ammo', 'iron', 'Standard Ammo', 100);
+                                 }
+                             } else {
+                                 // Shield Drop
+                                 let allowedIds = ['sh_alpha', 'sh_beta']; // Alpha
+                                 if (quadrant === QuadrantType.BETA) allowedIds = ['sh_gamma', 'sh_kinetic_1'];
+                                 if (quadrant === QuadrantType.GAMA) allowedIds = ['sh_energy_1', 'sh_kinetic_2'];
+                                 if (quadrant === QuadrantType.DELTA) allowedIds = ['sh_energy_2', 'sh_omni_supreme'];
+
+                                 const selectedId = allowedIds[Math.floor(Math.random() * allowedIds.length)];
+                                 const sDef = SHIELDS.find(s => s.id === selectedId);
+                                 
+                                 if (sDef) {
+                                     spawnLoot(e.x, e.y, 0, 'shield', sDef.id, sDef.name, 1);
+                                 }
+                             }
                         } else {
-                            // Standard Aliens
-                            // Some drop mechanical guns, some drop energy guns, most drop ammo
-                            const equippedId = e.equippedWeapons[0]?.id;
-                            const wDef = WEAPONS.find(w => w.id === equippedId);
-                            
-                            const roll = Math.random();
-                            
-                            if (roll < 0.08) { 
-                                // 8% Chance: Drop the Gun (Mechanical or Energy based on what they have)
-                                if (wDef) spawnLoot(e.x, e.y, 0, 'weapon', wDef.id, wDef.name, 1);
-                                else {
-                                     // Fallback
-                                     const fallback = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
-                                     spawnLoot(e.x, e.y, 0, 'weapon', fallback.id, fallback.name, 1);
-                                }
-                            } else if (roll < 0.12) {
-                                 // 4% Chance: Drop Shield (Flavor)
-                                 const sDef = SHIELDS[Math.floor(Math.random() * SHIELDS.length)];
-                                 spawnLoot(e.x, e.y, 0, 'shield', sDef.id, sDef.name, 1);
-                            } else if (roll < 0.80) {
-                                // 68% Chance: Ammo/Energy (Most of the time)
-                                if (wDef && wDef.type === 'LASER') {
+                            // Non-equip loot (Ammo/Energy) - still has chance
+                            // Bombers specifically drop ordnance
+                             const isBomber = e.config.defaultGuns === 0;
+                             if (isBomber && Math.random() < 0.4) {
+                                const dropType = Math.random() > 0.5 ? 'missile' : 'mine';
+                                const qty = 2 + Math.floor(Math.random() * 2); 
+                                spawnLoot(e.x, e.y, 0, dropType, undefined, undefined, qty);
+                             } else if (Math.random() < 0.15) {
+                                 // General Ammo/Energy drop
+                                 if (Math.random() < 0.5) {
                                      spawnLoot(e.x, e.y, 0, 'energy', 'batt_cell', 'Energy Pack', 1);
-                                } else {
-                                     // Mechanical Gun -> Drop Ammo
-                                     let ammoType = wDef?.defaultAmmo || 'iron';
-                                     spawnLoot(e.x, e.y, 0, 'ammo', ammoType, 'Ammo Box', 50 + Math.floor(Math.random() * 100));
-                                }
-                            }
+                                 } else {
+                                     const ammoTypes = ['iron', 'titanium', 'cobalt', 'iridium', 'tungsten', 'explosive'];
+                                     // Cap ammo quality by quadrant
+                                     const maxAmmoIdx = Math.min(5, qIndex + 2);
+                                     const aType = ammoTypes[Math.floor(Math.random() * maxAmmoIdx)];
+                                     spawnLoot(e.x, e.y, 0, 'ammo', aType, 'Ammo Box', 50 + Math.floor(Math.random() * 50));
+                                 }
+                             }
                         }
                     }
                 } else if (e.hp <= 0 && s.rescueMode) {

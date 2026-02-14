@@ -54,6 +54,13 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
       if (!planetRegistry) return 0;
       return planetRegistry[id]?.wins || 0;
   };
+  
+  // Helper to check if a quadrant is fully cleared
+  const isQuadrantCleared = (q: QuadrantType) => {
+      if (!planetRegistry) return false;
+      const qPlanets = PLANETS.filter(p => p.quadrant === q);
+      return qPlanets.every(p => planetRegistry[p.id]?.status === 'friendly');
+  };
 
   const getSunTitle = (q: QuadrantType) => {
     switch (q) {
@@ -326,10 +333,6 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const renderRedDwarf = () => {
     if (activeQuadrant !== QuadrantType.DELTA) return null;
     
-    // Orbit Parameters:
-    // First planet radius is 150px. 40% of that is 60px.
-    // Almost circular orbit: a=60, b=58.
-    
     const precessionSpeed = 0.0001; 
     const orbitSpeed = 0.00075; // 50% reduced speed
     
@@ -340,17 +343,12 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
     const b = 58; 
     const c = Math.sqrt(a*a - b*b); 
     
-    // Position relative to orbit center, shifted so one focus is at origin (0,0)
-    // The center of the ellipse is at (c, 0) relative to the focus at origin
     const rawX = (Math.cos(t) * a) + c; 
     const rawY = (Math.sin(t) * b);
     
-    // Apply precession rotation to the whole system
     const x = rawX * Math.cos(omega) - rawY * Math.sin(omega);
     const y = rawX * Math.sin(omega) + rawY * Math.cos(omega);
     
-    // Z-Index: Behind when "away" (approx check)
-    // Rotating the z-check with omega to keep layering consistent
     const isBehind = Math.sin(t + omega) < 0; 
     const zIndex = isBehind ? 5 : 25;
     
@@ -369,63 +367,49 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
   const renderComet = () => {
     if (activeQuadrant !== QuadrantType.GAMA) return null;
     
-    // Comet parameters (Gamma Sector)
-    // Close wobbling orbit: 363 (perihelion +10%) to 497 (aphelion +20%)
     const b = 363; // Minor radius (closest distance to sun approx)
     const a = 497; // Major radius (20% longer)
     
-    // Time scaling - 90% slower
-    // Offset added (+ 3.5) to ensure start point is visible in cycle
     const t = (elapsed * 0.00003) + 3.5; 
     
-    // Parametric centered ellipse
     const rawX = Math.cos(t) * a; 
     const rawY = Math.sin(t) * b;
     
-    // Tilt the orbit to make it cross corners
     const tilt = -Math.PI / 4;
     const x = rawX * Math.cos(tilt) - rawY * Math.sin(tilt);
     const y = rawX * Math.sin(tilt) + rawY * Math.cos(tilt);
     
-    // Calculate distance from sun (origin)
     const dist = Math.sqrt(x*x + y*y);
-    
-    // Tail Orientation: Points away from Sun (0,0).
     const tailAngle = Math.atan2(y, x);
-    
-    // Dynamic Intensity: Brightest at perihelion (363), Dimmest at aphelion (497)
-    // Map dist [363...497] to [1.0...0.3]
     const intensity = Math.max(0.3, 1 - ((dist - 363) / 134)); 
     
-    const tailLength = 40 + (intensity * 140); // 40 to 180
-    const tailWidth = 2 + (intensity * 5); // 2 to 7
-    const headSize = 3 + (intensity * 4); // 3 to 7
+    const tailLength = 40 + (intensity * 140); 
+    const tailWidth = 2 + (intensity * 5); 
+    const headSize = 3 + (intensity * 4); 
 
     return (
         <div 
             className="absolute z-0 pointer-events-none"
             style={{ 
-                transform: `translate(${x}px, ${y}px) rotate(${tailAngle}rad)`, // Rotate to point tail away
+                transform: `translate(${x}px, ${y}px) rotate(${tailAngle}rad)`,
                 opacity: intensity
             }}
         >
-            {/* Comet Head */}
             <div className="absolute rounded-full shadow-[0_0_15px_#facc15]" 
                  style={{ 
                      width: headSize, height: headSize, 
-                     backgroundColor: '#fef08a', // Yellow-ish
+                     backgroundColor: '#fef08a', 
                      transform: 'translate(-50%, -50%)',
                      zIndex: 10
                  }} 
             />
             
-            {/* Comet Tail - Starts at center, extends along +X (rotated away from sun) */}
             <div 
                 className="absolute top-1/2 left-0 origin-left"
                 style={{
                     width: tailLength,
                     height: tailWidth,
-                    background: 'linear-gradient(to right, rgba(253, 224, 71, 0.8), rgba(253, 224, 71, 0))', // Yellow fading tail
+                    background: 'linear-gradient(to right, rgba(253, 224, 71, 0.8), rgba(253, 224, 71, 0))', 
                     transform: 'translateY(-50%)',
                     zIndex: 5
                 }}
@@ -458,17 +442,39 @@ const SectorMap: React.FC<SectorMapProps> = ({ currentQuadrant, onLaunch, onBack
            {[QuadrantType.ALFA, QuadrantType.BETA, QuadrantType.GAMA, QuadrantType.DELTA].map(q => {
              const style = getSunVisuals(q);
              const isActive = activeQuadrant === q;
+             
+             // Unlock Logic
+             let isLocked = false;
+             if (!testMode) {
+                 if (q === QuadrantType.BETA && !isQuadrantCleared(QuadrantType.ALFA)) isLocked = true;
+                 if (q === QuadrantType.GAMA && !isQuadrantCleared(QuadrantType.BETA)) isLocked = true;
+                 if (q === QuadrantType.DELTA && !isQuadrantCleared(QuadrantType.GAMA)) isLocked = true;
+             }
+
              return (
                <button 
                  key={q}
+                 disabled={isLocked}
                  onClick={() => { setActiveQuadrant(q); setSelectedPlanetId(null); setShowMissionLog(false); setPan({x:0, y:0}); setZoomStep(3); }}
-                 className={`flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all duration-300 bg-zinc-950/80 backdrop-blur-md ${isActive ? 'border-white scale-105 shadow-lg' : 'border-zinc-700 opacity-70 hover:opacity-100 hover:border-zinc-500'}`}
+                 className={`flex flex-col items-center gap-2 p-3 rounded-lg border-2 transition-all duration-300 bg-zinc-950/80 backdrop-blur-md relative
+                 ${isActive 
+                    ? 'border-white scale-105 shadow-lg' 
+                    : (isLocked 
+                        ? 'border-zinc-800 opacity-50 cursor-not-allowed grayscale' 
+                        : 'border-zinc-700 opacity-70 hover:opacity-100 hover:border-zinc-500'
+                      )
+                 }`}
                >
                  <div className="relative w-10 h-10 rounded-full shadow-inner overflow-hidden flex-shrink-0">
                     <div className="absolute inset-0" style={{ background: style.gradient }} />
                     {style.isBlackHole && <div className="absolute inset-0 border-[1px] border-white/60 rounded-full scale-[0.7] animate-[spin_3s_linear_infinite]" />}
                  </div>
                  <span className={`text-[10px] font-black uppercase tracking-widest ${isActive ? 'text-white' : 'text-zinc-500'}`}>{q}</span>
+                 {isLocked && (
+                     <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-lg">
+                         <span className="text-xl">🔒</span>
+                     </div>
+                 )}
                </button>
              )
            })}

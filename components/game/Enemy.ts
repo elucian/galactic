@@ -1,3 +1,4 @@
+
 import { EquippedWeapon, QuadrantType, WeaponType } from '../../types';
 import { ExtendedShipConfig, EXOTIC_SHIELDS, EXOTIC_WEAPONS, WEAPONS } from '../../constants';
 import { ShieldLayer, Projectile } from './types';
@@ -130,17 +131,31 @@ export class Enemy {
              this.mineAmmo = Math.min(30, 10 + Math.floor(diff * 2));
         }
 
+        // BOSS WEAPON PROGRESSION (Weakest -> Strongest)
+        // 1. Plasma Orb, Flamer (Alpha)
+        // 2. Octo Burst, Sonic Ring (Beta)
+        // 3. Rainbow Nova, Star Shatter (Gamma)
+        // 4. Gravity Wave, Phaser, Electric (Delta)
+        
         let weaponOptions: string[] = [];
-        if (quadrant === QuadrantType.ALFA) weaponOptions = ['exotic_plasma_orb', 'exotic_flamer'];
-        else if (quadrant === QuadrantType.BETA) weaponOptions = ['exotic_plasma_orb', 'exotic_flamer', 'exotic_octo_burst'];
-        else if (quadrant === QuadrantType.GAMA) weaponOptions = ['exotic_gravity_wave', 'exotic_octo_burst', 'exotic_wave'];
+        if (quadrant === QuadrantType.ALFA) {
+            weaponOptions = ['exotic_plasma_orb', 'exotic_flamer'];
+        }
+        else if (quadrant === QuadrantType.BETA) {
+            weaponOptions = ['exotic_octo_burst', 'exotic_wave'];
+        }
+        else if (quadrant === QuadrantType.GAMA) {
+            weaponOptions = ['exotic_rainbow_spread', 'exotic_star_shatter'];
+        }
         else if (quadrant === QuadrantType.DELTA) {
+            weaponOptions = ['exotic_gravity_wave', 'exotic_phaser_sweep', 'exotic_electric'];
+            
+            // Ultra Boss Variant for high difficulty Delta
             if (diff >= 12) {
                 this.config.wingStyle = 'alien-a';
                 this.config.name = 'Omega A-Type';
                 this.config.defaultGuns = 1; 
             }
-            weaponOptions = ['exotic_electric', 'exotic_rainbow_spread', 'exotic_phaser_sweep', 'exotic_star_shatter'];
         }
 
         const selectedId = weaponOptions[Math.floor(Math.random() * weaponOptions.length)];
@@ -154,34 +169,50 @@ export class Enemy {
         }
 
         let addShields = true;
-        if (quadrant === QuadrantType.ALFA) {
-            // Only add shields if diff > 1
-            if (diff <= 1) addShields = false;
-        }
+        // Alpha Bosses only get shields if difficulty > 1
+        if (quadrant === QuadrantType.ALFA && diff <= 1) addShields = false;
 
         if (addShields) {
+            // BOSS SHIELD PROGRESSION
+            // Alpha/Beta: Plasma Aegis (Weakest Exotic) or Standard High End
+            // Gamma: Void Mantle
+            // Delta: Pulsar Starfield
+            
             let s1Type: 'full'|'front'|'tri'|'hex' = 'full';
             let s1Rot = 0;
             let s2Type: 'full'|'front'|'tri'|'hex' = 'full';
             let s2Rot = 0.02;
 
-            if (diff >= 12 || quadrant === QuadrantType.DELTA) {
-                s1Type = 'hex'; s1Rot = 0.05;
-                s2Type = 'full'; s2Rot = 0;
-            } else if (quadrant === QuadrantType.GAMA) {
-                s1Type = 'front'; s1Rot = 0;
-                s2Type = 'tri'; s2Rot = -0.03;
-            } else if (quadrant === QuadrantType.BETA) {
+            let shield1Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_plasma')!; 
+            let shield2Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_plasma')!;
+
+            if (quadrant === QuadrantType.BETA) {
+                // Beta gets Plasma Aegis + Frontal Rotation
+                shield1Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_plasma')!;
+                shield2Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_plasma')!;
                 s1Type = 'front'; s1Rot = 0;
                 s2Type = 'front'; s2Rot = 0; 
             }
+            else if (quadrant === QuadrantType.GAMA) {
+                // Gamma gets Void Mantle (Absorbs)
+                shield1Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_void')!;
+                shield2Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_void')!;
+                s1Type = 'front'; s1Rot = 0;
+                s2Type = 'tri'; s2Rot = -0.03;
+            }
+            else if (quadrant === QuadrantType.DELTA) {
+                // Delta gets Pulsar Starfield (Max Cap)
+                shield1Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_pulsar')!;
+                shield2Def = EXOTIC_SHIELDS.find(s => s.id === 'exotic_sh_pulsar')!;
+                s1Type = 'hex'; s1Rot = 0.05;
+                s2Type = 'full'; s2Rot = 0;
+            }
 
-            const shield1 = EXOTIC_SHIELDS[0];
-            const shield2 = EXOTIC_SHIELDS[1];
-
-            this.shieldLayers.push({ color: shield1.color, max: shield1.capacity * (1 + diff * 0.1), current: shield1.capacity * (1 + diff * 0.1), rotation: 0, wobble: 0, type: s1Type, rotSpeed: s1Rot });
+            this.shieldLayers.push({ color: shield1Def.color, max: shield1Def.capacity * (1 + diff * 0.1), current: shield1Def.capacity * (1 + diff * 0.1), rotation: 0, wobble: 0, type: s1Type, rotSpeed: s1Rot });
+            
+            // Second layer logic
             if (s2Type !== s1Type || quadrant !== QuadrantType.BETA) {
-                this.shieldLayers.push({ color: shield2.color, max: shield2.capacity * (1 + diff * 0.1), current: shield2.capacity * (1 + diff * 0.1), rotation: Math.PI / 2, wobble: 0, type: s2Type, rotSpeed: s2Rot });
+                this.shieldLayers.push({ color: shield2Def.color, max: shield2Def.capacity * (1 + diff * 0.1), current: shield2Def.capacity * (1 + diff * 0.1), rotation: Math.PI / 2, wobble: 0, type: s2Type, rotSpeed: s2Rot });
             }
             this.shieldRegen = 2.0 + (diff * 0.2);
         }

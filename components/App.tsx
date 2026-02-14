@@ -199,38 +199,60 @@ export default function App() {
 
         const now = Date.now();
         const lastSave = parsed.lastSaveTime || now;
-        const elapsedHours = (now - lastSave) / (1000 * 60 * 60);
         
-        if (elapsedHours >= 8) {
-            const invasionSteps = Math.floor(elapsedHours - 8) + 1; 
-            let lostCount = 0;
+        // PLANETARY DECAY LOGIC
+        // Loose 1 planet per 24 hours elapsed. 
+        // Protected: First 3 planets (P1, P2, P3).
+        const daysElapsed = Math.floor((now - lastSave) / (1000 * 60 * 60 * 24));
+        
+        if (daysElapsed > 0) {
             const updatedRegistry = { ...parsed.planetRegistry };
             
-            for (let i = PLANETS.length - 1; i >= 2; i--) {
-                if (lostCount >= invasionSteps) break;
-                
-                const p = PLANETS[i];
-                const status = updatedRegistry[p.id]?.status || p.status;
-                
-                if (status === 'friendly' || status === 'siege') {
-                    updatedRegistry[p.id] = { 
-                        ...updatedRegistry[p.id], 
-                        status: 'occupied', 
-                        wins: 0, 
-                        losses: 0 
-                    };
-                    lostCount++;
-                }
+            // Get all planets currently owned (friendly) or under siege
+            // Sort by ID descending (High End -> Low End) i.e. p12, p11... p1
+            const ownedPlanets = PLANETS
+                .filter(p => {
+                    const status = updatedRegistry[p.id]?.status || p.status;
+                    return status === 'friendly' || status === 'siege';
+                })
+                .sort((a, b) => {
+                     // Extract number from id 'p12' -> 12
+                     const numA = parseInt(a.id.substring(1));
+                     const numB = parseInt(b.id.substring(1));
+                     return numB - numA; // Descending
+                });
+            
+            // Filter out protected planets (P1, P2, P3)
+            // They cannot be lost via time decay, only via mission failure
+            const vulnerablePlanets = ownedPlanets.filter(p => {
+                 const num = parseInt(p.id.substring(1));
+                 return num > 3; 
+            });
+
+            // Determine how many to lose
+            // 1 planet per day, up to the max available vulnerable planets
+            const planetsToLoseCount = Math.min(daysElapsed, vulnerablePlanets.length);
+            const lostPlanets: string[] = [];
+
+            for (let i = 0; i < planetsToLoseCount; i++) {
+                const p = vulnerablePlanets[i];
+                updatedRegistry[p.id] = { 
+                    ...updatedRegistry[p.id], 
+                    status: 'occupied', 
+                    wins: 0, 
+                    losses: 0 
+                };
+                lostPlanets.push(p.name);
             }
 
-            if (lostCount > 0) {
+            if (lostPlanets.length > 0) {
                 parsed.planetRegistry = updatedRegistry;
-                let msgText = `TIME LAPSE DETECTED: ${lostCount} SECTORS OVERRUN BY XENOS FORCES.`;
-                if (lostCount >= 4) msgText = "CRITICAL ALERT: OUTER RIM DEFENSES COLLAPSED DURING HYPER-SLEEP.";
-                if (updatedRegistry['p12'].status === 'occupied') msgText = "DELTA QUADRANT LOST. RECLAMATION REQUIRED.";
+                
+                let msgText = `TIME LAPSE: ${daysElapsed} DAYS. LOST SECTORS: ${lostPlanets.join(', ')}.`;
+                if (lostPlanets.length >= 4) msgText = `CRITICAL DECAY: ${daysElapsed} DAYS INACTIVITY. MASSIVE TERRITORY LOSS.`;
                 
                 const msg: GameMessage = {
-                    id: `invasion_${now}`,
+                    id: `decay_${now}`,
                     type: 'activity',
                     category: 'combat',
                     pilotName: 'COMMAND',
@@ -256,6 +278,7 @@ export default function App() {
   const [gameMode, setGameMode] = useState<'combat' | 'drift'>('combat');
   const [warpDestination, setWarpDestination] = useState<'game' | 'hangar' | 'landing'>('game'); 
   const [victoryMode, setVictoryMode] = useState<'cinematic' | 'simple'>('simple');
+  const [victoryData, setVictoryData] = useState({ title: "VICTORY ACHIEVED", subtitle: "SECTOR LIBERATED" });
 
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);
@@ -691,6 +714,12 @@ export default function App() {
     let newLeaderboard: LeaderboardEntry[] = [];
     if (success) { rankAchieved = await backendService.submitScore(gameState.pilotName, gameState.credits + score + 5000, gameState.pilotAvatar); newLeaderboard = await backendService.getLeaderboard(); }
     
+    // Determine Victory Condition & Text
+    let nextScreen = 'hangar';
+    let victoryTitle = "VICTORY ACHIEVED";
+    let victorySubtitle = "SECTOR LIBERATED";
+    let showVictoryScene = false;
+
     setGameState(prev => {
        const newCredits = prev.credits + score + (success ? 5000 : 0);
        const sId = prev.selectedShipInstanceId!;
@@ -728,6 +757,24 @@ export default function App() {
                newMessages.unshift({ id: `win_${Date.now()}`, type: 'activity', category: 'combat', pilotName: 'COMMAND', pilotAvatar: '🛰️', text: `HOSTILES NEUTRALIZED IN SECTOR ${prev.currentPlanet?.name}.`, timestamp: Date.now() }); 
            } 
            if (rankAchieved && rankAchieved <= 20) { newMessages.unshift({ id: `rank_${Date.now()}`, type: 'activity', category: 'system', pilotName: 'FLEET ADMIRALTY', pilotAvatar: '🎖️', text: `CONGRATULATIONS PILOT. YOU HAVE REACHED RANK #${rankAchieved} IN THE GALACTIC LEADERBOARD.`, timestamp: Date.now() }); } 
+           
+           // Check for Quadrant Liberation (after updating registry)
+           // Create temporary updated registry for checking
+           const tempReg = { ...reg, [currentPId]: pEntry };
+           const qPlanets = PLANETS.filter(p => p.quadrant === prev.currentQuadrant);
+           const allFriendly = qPlanets.every(p => tempReg[p.id].status === 'friendly');
+
+           if (allFriendly) {
+               showVictoryScene = true;
+               victoryTitle = `VICTORY QUADRANT ${prev.currentQuadrant} IS LIBERATED`;
+               victorySubtitle = "PEOPLE THANK YOU!";
+               
+               if (prev.currentQuadrant === QuadrantType.DELTA) {
+                   victoryTitle = "GALAXY LIBERATED";
+                   victorySubtitle = "Learn and prosper 🖖";
+               }
+           }
+
        } else { 
            // FAILURE Logic (Loss or Abort)
            
@@ -795,10 +842,11 @@ export default function App() {
         if (currentQuad !== homeQuad && showTrans) { setWarpDestination('hangar'); setScreen('warp'); } 
         else { setScreen('hangar'); audioService.playTrack('command'); } 
     } else { 
-        if (success && gameState.currentPlanet?.id === 'p12') {
-            // Victory on Last Planet
+        if (showVictoryScene) {
+            // Victory on Quadrant Clear
             const useCinematic = gameState.settings.showTransitions;
             setVictoryMode(useCinematic ? 'cinematic' : 'simple');
+            setVictoryData({ title: victoryTitle, subtitle: victorySubtitle });
             setScreen('victory');
         }
         else if (payload?.health > 0 && gameState.settings.showTransitions && success) { 
@@ -1458,6 +1506,8 @@ export default function App() {
       {screen === 'victory' && (
           <VictoryScene 
               mode={victoryMode}
+              title={victoryData.title}
+              subtitle={victoryData.subtitle}
               onExit={() => { 
                   try {
                       if (window.history.length > 1) {

@@ -8,9 +8,11 @@ interface VictorySceneProps {
     mode: 'cinematic' | 'simple';
     onExit: () => void;
     onRestart: () => void;
+    title?: string;
+    subtitle?: string;
 }
 
-export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRestart }) => {
+export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRestart, title = "VICTORY ACHIEVED", subtitle = "SECTOR LIBERATED" }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
     // UI Visibility: Immediate for simple, delayed for cinematic
@@ -333,11 +335,11 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
             <div className={`absolute inset-0 z-[100] transition-opacity duration-1000 flex flex-col items-center justify-center pointer-events-none ${uiVisible ? 'opacity-100 bg-black/40' : 'opacity-0'}`}>
                 
                 <h1 className="retro-font text-5xl md:text-8xl text-yellow-500 font-black uppercase tracking-tighter drop-shadow-[0_0_25px_rgba(251,191,36,0.8)] animate-pulse mb-8 text-center px-4" style={{ background: 'linear-gradient(to bottom, #fde047, #d97706)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text', color: 'transparent' }}>
-                    GAME OVER
+                    {title}
                 </h1>
 
-                <h2 className="retro-font text-3xl md:text-6xl text-white/70 font-black uppercase tracking-[0.2em] drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] mb-12 text-center w-full px-4">
-                    VICTORY ACHIEVED
+                <h2 className="retro-font text-2xl md:text-4xl text-white/70 font-black uppercase tracking-[0.2em] drop-shadow-[0_0_10px_rgba(255,255,255,0.3)] mb-12 text-center w-full px-4">
+                    {subtitle}
                 </h2>
 
                 <div className={`flex gap-6 transition-opacity duration-500 pointer-events-auto ${showButton ? 'opacity-100' : 'opacity-0'}`}>
@@ -351,7 +353,7 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({ mode, onExit, onRest
                         onClick={onRestart}
                         className="bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-[0.2em] px-8 py-4 rounded border-2 border-emerald-400 hover:border-emerald-300 shadow-[0_0_20px_rgba(16,185,129,0.5)] transition-all transform hover:scale-105 w-40 cursor-pointer"
                     >
-                        Restart
+                        Continue
                     </button>
                 </div>
             </div>
