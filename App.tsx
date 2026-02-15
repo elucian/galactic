@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from '../types.ts';
-import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from '../constants.ts';
-import { audioService } from '../services/audioService.ts';
-import { backendService } from '../services/backendService.ts';
+import { GameState, ShipFitting, Planet, QuadrantType, ShipPart, CargoItem, Shield, AmmoType, PlanetStatusData, LeaderboardEntry, GameMessage } from './types.ts';
+import { SHIPS, INITIAL_CREDITS, PLANETS, WEAPONS, EXOTIC_WEAPONS, SHIELDS, EXOTIC_SHIELDS, EXPLODING_ORDNANCE, COMMODITIES, ExtendedShipConfig, MAX_FLEET_SIZE, AVATARS, AMMO_CONFIG, AMMO_MARKET_ITEMS } from './constants.ts';
+import { audioService } from './services/audioService.ts';
+import { backendService } from './services/backendService.ts';
 import { StoryScene } from './components/StoryScene.tsx';
 import { CommandCenter } from './components/CommandCenter.tsx';
 import { CargoDialog } from './components/CargoDialog.tsx';
@@ -278,7 +278,7 @@ export default function App() {
   const [gameMode, setGameMode] = useState<'combat' | 'drift'>('combat');
   const [warpDestination, setWarpDestination] = useState<'game' | 'hangar' | 'landing'>('game'); 
   const [victoryMode, setVictoryMode] = useState<'cinematic' | 'simple'>('simple');
-  const [victoryData, setVictoryData] = useState({ title: "VICTORY", subtitle: "SECTOR LIBERATED", message: "PEOPLE THANK YOU" });
+  const [victoryData, setVictoryData] = useState({ title: "VICTORY ACHIEVED", subtitle: "SECTOR LIBERATED", message: "PEOPLE THANK YOU" });
 
   const [systemMessage, setSystemMessage] = useState<{text: string, type: 'neutral'|'success'|'error'|'warning'}>({ text: 'SYSTEMS NOMINAL', type: 'neutral' });
   const messageTimeoutRef = useRef<number | null>(null);

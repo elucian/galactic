@@ -34,7 +34,7 @@ export const VictoryScene: React.FC<VictorySceneProps> = ({
     subtitle = "SECTOR LIBERATED", 
     message = "PEOPLE THANK YOU",
     shipConfig = SHIPS[0],
-    shipColors = {}
+    shipColors = {} as NonNullable<VictorySceneProps['shipColors']>
 }) => {
     const canvasRef = useRef<HTMLCanvasElement>(null);
     
